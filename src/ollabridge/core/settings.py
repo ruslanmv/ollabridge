@@ -1,0 +1,38 @@
+from __future__ import annotations
+
+from pathlib import Path
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Runtime configuration loaded from environment and optional .env file."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # Server
+    APP_NAME: str = "OllaBridge"
+    ENV: str = "dev"
+    HOST: str = "0.0.0.0"
+    PORT: int = 11435
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+
+    # Auth (comma-separated API keys)
+    API_KEYS: str = "dev-key-change-me"
+
+    # Rate limiting (slowapi syntax)
+    RATE_LIMIT: str = "60/minute"
+
+    # Upstream: Ollama
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_CHAT_PATH: str = "/api/chat"
+    OLLAMA_EMBED_PATH: str = "/api/embeddings"
+    DEFAULT_MODEL: str = "deepseek-r1"
+    DEFAULT_EMBED_MODEL: str = "nomic-embed-text"
+
+    # Database
+    DATA_DIR: Path = Path.home() / ".ollabridge"
+    DATABASE_URL: str | None = None
+
+
+settings = Settings()
+settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
