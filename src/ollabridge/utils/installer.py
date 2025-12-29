@@ -14,18 +14,22 @@ def is_ollama_installed() -> bool:
     return shutil.which("ollama") is not None
 
 
-def install_ollama():
+def install_ollama(assume_yes: bool = False):
     """Detects OS and runs the official install command (where possible).
 
     Linux/macOS: runs the official install script.
     Windows: opens download page (manual install).
+
+    Args:
+        assume_yes: If True, skip interactive confirmation (for MCP/headless mode).
     """
     system = platform.system().lower()
     console.print(f"[bold cyan]🔍 Ollama not found. Detected OS: {system.capitalize()}[/bold cyan]")
 
-    if not Confirm.ask("Would you like OllaBridge to install Ollama for you?"):
-        console.print("[red]❌ Aborted. You need Ollama to run this gateway.[/red]")
-        sys.exit(1)
+    if not assume_yes:
+        if not Confirm.ask("Would you like OllaBridge to install Ollama for you?"):
+            console.print("[red]❌ Aborted. You need Ollama to run this gateway.[/red]")
+            sys.exit(1)
 
     try:
         if system in ("linux", "darwin"):

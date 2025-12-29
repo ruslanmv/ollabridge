@@ -1,0 +1,46 @@
+<svg width="400" height="120" viewBox="0 0 400 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bridgeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#8b5cf6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ec4899;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f59e0b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ef4444;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Bridge icon -->
+  <g id="bridge-icon">
+    <!-- Left pillar -->
+    <rect x="15" y="35" width="8" height="50" fill="url(#bridgeGradient)" rx="2"/>
+    <!-- Right pillar -->
+    <rect x="77" y="35" width="8" height="50" fill="url(#bridgeGradient)" rx="2"/>
+
+    <!-- Bridge arch -->
+    <path d="M 19 35 Q 50 15, 81 35" stroke="url(#bridgeGradient)" stroke-width="8" fill="none" stroke-linecap="round"/>
+
+    <!-- Connection dots (data flow) -->
+    <circle cx="35" cy="25" r="3" fill="url(#accentGradient)">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="50" cy="19" r="3" fill="url(#accentGradient)">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="0.3s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="65" cy="25" r="3" fill="url(#accentGradient)">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="0.6s" repeatCount="indefinite"/>
+    </circle>
+
+    <!-- Base line -->
+    <rect x="10" y="85" width="80" height="4" fill="url(#bridgeGradient)" rx="2"/>
+  </g>
+
+  <!-- Text -->
+  <text x="110" y="55" font-family="'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif" font-size="36" font-weight="700" fill="#1f2937">
+    Olla<tspan fill="url(#bridgeGradient)">Bridge</tspan>
+  </text>
+  <text x="110" y="78" font-family="'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif" font-size="14" font-weight="400" fill="#6b7280" letter-spacing="0.5">
+    Your PC, OpenAI-Compatible
+  </text>
+</svg>
