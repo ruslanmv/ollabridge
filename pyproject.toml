@@ -1,47 +1,51 @@
 [project]
 name = "ollabridge"
-version = "1.0.0"
+version = "0.1.0"
 description = "Turn your PC into a private, OpenAI-compatible LLM provider in ~60 seconds"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = { file = "LICENSE" }
+
 authors = [
-    {name = "Ruslan Magana", email = "contact@ruslanmv.com"}
+  { name = "Ruslan Magana Vsevolodovna", email = "contact@ruslanmv.com" }
 ]
 maintainers = [
-    {name = "Ruslan Magana", email = "contact@ruslanmv.com"}
+  { name = "Ruslan Magana Vsevolodovna", email = "contact@ruslanmv.com" }
 ]
+
 keywords = [
-    "ollama",
-    "llm",
-    "openai",
-    "api",
-    "gateway",
-    "local-first",
-    "ai",
-    "machine-learning",
-    "self-hosted",
-    "langchain",
-    "chatgpt",
-    "embeddings",
-    "deepseek",
-    "llama",
+  "ollama",
+  "llm",
+  "openai",
+  "api",
+  "gateway",
+  "local-first",
+  "ai",
+  "machine-learning",
+  "self-hosted",
+  "langchain",
+  "chatgpt",
+  "embeddings",
+  "deepseek",
+  "llama",
 ]
+
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
-    "Framework :: FastAPI",
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+  "Framework :: FastAPI",
 ]
+
 dependencies = [
   "anyio",
   "fastapi>=0.110",
@@ -70,12 +74,12 @@ Changelog = "https://github.com/ruslanmv/ollabridge/releases"
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.4",
-    "pytest-cov>=4.1",
-    "pytest-asyncio>=0.21",
-    "black>=23.7",
-    "ruff>=0.0.280",
-    "mypy>=1.4",
+  "pytest>=7.4",
+  "pytest-cov>=4.1",
+  "pytest-asyncio>=0.21",
+  "black>=23.7",
+  "ruff>=0.0.280",
+  "mypy>=1.4",
 ]
 
 [project.scripts]
@@ -87,5 +91,16 @@ ollabridge-mcp = "ollabridge.mcp.server:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# --- Hatchling src/ layout ---
 [tool.hatch.build.targets.wheel]
-packages = ["src/ollabridge"]
+packages = ["ollabridge"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/**",
+  "README.md",
+  "LICENSE",
+]
