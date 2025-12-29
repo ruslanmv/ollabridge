@@ -5,10 +5,8 @@
     </style>
   </defs>
 
-  <!-- Single background (no split colors) -->
-  <rect width="154" height="28" rx="4" fill="#0f172a"/>
+  <rect width="154" height="28" rx="4" fill="#000000"/>
 
-  <!-- White icon (left) -->
   <g transform="translate(10,7)" fill="#fff">
     <rect x="0" y="7" width="3" height="14" rx="1"/>
     <rect x="17" y="7" width="3" height="14" rx="1"/>
@@ -19,6 +17,5 @@
     <rect x="-2" y="21" width="24" height="3" rx="1.5"/>
   </g>
 
-  <!-- Text -->
   <text x="44" y="19" class="t">OllaBridge</text>
 </svg>

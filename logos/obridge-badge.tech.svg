@@ -5,14 +5,10 @@
     </style>
   </defs>
 
-  <!-- Left icon block -->
-  <rect width="44" height="28" rx="4" fill="#475569"/>
-  <!-- Right text block -->
-  <rect x="44" width="126" height="28" rx="4" fill="#0f172a"/>
-  <!-- Seam cover so only outer corners stay rounded -->
-  <rect x="44" width="4" height="28" fill="#0f172a"/>
+  <rect width="44" height="28" rx="4" fill="#333333"/>
+  <rect x="44" width="126" height="28" rx="4" fill="#000000"/>
+  <rect x="44" width="4" height="28" fill="#000000"/>
 
-  <!-- Icon centered in left block -->
   <g transform="translate(12,7)" fill="#fff">
     <rect x="0" y="7" width="3" height="14" rx="1"/>
     <rect x="17" y="7" width="3" height="14" rx="1"/>
