@@ -1,3 +1,8 @@
 include README.md
 include LICENSE
+include INSTALL.md
+include CONTRIBUTING.md
+include Makefile
 include .env.example
+recursive-include assets *.svg *.png *.jpg
+recursive-include docs *.md

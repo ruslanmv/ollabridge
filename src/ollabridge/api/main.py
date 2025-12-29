@@ -20,6 +20,25 @@ from ollabridge.providers.ollama_client import chat as ollama_chat, embeddings a
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT])
 
 
+# ----------------------------
+# Request/Response Models
+# ----------------------------
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatReq(BaseModel):
+    model: str | None = None
+    messages: list[ChatMessage]
+    temperature: float | None = None
+
+
+class EmbeddingsReq(BaseModel):
+    model: str | None = None
+    input: str
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.APP_NAME)
     app.state.limiter = limiter
@@ -61,15 +80,6 @@ def create_app() -> FastAPI:
     # ----------------------------
     # OpenAI-compatible
     # ----------------------------
-    class ChatMessage(BaseModel):
-        role: str
-        content: str
-
-    class ChatReq(BaseModel):
-        model: str | None = None
-        messages: list[ChatMessage]
-        temperature: float | None = None
-
     @app.post("/v1/chat/completions")
     async def chat_completions(req: ChatReq, request: Request, _key: str = Depends(require_api_key)) -> dict[str, Any]:
         model = (req.model or settings.DEFAULT_MODEL)
@@ -110,10 +120,6 @@ def create_app() -> FastAPI:
                 )
                 s.commit()
             raise HTTPException(500, str(e))
-
-    class EmbeddingsReq(BaseModel):
-        model: str | None = None
-        input: str
 
     @app.post("/v1/embeddings")
     async def embeddings(req: EmbeddingsReq, request: Request, _key: str = Depends(require_api_key)) -> dict[str, Any]:
