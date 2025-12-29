@@ -1,35 +1,85 @@
 [project]
 name = "ollabridge"
 version = "1.0.0"
-description = "OllaBridge: self-healing, local-first OpenAI-compatible gateway for Ollama"
+description = "Turn your PC into a private, OpenAI-compatible LLM provider in ~60 seconds"
 readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Ruslan Magana", email = "contact@ruslanmv.com"}
+]
+maintainers = [
+    {name = "Ruslan Magana", email = "contact@ruslanmv.com"}
+]
+keywords = [
+    "ollama",
+    "llm",
+    "openai",
+    "api",
+    "gateway",
+    "local-first",
+    "ai",
+    "machine-learning",
+    "self-hosted",
+    "langchain",
+    "chatgpt",
+    "embeddings",
+    "deepseek",
+    "llama",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Framework :: FastAPI",
+]
 dependencies = [
   "anyio",
   "fastapi>=0.110",
-  "httpx",
   "httpx>=0.26",
   "itsdangerous>=2.1",
-  "pydantic-settings",
   "pydantic-settings>=2.2",
   "pydantic>=2.6",
-  "python-dotenv",
   "python-dotenv>=1.0",
   "pyyaml>=6.0",
-  "rich",
   "rich>=13.7",
   "slowapi",
   "sqlalchemy",
   "sqlmodel",
-  "tenacity",
   "tenacity>=8.2",
-  "typer",
   "typer>=0.12",
   "uvicorn[standard]>=0.27",
 ]
 
+[project.urls]
+Homepage = "https://github.com/ruslanmv/ollabridge"
+Documentation = "https://github.com/ruslanmv/ollabridge#readme"
+Repository = "https://github.com/ruslanmv/ollabridge"
+Issues = "https://github.com/ruslanmv/ollabridge/issues"
+Changelog = "https://github.com/ruslanmv/ollabridge/releases"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "pytest-asyncio>=0.21",
+    "black>=23.7",
+    "ruff>=0.0.280",
+    "mypy>=1.4",
+]
+
 [project.scripts]
 ollabridge = "ollabridge.cli.main:app"
+ollabridge-mcp = "ollabridge.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
