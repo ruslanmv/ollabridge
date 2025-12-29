@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none" role="img" aria-label="OllaBridge">
+  <g stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- pillars -->
+    <line x1="18" y1="26" x2="18" y2="46"></line>
+    <line x1="46" y1="26" x2="46" y2="46"></line>
+
+    <!-- arch -->
+    <path d="M18 26 Q32 14 46 26"></path>
+
+    <!-- base -->
+    <line x1="14" y1="46" x2="50" y2="46"></line>
+  </g>
+
+  <!-- data dots -->
+  <g fill="#ffffff">
+    <circle cx="24" cy="22" r="2"></circle>
+    <circle cx="32" cy="19" r="2"></circle>
+    <circle cx="40" cy="22" r="2"></circle>
+  </g>
+</svg>

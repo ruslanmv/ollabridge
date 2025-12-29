@@ -1,0 +1,19 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none"
+  xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OllamaBridge compatible">
+  <!-- Transparent background -->
+  <g fill="#ffffff" stroke="#ffffff">
+    <rect x="60" y="96" width="20" height="112" rx="8"/>
+    <rect x="176" y="96" width="20" height="112" rx="8"/>
+    <path d="M70 96 C92 58 164 58 186 96" stroke-width="20" stroke-linecap="round" fill="none"/>
+    <circle cx="92" cy="76" r="8" stroke="none"/>
+    <circle cx="128" cy="66" r="8" stroke="none"/>
+    <circle cx="164" cy="76" r="8" stroke="none"/>
+    <rect x="52" y="208" width="152" height="16" rx="8" stroke="none"/>
+  </g>
+
+  <g transform="translate(160,160)">
+    <circle cx="48" cy="48" r="40" fill="#ffffff" opacity="0.95"/>
+    <path d="M30 49 L43 61 L66 36" fill="none" stroke="#0f172a" stroke-width="12"
+      stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
