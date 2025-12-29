@@ -17,6 +17,7 @@ from ollabridge.utils.installer import (
     is_ollama_installed,
 )
 from ollabridge.utils.tunnel import start_tunnel
+from ollabridge.core.enrollment import create_join_token
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
@@ -41,7 +42,7 @@ def _write_env_key_if_needed(key: str):
     env_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
-def _dashboard(host: str, port: int, public_url: str | None, key: str, model: str, workers: int):
+def _dashboard(host: str, port: int, public_url: str | None, key: str, model: str, workers: int, join_token: str):
     local_url = f"http://localhost:{port}"
     msg = f"""
 [bold green]✅ OllaBridge is Online[/bold green]
@@ -52,6 +53,10 @@ def _dashboard(host: str, port: int, public_url: str | None, key: str, model: st
 [bold]Health:[/bold]       {local_url}/health
 [bold]Key:[/bold]          {key}
 [dim]Send as X-API-Key or Authorization: Bearer ...[/dim]
+
+[bold]Node join token:[/bold]  {join_token}
+[dim]Example node command:[/dim]
+[dim]  ollabridge-node join --control {local_url} --token {join_token}[/dim]
 """
 
     if public_url:
@@ -67,7 +72,7 @@ def _dashboard(host: str, port: int, public_url: str | None, key: str, model: st
 def start(
     host: str = typer.Option("0.0.0.0", help="Bind host"),
     port: int = typer.Option(11435, help="Bind port"),
-    share: bool = typer.Option(False, "--share", help="Get a public URL (ngrok best-effort)"),
+    share: bool = typer.Option(False, "--share", help="Expose a public URL (best-effort)"),
     workers: int = typer.Option(1, "--workers", help="Worker processes (scalability hook)"),
     model: str = typer.Option("deepseek-r1", "--model", help="Default chat model to ensure/use"),
 ):
@@ -90,17 +95,20 @@ def start(
         _write_env_key_if_needed(key)
         os.environ["API_KEYS"] = key  # ensure current process uses it
 
-    # 5) Optional tunnel
+    # 5) Enrollment token: compute nodes join the control plane with this short-lived credential.
+    join_token = create_join_token().token
+
+    # 6) Optional public access URL
     public_url = None
     if share:
         console.print("[green]🌍 Opening tunnel to public internet...[/green]")
         try:
             public_url = start_tunnel(port)
         except Exception as e:
-            console.print(f"[red]Tunnel failed:[/red] {e}")
-            console.print("[yellow]Tip:[/yellow] For production use Cloudflare Tunnel or Tailscale.")
+            console.print(f"[red]Public link failed:[/red] {e}")
+            console.print("[yellow]Tip:[/yellow] For production, use a managed edge or private overlay.")
 
-    _dashboard(host, port, public_url, key, model, workers)
+    _dashboard(host, port, public_url, key, model, workers, join_token)
 
     uvicorn.run(
         "ollabridge.api.main:app",
@@ -108,6 +116,20 @@ def start(
         port=port,
         workers=workers,
         log_level="warning",
+    )
+
+
+@app.command()
+def enroll_create(
+    ttl_seconds: int = typer.Option(3600, "--ttl", help="Token TTL in seconds"),
+):
+    """Create a short-lived enrollment token for nodes to join the Control Plane."""
+    tok = create_join_token(ttl_seconds=ttl_seconds)
+    console.print(
+        Panel(
+            f"[bold]Token:[/bold] {tok.token}\n[bold]Expires:[/bold] {tok.expires_at.isoformat()}",
+            title="🔑 Enrollment Token",
+        )
     )
 
 

@@ -29,6 +29,17 @@ class Settings(BaseSettings):
     DEFAULT_MODEL: str = "deepseek-r1"
     DEFAULT_EMBED_MODEL: str = "nomic-embed-text"
 
+    # Control-plane / Node enrollment
+    MODE: str = "gateway"  # gateway | node
+    RELAY_ENABLED: bool = True
+    ENROLLMENT_SECRET: str = "dev-enroll-change-me"
+    ENROLLMENT_TTL_SECONDS: int = 3600
+
+    # When running in gateway mode, register local runtime as a default node
+    LOCAL_RUNTIME_ENABLED: bool = True
+    LOCAL_NODE_ID: str = "local"
+    LOCAL_NODE_TAGS: str = "local"
+
     # Database
     DATA_DIR: Path = Path.home() / ".ollabridge"
     DATABASE_URL: str | None = None
