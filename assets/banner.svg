@@ -1,0 +1,108 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e293b;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#8b5cf6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ec4899;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f59e0b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ef4444;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bgGradient)"/>
+
+  <!-- Grid pattern background -->
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#334155" stroke-width="0.5" opacity="0.3"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+
+  <!-- Left side: Large bridge icon -->
+  <g transform="translate(120, 150)">
+    <!-- Left pillar -->
+    <rect x="0" y="80" width="30" height="150" fill="url(#mainGradient)" rx="6" filter="url(#glow)"/>
+
+    <!-- Right pillar -->
+    <rect x="220" y="80" width="30" height="150" fill="url(#mainGradient)" rx="6" filter="url(#glow)"/>
+
+    <!-- Bridge arch -->
+    <path d="M 15 80 Q 125 0, 235 80"
+          stroke="url(#mainGradient)"
+          stroke-width="30"
+          fill="none"
+          stroke-linecap="round"
+          filter="url(#glow)"/>
+
+    <!-- Data flow dots -->
+    <circle cx="65" cy="45" r="12" fill="url(#accentGrad)">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="125" cy="15" r="12" fill="url(#accentGrad)">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="0.4s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="185" cy="45" r="12" fill="url(#accentGrad)">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="0.8s" repeatCount="indefinite"/>
+    </circle>
+
+    <!-- Base -->
+    <rect x="-10" y="230" width="270" height="12" fill="url(#mainGradient)" rx="6"/>
+  </g>
+
+  <!-- Right side: Text content -->
+  <g>
+    <!-- Main title -->
+    <text x="520" y="220" font-family="'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif" font-size="72" font-weight="800" fill="#ffffff">
+      Olla<tspan fill="url(#mainGradient)" filter="url(#glow)">Bridge</tspan>
+    </text>
+
+    <!-- Subtitle -->
+    <text x="520" y="280" font-family="'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif" font-size="32" font-weight="400" fill="#94a3b8" letter-spacing="0.5">
+      Turn your PC into an OpenAI-compatible
+    </text>
+    <text x="520" y="325" font-family="'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif" font-size="32" font-weight="400" fill="#94a3b8" letter-spacing="0.5">
+      LLM provider in ~60 seconds
+    </text>
+
+    <!-- Features -->
+    <g transform="translate(520, 380)">
+      <text y="0" font-family="'SF Mono', 'Monaco', 'Courier New', monospace" font-size="20" font-weight="500" fill="#10b981">
+        ✓ Self-healing setup
+      </text>
+      <text y="35" font-family="'SF Mono', 'Monaco', 'Courier New', monospace" font-size="20" font-weight="500" fill="#10b981">
+        ✓ OpenAI-compatible API
+      </text>
+      <text y="70" font-family="'SF Mono', 'Monaco', 'Courier New', monospace" font-size="20" font-weight="500" fill="#10b981">
+        ✓ Security by default
+      </text>
+    </g>
+
+    <!-- Code snippet -->
+    <g transform="translate(520, 510)">
+      <rect width="520" height="70" rx="8" fill="#1e293b" stroke="url(#mainGradient)" stroke-width="2"/>
+      <text x="20" y="30" font-family="'SF Mono', 'Monaco', 'Courier New', monospace" font-size="18" fill="#64748b">
+        $
+        <tspan fill="#f8fafc" font-weight="600">pip install ollabridge</tspan>
+      </text>
+      <text x="20" y="55" font-family="'SF Mono', 'Monaco', 'Courier New', monospace" font-size="18" fill="#64748b">
+        $
+        <tspan fill="#f8fafc" font-weight="600">ollabridge start --share</tspan>
+      </text>
+    </g>
+  </g>
+</svg>
