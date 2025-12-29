@@ -1,0 +1,32 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none"
+  xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OllaBridge compatible icon">
+  <defs>
+    <linearGradient id="g1" x1="40" y1="40" x2="216" y2="216" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366f1"/>
+      <stop offset="0.5" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#ec4899"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="64" y1="74" x2="192" y2="74" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#ef4444"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Bridge -->
+  <g>
+    <rect x="60" y="96" width="20" height="112" rx="8" fill="url(#g1)"/>
+    <rect x="176" y="96" width="20" height="112" rx="8" fill="url(#g1)"/>
+    <path d="M70 96 C92 58 164 58 186 96" stroke="url(#g1)" stroke-width="20" stroke-linecap="round"/>
+    <circle cx="92" cy="76" r="8" fill="url(#g2)"/>
+    <circle cx="128" cy="66" r="8" fill="url(#g2)"/>
+    <circle cx="164" cy="76" r="8" fill="url(#g2)"/>
+    <rect x="52" y="208" width="152" height="16" rx="8" fill="url(#g1)"/>
+  </g>
+
+  <!-- Compatibility check (corner) -->
+  <g transform="translate(160,160)">
+    <circle cx="48" cy="48" r="40" fill="url(#g1)"/>
+    <path d="M30 49 L43 61 L66 36" stroke="#ffffff" stroke-width="12"
+      stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
