@@ -13,7 +13,9 @@
 # Variables
 # ================================
 
-PYTHON := python3
+# Use venv Python if available, otherwise system Python
+VENV_PYTHON := .venv/bin/python3
+PYTHON := $(shell if [ -f $(VENV_PYTHON) ]; then echo $(VENV_PYTHON); else echo python3; fi)
 UV := uv
 PIP := pip
 PYTEST := pytest
@@ -83,8 +85,16 @@ install: ## Install OllaBridge (ultra-fast with uv)
 		echo "$(COLOR_CYAN)Falling back to pip...$(COLOR_RESET)"; \
 		$(PIP) install -e .; \
 	fi
+	@# Fix empty .pth file for editable installs (common issue with uv/pip + src layout)
+	@if [ -f .venv/lib/python*/site-packages/_ollabridge.pth ]; then \
+		PTH_FILE=$$(find .venv/lib/python*/site-packages/_ollabridge.pth 2>/dev/null | head -1); \
+		if [ -n "$$PTH_FILE" ] && [ ! -s "$$PTH_FILE" ]; then \
+			echo "$(CYAN)Fixing editable install path...$(COLOR_RESET)"; \
+			echo "$$(pwd)/src" > "$$PTH_FILE"; \
+		fi \
+	fi
 	@echo "$(COLOR_GREEN)✓ Installation complete!$(COLOR_RESET)"
-	@echo "$(COLOR_BOLD)Try: ollabridge start$(COLOR_RESET)"
+	@echo "$(COLOR_BOLD)Try: make dev$(COLOR_RESET)"
 
 .PHONY: install-dev
 install-dev: ## Install with development dependencies (testing, linting)
@@ -97,12 +107,28 @@ install-dev: ## Install with development dependencies (testing, linting)
 		echo "$(COLOR_CYAN)Falling back to pip...$(COLOR_RESET)"; \
 		$(PIP) install -e ".[dev]"; \
 	fi
+	@# Fix empty .pth file for editable installs (common issue with uv/pip + src layout)
+	@if [ -f .venv/lib/python*/site-packages/_ollabridge.pth ]; then \
+		PTH_FILE=$$(find .venv/lib/python*/site-packages/_ollabridge.pth 2>/dev/null | head -1); \
+		if [ -n "$$PTH_FILE" ] && [ ! -s "$$PTH_FILE" ]; then \
+			echo "$(CYAN)Fixing editable install path...$(COLOR_RESET)"; \
+			echo "$$(pwd)/src" > "$$PTH_FILE"; \
+		fi \
+	fi
 	@echo "$(COLOR_GREEN)✓ Development installation complete!$(COLOR_RESET)"
 
 .PHONY: install-pip
 install-pip: ## Install with pip (fallback if uv unavailable)
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Installing OllaBridge with pip...$(COLOR_RESET)"
 	$(PIP) install -e .
+	@# Fix empty .pth file for editable installs (common issue with uv/pip + src layout)
+	@if [ -f .venv/lib/python*/site-packages/_ollabridge.pth ]; then \
+		PTH_FILE=$$(find .venv/lib/python*/site-packages/_ollabridge.pth 2>/dev/null | head -1); \
+		if [ -n "$$PTH_FILE" ] && [ ! -s "$$PTH_FILE" ]; then \
+			echo "$(CYAN)Fixing editable install path...$(COLOR_RESET)"; \
+			echo "$$(pwd)/src" > "$$PTH_FILE"; \
+		fi \
+	fi
 	@echo "$(COLOR_GREEN)✓ Installation complete!$(COLOR_RESET)"
 
 .PHONY: install-uv
@@ -134,23 +160,23 @@ upgrade: ## Upgrade all dependencies to latest versions
 dev: ## Start OllaBridge in development mode (auto-reload)
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting OllaBridge in development mode...$(COLOR_RESET)"
 	@echo "$(COLOR_CYAN)Auto-reload enabled. Edit code and see changes instantly.$(COLOR_RESET)"
-	ollabridge start --reload
+	$(PYTHON) -m ollabridge.cli.main start --host 0.0.0.0 --port 11435 --reload --log-level info
 
 .PHONY: start
 start: env ## Start OllaBridge gateway
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting OllaBridge gateway...$(COLOR_RESET)"
-	ollabridge start
+	$(PYTHON) -m ollabridge.cli.main start
 
 .PHONY: start-share
 start-share: env ## Start OllaBridge with public URL (ngrok tunnel)
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting OllaBridge with public sharing...$(COLOR_RESET)"
-	ollabridge start --share
+	$(PYTHON) -m ollabridge.cli.main start --share
 
 .PHONY: mcp
 mcp: ## Start MCP server (Model Context Protocol)
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting OllaBridge MCP server...$(COLOR_RESET)"
 	@echo "$(COLOR_CYAN)MCP server running in stdio mode. Connect with MCP clients.$(COLOR_RESET)"
-	ollabridge-mcp
+	$(PYTHON) -m ollabridge.mcp.server
 
 .PHONY: env
 env: ## Create .env file from example if not exists
@@ -180,7 +206,14 @@ logs: ## View recent request logs
 .PHONY: test
 test: ## Run unit tests only (fast, no Ollama required)
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Running unit tests...$(COLOR_RESET)"
-	$(PYTEST) $(TESTS_DIR) -v --ignore=$(TESTS_DIR)/integration/
+	@code=0; \
+	$(PYTEST) $(TESTS_DIR) -v --ignore=$(TESTS_DIR)/integration/ || code=$$?; \
+	if [ $$code -eq 0 ]; then exit 0; fi; \
+	if [ $$code -eq 5 ]; then \
+		echo "$(COLOR_YELLOW)⚠ No unit tests collected (only integration tests exist).$(COLOR_RESET)"; \
+		exit 0; \
+	fi; \
+	exit $$code
 
 .PHONY: test-all
 test-all: ## Run all tests (unit + integration, requires Ollama)
