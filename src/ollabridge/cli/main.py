@@ -75,6 +75,8 @@ def start(
     share: bool = typer.Option(False, "--share", help="Expose a public URL (best-effort)"),
     workers: int = typer.Option(1, "--workers", help="Worker processes (scalability hook)"),
     model: str = typer.Option("deepseek-r1", "--model", help="Default chat model to ensure/use"),
+    reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes (dev mode)"),
+    log_level: str = typer.Option("warning", "--log-level", help="Uvicorn log level (debug, info, warning, error, critical)"),
 ):
     """🚀 Start OllaBridge (self-healing: installs Ollama + pulls model)."""
 
@@ -108,6 +110,11 @@ def start(
             console.print(f"[red]Public link failed:[/red] {e}")
             console.print("[yellow]Tip:[/yellow] For production, use a managed edge or private overlay.")
 
+    # Dev convenience: Uvicorn reload cannot be combined with multiple workers
+    if reload and workers != 1:
+        console.print("[yellow]⚠️  --reload forces --workers 1 (Uvicorn limitation).[/yellow]")
+        workers = 1
+
     _dashboard(host, port, public_url, key, model, workers, join_token)
 
     uvicorn.run(
@@ -115,7 +122,8 @@ def start(
         host=host,
         port=port,
         workers=workers,
-        log_level="warning",
+        log_level=log_level,
+        reload=reload,
     )
 
 
