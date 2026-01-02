@@ -11,7 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-[Quick Start](#-60-second-start) • [Why OllaBridge](#-why-ollabridge) • [Distributed Compute](#-add-any-gpu-in-60-seconds) • [Examples](#-use-it-anywhere) • [MCP Mode](#-ai-agents-love-ollabridge)
+[Quick Start](#-60-second-start) • [Why OllaBridge](#-why-ollabridge) • [Distributed Compute](#-add-any-gpu-in-60-seconds) • [Examples](#-use-it-anywhere) • [Demo Client](#-try-the-interactive-demo-client) • [MCP Mode](#-ai-agents-love-ollabridge)
 
 </div>
 
@@ -273,6 +273,46 @@ curl -X POST http://localhost:11435/v1/chat/completions \
 ```
 
 **Works with ANY OpenAI-compatible tool or library.**
+
+---
+
+## 🎨 Try the Interactive Demo Client
+
+Want to see OllaBridge in action? Check out our **2-click demo client** in the `example/` folder!
+
+### ⚡ Quick Start
+
+```bash
+# 1. Install and start OllaBridge
+cd example
+./install-ollabridge.sh  # Mac/Linux
+# or
+.\install-ollabridge.ps1  # Windows
+
+# 2. Run the demo client
+make run
+
+# 3. Open http://localhost:3000 in your browser
+```
+
+### ✨ Features
+
+- 🎯 **Beautiful UI** — Modern, responsive web interface
+- 🔌 **Real Integration** — Actual API calls to OllaBridge endpoints
+- 📊 **Live Metrics** — Request stats, latency, uptime tracking
+- 🔑 **Auth Demo** — See how API key authentication works
+- 📝 **Best Practices** — Production-ready code examples
+
+### 📚 Perfect for Learning
+
+The example client shows you:
+- ✅ How to connect to OllaBridge from a browser
+- ✅ How to handle CORS properly
+- ✅ How to implement authentication with API keys
+- ✅ How to load models dynamically
+- ✅ How to send chat requests and handle responses
+
+**[View Full Documentation →](example/README.md)**
 
 ---
 

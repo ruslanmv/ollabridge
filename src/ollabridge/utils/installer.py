@@ -69,5 +69,7 @@ def ensure_model(model_name: str):
             console.print(f"[yellow]⚠️  Model '{model_name}' not found. Pulling now...[/yellow]")
             subprocess.check_call(["ollama", "pull", model_name])
             console.print(f"[bold green]✅ Model '{model_name}' ready.[/bold green]")
+        else:
+            console.print(f"[bold green]✅ Model '{model_name}' ready.[/bold green]")
     except Exception:
         console.print("[yellow]⚠️  Could not verify model (is Ollama running?).[/yellow]")
