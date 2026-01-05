@@ -609,37 +609,130 @@ print(response.choices[0].message.content)
 
 ---
 
-## 🛠️ Common Tasks
+## 🛠️ CLI Commands Reference
 
-### List Available Models
+OllaBridge includes powerful CLI commands for diagnostics, testing, and management.
 
-```bash
-curl http://localhost:11435/v1/models
-```
+### Diagnostic Commands
 
-### Check Gateway Health
-
-```bash
-curl http://localhost:11435/health
-```
-
-### See Connected Nodes
+#### `ollabridge doctor`
+Diagnose your OllaBridge setup (Ollama, gateway, auth, CORS):
 
 ```bash
-curl -H "X-API-Key: your-key" http://localhost:11435/admin/runtimes
+ollabridge doctor
 ```
 
-### Create New Enrollment Token
+**Output:**
+```
+                     OllaBridge Doctor
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Check               ┃ Result                          ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Ollama /api/tags    │ ✅ OK                           │
+│ OllaBridge /health  │ ✅ OK                           │
+│ API_KEYS configured │ ✅ yes                          │
+│ CORS_ORIGINS        │ http://localhost:5173,...       │
+│ Auth usage          │ Use Authorization: Bearer <key> │
+└─────────────────────┴─────────────────────────────────┘
+```
+
+**Use case:** Troubleshooting connection issues, verifying setup before deployment.
+
+#### `ollabridge models`
+List available models (requires API key):
 
 ```bash
-ollabridge enroll-create
+ollabridge models --api-key sk-ollabridge-xY9kL2mN8pQ4rT6vW1zA
 ```
 
-### View Recent Requests
+**Output:**
+```
+deepseek-r1
+llama3.1
+mixtral
+```
+
+**Use case:** Verify which models are available across all nodes.
+
+#### `ollabridge test-chat`
+Send a test chat completion (requires API key):
 
 ```bash
-curl -H "X-API-Key: your-key" http://localhost:11435/admin/recent
+# Simple test
+ollabridge test-chat "Hello, how are you?" --api-key sk-ollabridge-...
+
+# Specify model
+ollabridge test-chat "Explain quantum computing" \
+  --model deepseek-r1 \
+  --api-key sk-ollabridge-...
 ```
+
+**Output:**
+```
+╭─────────── Assistant ───────────╮
+│ Hello! I'm doing well, thank    │
+│ you for asking. How can I help  │
+│ you today?                       │
+╰──────────────────────────────────╯
+```
+
+**Use case:** Verify end-to-end connectivity, test API keys, validate model responses.
+
+### Gateway Management
+
+#### `ollabridge start`
+Start the gateway (standard mode):
+
+```bash
+ollabridge start
+```
+
+#### `ollabridge start --lan`
+Start with LAN URLs displayed (for classroom/shared networks):
+
+```bash
+ollabridge start --lan
+```
+
+**Output includes:**
+```
+🌐 LAN Access
+LAN API base:    http://192.168.1.50:11435/v1
+LAN Health:      http://192.168.1.50:11435/health
+
+Example (with API key):
+curl -H 'Authorization: Bearer <API_KEY>' http://192.168.1.50:11435/v1/models
+```
+
+**Use case:** Sharing your gateway with other devices on your network (Quest headsets, phones, other laptops).
+
+#### `ollabridge start --share`
+Expose a public URL (via ngrok):
+
+```bash
+ollabridge start --share
+```
+
+**Use case:** Remote access, connecting nodes from anywhere.
+
+#### `ollabridge enroll-create`
+Create enrollment tokens for nodes:
+
+```bash
+ollabridge enroll-create --ttl 3600
+```
+
+### Quick Tasks
+
+| Task | Command |
+|------|---------|
+| **List models (API)** | `ollabridge models --api-key <key>` |
+| **Test connectivity** | `ollabridge test-chat "test" --api-key <key>` |
+| **Check health** | `curl http://localhost:11435/health` |
+| **Diagnose setup** | `ollabridge doctor` |
+| **See nodes** | `curl -H "X-API-Key: <key>" http://localhost:11435/admin/runtimes` |
+| **View logs** | `curl -H "X-API-Key: <key>" http://localhost:11435/admin/recent` |
+| **Create token** | `ollabridge enroll-create` |
 
 ---
 
@@ -649,6 +742,9 @@ curl -H "X-API-Key: your-key" http://localhost:11435/admin/recent
 - [x] ✅ Outbound-only node enrollment (no port forwarding)
 - [x] ✅ MCP server for AI agent control
 - [x] ✅ Multi-node load balancing
+- [x] ✅ Diagnostic CLI commands (doctor, models, test-chat)
+- [x] ✅ Enhanced CORS handling for browser clients
+- [x] ✅ LAN mode for classroom/shared network deployments
 - [ ] 🚧 Tag-based routing (send "coding" requests to GPU nodes)
 - [ ] 🚧 Model-specific routing rules
 - [ ] 🚧 Streaming support for chat completions
