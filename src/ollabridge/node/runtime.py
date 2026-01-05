@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import Any, AsyncIterator
 
 import httpx
 
@@ -17,10 +18,42 @@ class LocalRuntime:
         self._client = httpx.AsyncClient(timeout=120)
 
     async def chat(self, *, model: str, messages: list[dict[str, Any]]) -> str:
-        r = await self._client.post(_join(self.base_url, "/api/chat"), json={"model": model, "messages": messages, "stream": False})
+        r = await self._client.post(
+            _join(self.base_url, "/api/chat"),
+            json={"model": model, "messages": messages, "stream": False},
+        )
         r.raise_for_status()
         data = r.json()
         return data.get("message", {}).get("content", "") or ""
+
+    async def chat_stream(self, *, model: str, messages: list[dict[str, Any]]) -> AsyncIterator[str]:
+        """
+        Stream chat tokens/chunks from Ollama.
+
+        Ollama's /api/chat streaming responds with JSON objects separated by newlines.
+        Each object often contains:
+          - message.content: partial content
+          - done: true when complete
+        """
+        url = _join(self.base_url, "/api/chat")
+        async with self._client.stream(
+            "POST",
+            url,
+            json={"model": model, "messages": messages, "stream": True},
+        ) as r:
+            r.raise_for_status()
+            async for line in r.aiter_lines():
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                if obj.get("done") is True:
+                    break
+                chunk = (obj.get("message") or {}).get("content") or ""
+                if chunk:
+                    yield str(chunk)
 
     async def embeddings(self, *, model: str, text: str) -> list[float]:
         r = await self._client.post(_join(self.base_url, "/api/embeddings"), json={"model": model, "prompt": text})
