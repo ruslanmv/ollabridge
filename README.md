@@ -736,6 +736,52 @@ ollabridge enroll-create --ttl 3600
 
 ---
 
+## ☁️ Optional: OllaBridge Cloud
+
+OllaBridge Local can **optionally** connect to **OllaBridge Cloud** for multi-user, multi-device deployments.
+
+### Cloud Features
+
+- 🔐 **Secure device pairing** with user approval
+- 👥 **Multi-user support** with device ownership
+- 🌍 **No port forwarding needed** (devices dial out to Cloud)
+- 📱 **Multi-device per user** (PC + Quest + phone, etc.)
+- 🔄 **Streaming support** for real-time responses
+
+### Pairing Your Device with Cloud
+
+```bash
+# 1. Pair this device with OllaBridge Cloud
+ollabridge-node cloud-pair --cloud https://your-cloud-url.com
+
+# Shows pairing code - approve via web UI
+
+# 2. Connect to Cloud (uses saved credentials)
+ollabridge-node cloud-connect
+```
+
+**How it works:**
+1. `cloud-pair` gets a pairing code from Cloud
+2. You approve the code via Cloud's web UI
+3. Device credentials saved to `~/.ollabridge/cloud_device.json`
+4. `cloud-connect` connects your device to Cloud relay
+5. Cloud routes requests to your device securely
+
+### Local Mode (Default) vs Cloud Mode
+
+| Feature | Local Mode | Cloud Mode |
+|---------|------------|------------|
+| **Setup** | `ollabridge-node join --control <gateway> --token <token>` | `ollabridge-node cloud-pair --cloud <url>` |
+| **Authentication** | Enrollment token | Device pairing + approval |
+| **Users** | Single self-hosted | Multi-user cloud accounts |
+| **Devices** | Manual node management | Per-user device ownership |
+| **Streaming** | Not yet | ✅ Supported |
+| **Port forwarding** | Not needed (outbound) | Not needed (outbound) |
+
+**Both modes work together!** Run local gateway + nodes for self-hosting, and optionally pair devices with Cloud for multi-user scenarios.
+
+---
+
 ## 🗺️ Roadmap
 
 - [x] ✅ Control Plane + Node architecture
@@ -745,9 +791,10 @@ ollabridge enroll-create --ttl 3600
 - [x] ✅ Diagnostic CLI commands (doctor, models, test-chat)
 - [x] ✅ Enhanced CORS handling for browser clients
 - [x] ✅ LAN mode for classroom/shared network deployments
+- [x] ✅ Cloud compatibility (optional device pairing)
+- [x] ✅ Streaming support for chat completions (Cloud mode)
 - [ ] 🚧 Tag-based routing (send "coding" requests to GPU nodes)
 - [ ] 🚧 Model-specific routing rules
-- [ ] 🚧 Streaming support for chat completions
 - [ ] 🚧 Web UI for node management
 - [ ] 🚧 Prometheus metrics
 - [ ] 🚧 Support for more runtimes (vLLM, llama.cpp, LM Studio)
