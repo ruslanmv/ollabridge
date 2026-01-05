@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -20,6 +21,7 @@ from ollabridge.api.relay import RelayHub, build_relay_router
 from ollabridge.core.registry import RuntimeNodeState
 
 
+log = logging.getLogger("ollabridge")
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT])
 
 
@@ -42,19 +44,29 @@ class EmbeddingsReq(BaseModel):
     input: str
 
 
+def _parse_origins(raw: str) -> list[str]:
+    """Parse CORS origins from comma-separated string with robust handling."""
+    if not raw:
+        return []
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.APP_NAME)
     app.state.limiter = limiter
     app.state.obridge = build_state()
     app.state.relay_hub = RelayHub(app.state.obridge.registry)
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # CORS: only enable if origins are configured
+    origins = _parse_origins(settings.CORS_ORIGINS)
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],  # important so Authorization / X-API-Key works
+        )
 
     @app.on_event("startup")
     def _startup():
@@ -236,21 +248,23 @@ def create_app() -> FastAPI:
         return {"token": tok.token, "expires_at": tok.expires_at.isoformat()}
 
     @app.get("/v1/models")
-    async def list_models(_key: str = Depends(require_api_key)):
+    async def list_models(response: Response, _key: str = Depends(require_api_key)):
         # Aggregate best-effort from first healthy node.
         try:
             decision = await app.state.obridge.router.choose_node()
             node = decision.node
             if node.connector == "relay_link":
                 frame = await app.state.relay_hub.request(node.node_id, "models", {})
-                return frame.get("data") or {"data": []}
+                return frame.get("data") or {"object": "list", "data": []}
             if node.connector == "direct_endpoint":
                 return await app.state.obridge.direct.models(base=node.endpoint or "")
             from ollabridge.providers.ollama_client import list_models as ollama_list
 
             models = await ollama_list()
             return {"object": "list", "data": [{"id": m, "object": "model"} for m in models]}
-        except Exception:
+        except Exception as e:
+            log.exception("Failed to list models")
+            response.headers["X-OllaBridge-Warning"] = f"models_unavailable: {type(e).__name__}"
             return {"object": "list", "data": []}
 
     return app
