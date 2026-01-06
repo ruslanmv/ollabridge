@@ -706,6 +706,7 @@ curl -H 'Authorization: Bearer <API_KEY>' http://192.168.1.50:11435/v1/models
 
 **Use case:** Sharing your gateway with other devices on your network (Quest headsets, phones, other laptops).
 
+
 #### `ollabridge start --share`
 Expose a public URL (via ngrok):
 
@@ -733,6 +734,18 @@ ollabridge enroll-create --ttl 3600
 | **See nodes** | `curl -H "X-API-Key: <key>" http://localhost:11435/admin/runtimes` |
 | **View logs** | `curl -H "X-API-Key: <key>" http://localhost:11435/admin/recent` |
 | **Create token** | `ollabridge enroll-create` |
+
+
+### For Developers
+
+OllaBridge requires an API key to authenticate requests. If no `.env` file is provided, or the `.env` file does not contain `API_KEYS`, OllaBridge will automatically generate a **temporary, per-run secret API key** (`sk-ollabridge-...`), print it to the screen, and use it only for the current run so you can start developing immediately. **This key is not written to disk by default**, which prevents accidental persistence of credentials and improves security. If you explicitly want OllaBridge to persist the generated API key, you must opt in by starting the gateway with:
+
+```bash
+ollabridge start --write-env
+```
+
+In this case, OllaBridge will write the generated key to `.env`. For production deployments, it is strongly recommended to set `API_KEYS` using **environment variables or a secure secret manager**, rather than relying on a `.env` file. This design provides safe defaults while avoiding unintentionally storing sensitive information.
+
 
 ---
 

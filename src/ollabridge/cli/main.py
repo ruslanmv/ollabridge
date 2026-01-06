@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import os
-import secrets
 import socket
 from pathlib import Path
 
 import httpx
+import secrets
 import typer
 import uvicorn
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from ollabridge.core.enrollment import create_join_token
 from ollabridge.core.settings import settings
 from ollabridge.utils.installer import (
     ensure_model,
@@ -20,7 +21,6 @@ from ollabridge.utils.installer import (
     is_ollama_installed,
 )
 from ollabridge.utils.tunnel import start_tunnel
-from ollabridge.core.enrollment import create_join_token
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
@@ -38,22 +38,53 @@ def _get_lan_ip() -> str | None:
         return None
 
 
-def _write_env_key_if_needed(key: str):
-    """Persist API key in .env so restarts keep the same key."""
+def _read_api_keys_from_dotenv() -> str | None:
+    """Best-effort read of API_KEYS from a local .env file.
+
+    We intentionally do this here (instead of only relying on Settings(env_file=".env"))
+    because CLI commands may be executed from various working directories, and
+    Settings is instantiated at import time.
+    """
+    env_path = Path(".env")
+    if not env_path.exists():
+        return None
+    for raw in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("API_KEYS="):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return None
+
+
+def _write_env_key_if_missing(key: str) -> None:
+    """Write API_KEYS to .env only if missing/empty.
+
+    This prevents overwriting a user-provided API_KEYS in .env.
+    NOTE: This is only called when the user explicitly passes --write-env.
+    """
     env_path = Path(".env")
     existing = env_path.read_text(encoding="utf-8", errors="ignore") if env_path.exists() else ""
-    lines = []
+
+    # If API_KEYS is already present and non-empty, do nothing.
+    existing_key = _read_api_keys_from_dotenv()
+    if existing_key and existing_key.strip():
+        return
+
+    lines: list[str] = []
     replaced = False
     for line in existing.splitlines():
-        if line.startswith("API_KEYS="):
+        if line.strip().startswith("API_KEYS="):
             lines.append(f"API_KEYS={key}")
             replaced = True
         else:
             lines.append(line)
+
     if not replaced:
         if existing.strip():
             lines.append("")
         lines.append(f"API_KEYS={key}")
+
     env_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
@@ -92,7 +123,16 @@ def start(
     workers: int = typer.Option(1, "--workers", help="Worker processes (scalability hook)"),
     model: str = typer.Option("deepseek-r1", "--model", help="Default chat model to ensure/use"),
     reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes (dev mode)"),
-    log_level: str = typer.Option("warning", "--log-level", help="Uvicorn log level (debug, info, warning, error, critical)"),
+    log_level: str = typer.Option(
+        "warning",
+        "--log-level",
+        help="Uvicorn log level (debug, info, warning, error, critical)",
+    ),
+    write_env: bool = typer.Option(
+        False,
+        "--write-env",
+        help="If API_KEYS is missing, write a generated key to .env (off by default for safety).",
+    ),
 ):
     """🚀 Start OllaBridge (self-healing: installs Ollama + pulls model)."""
 
@@ -106,12 +146,29 @@ def start(
     # 3) Ensure model exists
     ensure_model(model)
 
-    # 4) Auth: auto-generate key if default is unsafe
-    key = (settings.API_KEYS or "").split(",")[0].strip() if settings.API_KEYS else ""
+    # 4) Auth precedence:
+    #    - Prefer env var API_KEYS
+    #    - Then .env (best-effort)
+    #    - Then settings.API_KEYS (last resort; may have been instantiated before .env is read)
+    configured_keys = (os.getenv("API_KEYS") or "").strip()
+    if not configured_keys:
+        configured_keys = (_read_api_keys_from_dotenv() or "").strip()
+    if not configured_keys:
+        configured_keys = (settings.API_KEYS or "").strip()
+
+    key = (configured_keys.split(",")[0].strip() if configured_keys else "")
+
+    # Treat common defaults as "not configured"
     if (not key) or ("change-me" in key) or ("dev-key" in key):
-        key = f"sk-ollabridge-{secrets.token_urlsafe(12)}"
-        _write_env_key_if_needed(key)
-        os.environ["API_KEYS"] = key  # ensure current process uses it
+        # Generate a per-run secret key (not persisted unless --write-env is passed)
+        key = f"sk-ollabridge-{secrets.token_urlsafe(18)}"
+        configured_keys = key
+        if write_env:
+            _write_env_key_if_missing(key)
+
+    # Ensure the running process + singleton settings see the effective key
+    os.environ["API_KEYS"] = configured_keys
+    settings.API_KEYS = configured_keys
 
     # 5) Enrollment token: compute nodes join the control plane with this short-lived credential.
     join_token = create_join_token().token
@@ -138,7 +195,7 @@ def start(
         lan_ip = _get_lan_ip()
         if lan_ip:
             console.print()
-            console.print(f"[bold cyan]🌐 LAN Access[/bold cyan]")
+            console.print("[bold cyan]🌐 LAN Access[/bold cyan]")
             console.print(f"[bold]LAN API base:[/bold]    http://{lan_ip}:{port}/v1")
             console.print(f"[bold]LAN Health:[/bold]      http://{lan_ip}:{port}/health")
             console.print()

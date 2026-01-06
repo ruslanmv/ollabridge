@@ -1,6 +1,6 @@
 [project]
 name = "ollabridge"
-version = "0.1.1"
+version = "0.1.0"
 description = "Turn your PC into a private, OpenAI-compatible LLM provider in ~60 seconds"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -64,12 +64,6 @@ dependencies = [
   "uvicorn[standard]>=0.27",
   "websockets>=12.0",
 ]
-notebook=[
- "ipykernel>=7.1.0",
-  "openai>=2.14.0",
-  "requests>=2.32.5",
-  "python-dotenv>=1.2.1"
-]
 
 [project.urls]
 Homepage = "https://github.com/ruslanmv/ollabridge"
@@ -99,7 +93,10 @@ build-backend = "hatchling.build"
 
 # --- Hatchling src/ layout ---
 [tool.hatch.build.targets.wheel]
-packages = ["src/ollabridge"]
+packages = ["ollabridge"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
 
 [tool.hatch.build.targets.sdist]
 include = [
