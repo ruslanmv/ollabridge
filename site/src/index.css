@@ -4,3 +4,49 @@
 html {
   scroll-behavior: smooth;
 }
+
+/* ------------------------------------------------------------------
+   Ensure the app renders at full width/height.
+   Some Vite templates ship an App.css that constrains #root to 1280px;
+   we explicitly override that here to keep the original landing size.
+------------------------------------------------------------------- */
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  max-width: none;
+  text-align: initial;
+}
+
+/* ------------------------------------------------------------------
+   Small animation helpers used by the marketing landing page.
+   Implemented in plain CSS to avoid extra Tailwind plugins.
+------------------------------------------------------------------- */
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 650ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Animation delay helpers (Tailwind's delay-* utilities are for transitions) */
+.anim-delay-75 { animation-delay: 75ms; }
+.anim-delay-150 { animation-delay: 150ms; }
+.anim-delay-300 { animation-delay: 300ms; }
+.anim-delay-500 { animation-delay: 500ms; }
