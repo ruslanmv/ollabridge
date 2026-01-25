@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ollabridge.core.enrollment import create_join_token
+from ollabridge.core.pairing import pairing
 from ollabridge.core.settings import settings
 from ollabridge.utils.installer import (
     ensure_model,
@@ -88,28 +89,59 @@ def _write_env_key_if_missing(key: str) -> None:
     env_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
-def _dashboard(host: str, port: int, public_url: str | None, key: str, model: str, workers: int, join_token: str):
+def _dashboard(
+    host: str,
+    port: int,
+    public_url: str | None,
+    auth_mode: str,
+    key: str | None,
+    pairing_code: str | None,
+    model: str,
+    workers: int,
+    join_token: str,
+):
     local_url = f"http://localhost:{port}"
-    msg = f"""
-[bold green]✅ OllaBridge is Online[/bold green]
 
-[bold]Model:[/bold]        {model}
-[bold]Workers:[/bold]      {workers}
-[bold]Local API:[/bold]    {local_url}/v1
-[bold]Health:[/bold]       {local_url}/health
-[bold]Key:[/bold]          {key}
-[dim]Send as X-API-Key or Authorization: Bearer ...[/dim]
+    lines = [
+        "[bold green]✅ OllaBridge is Online[/bold green]",
+        "",
+        f"[bold]Auth mode:[/bold]   {auth_mode}",
+        f"[bold]Model:[/bold]       {model}",
+        f"[bold]Workers:[/bold]     {workers}",
+        f"[bold]Local API:[/bold]   {local_url}/v1",
+        f"[bold]Health:[/bold]      {local_url}/health",
+    ]
 
-[bold]Node join token:[/bold]  {join_token}
-[dim]Example node command:[/dim]
-[dim]  ollabridge-node join --control {local_url} --token {join_token}[/dim]
-"""
+    if auth_mode == "pairing":
+        if pairing_code:
+            lines += [
+                "",
+                f"[bold]Pairing code:[/bold] {pairing_code} [dim](expires in {settings.PAIRING_CODE_TTL_SECONDS}s)[/dim]",
+                "[dim]Pair via POST /pair (or GET /pair/info).[/dim]",
+                "[dim]Clients send Authorization: Bearer <token> after pairing.[/dim]",
+            ]
+        else:
+            lines += ["", "[yellow]Warning: Pairing code not available[/yellow]"]
+    else:
+        lines += [
+            "",
+            f"[bold]Key:[/bold]         {key}",
+            "[dim]Send as X-API-Key or Authorization: Bearer ...[/dim]",
+        ]
+        if auth_mode == "local-trust":
+            lines += ["[dim]Localhost requests may omit the key.[/dim]"]
+
+    lines += [
+        "",
+        f"[bold]Node join token:[/bold]  {join_token}",
+        "[dim]Example node command:[/dim]",
+        f"[dim]  ollabridge-node join --control {local_url} --token {join_token}[/dim]",
+    ]
+
+    msg = "\n".join(lines) + "\n"
 
     if public_url:
-        msg += f"""
-[bold yellow]🌍 Public URL:[/bold yellow]   [link={public_url}]{public_url}[/link]
-[dim]Use {public_url}/v1 as your OpenAI base_url[/dim]
-"""
+        msg += f"\n[bold yellow]🌍 Public URL:[/bold yellow]   [link={public_url}]{public_url}[/link]\n[dim]Use {public_url}/v1 as your OpenAI base_url[/dim]\n"
 
     console.print(Panel(msg, title="🚀 Gateway Ready", border_style="blue"))
 
@@ -119,6 +151,11 @@ def start(
     host: str = typer.Option("0.0.0.0", help="Bind host"),
     port: int = typer.Option(11435, help="Bind port"),
     share: bool = typer.Option(False, "--share", help="Expose a public URL (best-effort)"),
+    auth_mode: str = typer.Option(
+        "required",
+        "--auth-mode",
+        help="Auth mode: required | local-trust | pairing",
+    ),
     lan: bool = typer.Option(False, "--lan", help="Print LAN URL for other devices"),
     workers: int = typer.Option(1, "--workers", help="Worker processes (scalability hook)"),
     model: str = typer.Option("deepseek-r1", "--model", help="Default chat model to ensure/use"),
@@ -146,34 +183,53 @@ def start(
     # 3) Ensure model exists
     ensure_model(model)
 
-    # 4) Auth precedence:
-    #    - Prefer env var API_KEYS
-    #    - Then .env (best-effort)
-    #    - Then settings.API_KEYS (last resort; may have been instantiated before .env is read)
-    configured_keys = (os.getenv("API_KEYS") or "").strip()
-    if not configured_keys:
-        configured_keys = (_read_api_keys_from_dotenv() or "").strip()
-    if not configured_keys:
-        configured_keys = (settings.API_KEYS or "").strip()
+    # 4) Auth mode selection
+    auth_mode = (auth_mode or "required").strip().lower()
+    if auth_mode not in {"required", "local-trust", "pairing"}:
+        raise typer.BadParameter("auth_mode must be one of: required, local-trust, pairing")
 
-    key = (configured_keys.split(",")[0].strip() if configured_keys else "")
+    os.environ["AUTH_MODE"] = auth_mode
+    settings.AUTH_MODE = auth_mode
 
-    # Treat common defaults as "not configured"
-    if (not key) or ("change-me" in key) or ("dev-key" in key):
-        # Generate a per-run secret key (not persisted unless --write-env is passed)
-        key = f"sk-ollabridge-{secrets.token_urlsafe(18)}"
-        configured_keys = key
-        if write_env:
-            _write_env_key_if_missing(key)
+    # 5) Auth configuration
+    key: str | None = None
+    pairing_code: str | None = None
 
-    # Ensure the running process + singleton settings see the effective key
-    os.environ["API_KEYS"] = configured_keys
-    settings.API_KEYS = configured_keys
+    if auth_mode == "pairing":
+        # Pairing tokens are minted after exchanging a short code via POST /pair.
+        info = pairing().reset_pair_code()
+        pairing_code = info.code
+        # Pairing mode ignores API_KEYS for client auth.
+        key = None
+    else:
+        # Auth precedence:
+        # - Prefer env var API_KEYS
+        # - Then .env (best-effort)
+        # - Then settings.API_KEYS (last resort; may have been instantiated before .env is read)
+        configured_keys = (os.getenv("API_KEYS") or "").strip()
+        if not configured_keys:
+            configured_keys = (_read_api_keys_from_dotenv() or "").strip()
+        if not configured_keys:
+            configured_keys = (settings.API_KEYS or "").strip()
 
-    # 5) Enrollment token: compute nodes join the control plane with this short-lived credential.
+        key = (configured_keys.split(",")[0].strip() if configured_keys else "")
+
+        # Treat common defaults as "not configured"
+        if (not key) or ("change-me" in key) or ("dev-key" in key):
+            # Generate a per-run secret key (not persisted unless --write-env is passed)
+            key = f"sk-ollabridge-{secrets.token_urlsafe(18)}"
+            configured_keys = key
+            if write_env:
+                _write_env_key_if_missing(key)
+
+        # Ensure the running process + singleton settings see the effective key
+        os.environ["API_KEYS"] = configured_keys
+        settings.API_KEYS = configured_keys
+
+    # 6) Enrollment token: compute nodes join the control plane with this short-lived credential.
     join_token = create_join_token().token
 
-    # 6) Optional public access URL
+    # 7) Optional public access URL
     public_url = None
     if share:
         console.print("[green]🌍 Opening tunnel to public internet...[/green]")
@@ -188,7 +244,7 @@ def start(
         console.print("[yellow]⚠️  --reload forces --workers 1 (Uvicorn limitation).[/yellow]")
         workers = 1
 
-    _dashboard(host, port, public_url, key, model, workers, join_token)
+    _dashboard(host, port, public_url, auth_mode, key, pairing_code, model, workers, join_token)
 
     # LAN mode: print URLs for other devices on the network
     if lan:
@@ -199,8 +255,8 @@ def start(
             console.print(f"[bold]LAN API base:[/bold]    http://{lan_ip}:{port}/v1")
             console.print(f"[bold]LAN Health:[/bold]      http://{lan_ip}:{port}/health")
             console.print()
-            console.print("[bold]Example (with API key):[/bold]")
-            console.print(f"curl -H 'Authorization: Bearer <API_KEY>' http://{lan_ip}:{port}/v1/models")
+            console.print("[bold]Example (with token):[/bold]")
+            console.print(f"curl -H 'Authorization: Bearer <TOKEN>' http://{lan_ip}:{port}/v1/models")
             console.print()
         else:
             console.print("[yellow]⚠️  Could not detect LAN IP address[/yellow]")

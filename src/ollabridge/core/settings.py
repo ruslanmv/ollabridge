@@ -19,6 +19,17 @@ class Settings(BaseSettings):
     # Auth (comma-separated API keys)
     API_KEYS: str = "dev-key-change-me"
 
+    # Auth modes
+    # - required: always require an API key (API_KEYS)
+    # - local-trust: allow localhost without a key; require key for non-local clients
+    # - pairing: require a paired bearer token; pair once via POST /pair
+    AUTH_MODE: str = "required"  # required | local-trust | pairing
+
+    # Pairing (AUTH_MODE=pairing)
+    PAIRING_LOCAL_ONLY: bool = True
+    PAIRING_CODE_TTL_SECONDS: int = 120
+    PAIRING_TOKENS_FILE: Path = Path.home() / ".ollabridge" / "pair_tokens.json"
+
     # Rate limiting (slowapi syntax)
     RATE_LIMIT: str = "60/minute"
 

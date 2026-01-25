@@ -18,6 +18,7 @@ from ollabridge.db.database import init_db, session
 from ollabridge.db.models import RequestLog
 from ollabridge.api.state import build_state, AppState
 from ollabridge.api.relay import RelayHub, build_relay_router
+from ollabridge.api.pair import router as pair_router
 from ollabridge.core.registry import RuntimeNodeState
 
 
@@ -71,6 +72,10 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def _startup():
         init_db()
+        # Pairing mode: generate an initial short-lived pairing code
+        if settings.AUTH_MODE == "pairing":
+            from ollabridge.core.pairing import pairing
+            pairing().reset_pair_code()
         # Optional: register a local runtime as a direct endpoint node.
         if settings.LOCAL_RUNTIME_ENABLED:
             # In v1 the gateway and runtime are colocated; node agent is optional.
@@ -94,6 +99,9 @@ def create_app() -> FastAPI:
     # Relay (node enrollment link)
     if settings.RELAY_ENABLED:
         app.include_router(build_relay_router(registry=app.state.obridge.registry, hub=app.state.relay_hub))
+
+    # Pairing endpoints (no auth; guarded by AUTH_MODE and local-only)
+    app.include_router(pair_router)
 
     # ----------------------------
     # Health
