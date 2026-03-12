@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ollabridge.core.enrollment import create_join_token
+from ollabridge.core.security import generate_pairing_code
 from ollabridge.core.settings import settings
 from ollabridge.utils.installer import (
     ensure_model,
@@ -88,18 +89,55 @@ def _write_env_key_if_missing(key: str) -> None:
     env_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
-def _dashboard(host: str, port: int, public_url: str | None, key: str, model: str, workers: int, join_token: str):
+def _dashboard(
+    host: str,
+    port: int,
+    public_url: str | None,
+    key: str,
+    model: str,
+    workers: int,
+    join_token: str,
+    auth_mode: str = "required",
+    pairing_code: str | None = None,
+):
     local_url = f"http://localhost:{port}"
-    msg = f"""
+
+    if auth_mode == "pairing":
+        code_display = pairing_code or key
+        msg = f"""
+[bold green]✅ OllaBridge is Online  —  Pairing Mode[/bold green]
+
+[bold]Pairing Code:[/bold]
+
+    [bold yellow on #1a1a2e]  {code_display}  [/bold yellow on #1a1a2e]
+
+[dim]Use this code as the API key to connect.[/dim]
+[dim]Send as: X-API-Key: {code_display}  or  Authorization: Bearer {code_display}[/dim]
+
+[bold]Model:[/bold]        {model}
+[bold]Workers:[/bold]      {workers}
+[bold]Auth mode:[/bold]    {auth_mode}
+[bold]Local API:[/bold]    {local_url}/v1
+[bold]Health:[/bold]       {local_url}/health
+"""
+        if key and "change-me" not in key and "dev-key" not in key and key != code_display:
+            msg += f"""[bold]Static Key:[/bold]    {key}
+[dim]Static keys always work alongside pairing tokens.[/dim]
+"""
+    else:
+        msg = f"""
 [bold green]✅ OllaBridge is Online[/bold green]
 
 [bold]Model:[/bold]        {model}
 [bold]Workers:[/bold]      {workers}
+[bold]Auth mode:[/bold]    {auth_mode}
 [bold]Local API:[/bold]    {local_url}/v1
 [bold]Health:[/bold]       {local_url}/health
 [bold]Key:[/bold]          {key}
 [dim]Send as X-API-Key or Authorization: Bearer ...[/dim]
+"""
 
+    msg += f"""
 [bold]Node join token:[/bold]  {join_token}
 [dim]Example node command:[/dim]
 [dim]  ollabridge-node join --control {local_url} --token {join_token}[/dim]
@@ -111,7 +149,8 @@ def _dashboard(host: str, port: int, public_url: str | None, key: str, model: st
 [dim]Use {public_url}/v1 as your OpenAI base_url[/dim]
 """
 
-    console.print(Panel(msg, title="🚀 Gateway Ready", border_style="blue"))
+    title = "🔗 Pairing Ready" if auth_mode == "pairing" else "🚀 Gateway Ready"
+    console.print(Panel(msg, title=title, border_style="yellow" if auth_mode == "pairing" else "blue"))
 
 
 @app.command()
@@ -121,7 +160,7 @@ def start(
     share: bool = typer.Option(False, "--share", help="Expose a public URL (best-effort)"),
     lan: bool = typer.Option(False, "--lan", help="Print LAN URL for other devices"),
     workers: int = typer.Option(1, "--workers", help="Worker processes (scalability hook)"),
-    model: str = typer.Option("deepseek-r1", "--model", help="Default chat model to ensure/use"),
+    model: str = typer.Option("", "--model", help="Default chat model to ensure/use (empty = use .env or skip)"),
     reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes (dev mode)"),
     log_level: str = typer.Option(
         "warning",
@@ -133,42 +172,94 @@ def start(
         "--write-env",
         help="If API_KEYS is missing, write a generated key to .env (off by default for safety).",
     ),
+    auth_mode: str = typer.Option(
+        "",
+        "--auth-mode",
+        help="Auth mode: required (static keys), local-trust (loopback bypass), pairing (device code exchange). Empty = use .env.",
+    ),
+    no_setup: bool = typer.Option(
+        False,
+        "--no-setup",
+        help="Skip Ollama install/start/model-pull. Just start the gateway server.",
+    ),
 ):
-    """🚀 Start OllaBridge (self-healing: installs Ollama + pulls model)."""
+    """🚀 Start OllaBridge gateway.
 
-    # 1) Self-healing: install Ollama
-    if not is_ollama_installed():
-        install_ollama()
+    By default, auto-installs Ollama and pulls the default model.
+    Use --no-setup to skip and configure backends from the UI instead.
+    """
 
-    # 2) Start Ollama server (best effort)
-    ensure_ollama_server_running()
+    # Resolve model: CLI flag → env → settings → default
+    if not model:
+        model = (os.getenv("DEFAULT_MODEL") or "").strip() or settings.DEFAULT_MODEL or "deepseek-r1"
 
-    # 3) Ensure model exists
-    ensure_model(model)
+    # Resolve auth_mode: CLI flag → env → settings
+    if not auth_mode:
+        auth_mode = (os.getenv("AUTH_MODE") or "").strip() or settings.AUTH_MODE or "required"
 
-    # 4) Auth precedence:
-    #    - Prefer env var API_KEYS
-    #    - Then .env (best-effort)
-    #    - Then settings.API_KEYS (last resort; may have been instantiated before .env is read)
-    configured_keys = (os.getenv("API_KEYS") or "").strip()
-    if not configured_keys:
-        configured_keys = (_read_api_keys_from_dotenv() or "").strip()
-    if not configured_keys:
-        configured_keys = (settings.API_KEYS or "").strip()
+    if not no_setup:
+        # 1) Self-healing: install Ollama
+        if not is_ollama_installed():
+            install_ollama()
 
-    key = (configured_keys.split(",")[0].strip() if configured_keys else "")
+        # 2) Start Ollama server (best effort)
+        ensure_ollama_server_running()
 
-    # Treat common defaults as "not configured"
-    if (not key) or ("change-me" in key) or ("dev-key" in key):
-        # Generate a per-run secret key (not persisted unless --write-env is passed)
-        key = f"sk-ollabridge-{secrets.token_urlsafe(18)}"
+        # 3) Ensure model exists
+        ensure_model(model)
+    else:
+        console.print("[dim]Skipping Ollama setup (--no-setup). Configure backends from the UI.[/dim]")
+        # When --no-setup, don't auto-register local Ollama unless the user
+        # has already saved settings from the UI (runtime_settings.json exists).
+        from ollabridge.core.runtime_settings import has_saved_settings
+        if not has_saved_settings():
+            os.environ["LOCAL_RUNTIME_ENABLED"] = "false"
+            settings.LOCAL_RUNTIME_ENABLED = False
+
+    # 4) Auth mode
+    is_pairing = auth_mode.lower().strip() == "pairing"
+
+    if is_pairing:
+        # Pairing mode: generate a short human-readable code as the API key
+        key = generate_pairing_code()
         configured_keys = key
-        if write_env:
-            _write_env_key_if_missing(key)
+    else:
+        # Standard key mode: env var → .env → settings → auto-generate
+        configured_keys = (os.getenv("API_KEYS") or "").strip()
+        if not configured_keys:
+            configured_keys = (_read_api_keys_from_dotenv() or "").strip()
+        if not configured_keys:
+            configured_keys = (settings.API_KEYS or "").strip()
+
+        key = (configured_keys.split(",")[0].strip() if configured_keys else "")
+
+        # Treat common defaults as "not configured"
+        if (not key) or ("change-me" in key) or ("dev-key" in key):
+            key = f"sk-ollabridge-{secrets.token_urlsafe(18)}"
+            configured_keys = key
+            if write_env:
+                _write_env_key_if_missing(key)
 
     # Ensure the running process + singleton settings see the effective key
     os.environ["API_KEYS"] = configured_keys
     settings.API_KEYS = configured_keys
+
+    # 4b) Set auth mode in settings
+    auth_mode = auth_mode.lower().strip()
+    os.environ["AUTH_MODE"] = auth_mode
+    settings.AUTH_MODE = auth_mode
+
+    # 4c) Generate pairing code if auth_mode=pairing (using PairingManager if available)
+    pairing_code = None
+    if is_pairing:
+        try:
+            from ollabridge.core.pairing import PairingManager
+            mgr = PairingManager()
+            pc = mgr.generate_code()
+            pairing_code = pc.code
+        except (ImportError, Exception):
+            # Fallback: use the generated key as the pairing code
+            pairing_code = key
 
     # 5) Enrollment token: compute nodes join the control plane with this short-lived credential.
     join_token = create_join_token().token
@@ -188,7 +279,7 @@ def start(
         console.print("[yellow]⚠️  --reload forces --workers 1 (Uvicorn limitation).[/yellow]")
         workers = 1
 
-    _dashboard(host, port, public_url, key, model, workers, join_token)
+    _dashboard(host, port, public_url, key, model, workers, join_token, auth_mode=auth_mode, pairing_code=pairing_code)
 
     # LAN mode: print URLs for other devices on the network
     if lan:
@@ -262,11 +353,15 @@ def doctor(
         table.add_row("OllaBridge /health", f"❌ {type(e).__name__}")
 
     # Auth + CORS config visibility
+    table.add_row("Auth mode", settings.AUTH_MODE or "required")
     table.add_row("API_KEYS configured", "✅ yes" if settings.API_KEYS else "❌ missing")
     table.add_row("CORS_ORIGINS", settings.CORS_ORIGINS or "(disabled)")
 
     # Show how to call with key
-    table.add_row("Auth usage", "Use Authorization: Bearer <key> or X-API-Key: <key>")
+    if (settings.AUTH_MODE or "").lower().strip() == "pairing":
+        table.add_row("Auth usage", "Use pairing code via /pair or Authorization: Bearer <token>")
+    else:
+        table.add_row("Auth usage", "Use Authorization: Bearer <key> or X-API-Key: <key>")
 
     console.print(table)
 
@@ -324,6 +419,25 @@ def test_chat(
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
+
+
+@app.command("pair-refresh")
+def pair_refresh():
+    """🔗 Generate a new pairing code (for AUTH_MODE=pairing)."""
+    if (settings.AUTH_MODE or "").lower().strip() != "pairing":
+        console.print("[yellow]AUTH_MODE is not 'pairing'. Set AUTH_MODE=pairing first.[/yellow]")
+        raise typer.Exit(1)
+
+    from ollabridge.core.pairing import PairingManager
+    mgr = PairingManager()
+    pc = mgr.generate_code()
+    console.print(
+        Panel(
+            f"[bold]Pairing Code:[/bold] {pc.code}\n[bold]Expires in:[/bold] {pc.ttl}s",
+            title="🔗 New Pairing Code",
+            border_style="yellow",
+        )
+    )
 
 
 if __name__ == "__main__":

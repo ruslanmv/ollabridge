@@ -28,6 +28,14 @@ class Router:
 
     async def choose_node(self, *, model: str | None = None, require_model: bool = False) -> RouteDecision:
         nodes = [n for n in await self.registry.list() if n.healthy]
+
+        # Smart routing: persona:* and personality:* models go to HomePilot nodes
+        if model and (model.startswith("persona:") or model.startswith("personality:")):
+            hp_nodes = [n for n in nodes if n.connector == "homepilot"]
+            if hp_nodes:
+                # Prefer HomePilot nodes for persona models
+                nodes = hp_nodes
+
         if require_model and model:
             nodes = [n for n in nodes if model in (n.models or [])]
         if not nodes:
