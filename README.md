@@ -795,6 +795,159 @@ ollabridge-node cloud-connect
 
 ---
 
+## 🏠 HomePilot Integration
+
+OllaBridge includes a built-in **HomePilot connector** that exposes [HomePilot](https://github.com/ruslanmv/HomePilot) personas as standard OpenAI models. Any app that speaks OpenAI — including [3D Avatar Chatbot](https://github.com/ruslanmv/3D-Avatar-Chatbot) — can chat with persistent AI personas that have personality, long-term memory, and MCP tool access.
+
+### Enable HomePilot
+
+```env
+# .env
+HOMEPILOT_ENABLED=true
+HOMEPILOT_BASE_URL=http://localhost:8000
+HOMEPILOT_API_KEY=your-api-key
+```
+
+### How It Works
+
+```mermaid
+graph LR
+    A[Your App] -->|OpenAI SDK| B[OllaBridge]
+    B -->|"model=deepseek-r1"| C[Local Ollama]
+    B -->|"model=persona:proj-123"| D[HomePilot]
+    B -->|"model=personality:therapist"| D
+
+    style B fill:#6366f1,stroke:#4f46e5,stroke-width:3px,color:#fff
+    style D fill:#10b981,stroke:#059669,stroke-width:2px,color:#fff
+```
+
+**Smart routing**: Models starting with `persona:` or `personality:` are automatically sent to HomePilot. Everything else goes to Ollama or other connected nodes.
+
+### Chat with a Persona
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:11435/v1",
+    api_key="sk-ollabridge-YOUR-KEY"
+)
+
+# Chat with a HomePilot persona — same OpenAI API
+response = client.chat.completions.create(
+    model="persona:my-therapist",
+    messages=[{"role": "user", "content": "I've been feeling stressed."}]
+)
+
+print(response.choices[0].message.content)
+```
+
+### Discover Available Personas
+
+```bash
+# List all models (Ollama + HomePilot personas)
+curl -H "Authorization: Bearer sk-ollabridge-..." \
+  http://localhost:11435/v1/models
+```
+
+Returns both local Ollama models and HomePilot personas in a single list:
+
+```json
+{
+  "data": [
+    {"id": "deepseek-r1", "owned_by": "ollama"},
+    {"id": "personality:therapist", "owned_by": "homepilot"},
+    {"id": "persona:proj-abc123", "owned_by": "homepilot"}
+  ]
+}
+```
+
+### What Personas Bring
+
+Each HomePilot persona includes capabilities beyond a plain LLM:
+
+| Feature | Description |
+|---|---|
+| **Personality** | Rich system prompt with psychology, voice style, behavior |
+| **Long-Term Memory** | Per-persona persistent memory across sessions |
+| **MCP Tools** | Gmail, Calendar, GitHub, Slack, web search, and more |
+| **Knowledge Base** | RAG over uploaded documents |
+| **Image Generation** | ComfyUI workflows (FLUX, SDXL) |
+
+All transparent to the client — you get a standard OpenAI-format response.
+
+### 3D Avatar Chatbot + HomePilot
+
+The [3D Avatar Chatbot](https://github.com/ruslanmv/3D-Avatar-Chatbot) has a built-in OllaBridge provider. Select it in Settings, fetch models, and your 3D avatar speaks with HomePilot persona personality and memory:
+
+```
+3D Avatar Chatbot → OllaBridge Gateway → HomePilot Persona → LLM + Memory + Tools
+```
+
+### Full Architecture
+
+```
+┌──────────────────────────────────────────┐
+│           OllaBridge Gateway             │
+│                                          │
+│  Registry                                │
+│  ├── local_ollama   → Ollama (:11434)    │
+│  ├── relay_link     → Remote GPUs        │
+│  └── homepilot      → HomePilot (:8000)  │
+│                                          │
+│  Router                                  │
+│  ├── "persona:*"    → homepilot nodes    │
+│  ├── "personality:*"→ homepilot nodes    │
+│  └── other models   → best available     │
+└──────────────────────────────────────────┘
+```
+
+For detailed persona system documentation, see [HomePilot's OLLABRIDGE.md](https://github.com/ruslanmv/HomePilot/blob/main/docs/OLLABRIDGE.md).
+
+---
+
+## 🖥️ Dashboard UI
+
+OllaBridge ships with a built-in **Broadcast Tower Dashboard** — a real-time command center that visualizes your entire LLM routing infrastructure at a glance.
+
+<p align="center">
+  <img src="assets/dashboard-tower.svg" alt="OllaBridge Dashboard – Broadcast Tower" width="720" />
+</p>
+
+### Quick Start
+
+```bash
+# Install frontend dependencies
+make ui-install
+
+# Development (hot-reload, proxied to OllaBridge API)
+make ui-dev
+
+# Production build (served at /ui when gateway is running)
+make ui-build
+```
+
+Once built, access the dashboard at **`http://localhost:11435/ui`** when OllaBridge is running.
+
+### What You See
+
+| Element | Description |
+|---------|-------------|
+| **Central Orb** | The LLM Core — pulses when online, shows active model name |
+| **Source Chips** | Upstream inputs (Source Inputs) and connected LLM models |
+| **Signal Beams** | Animated SVG paths showing data flowing from tower to consumers |
+| **Consumer Nodes** | Runtime endpoints — each card shows node status in real time |
+| **Status HUD** | Top-right overlay with live health, mode, model count, runtime count |
+
+### Tech Stack
+
+- **React 19** + TypeScript + Vite 8
+- **TanStack Query** for real-time API polling (auto-refresh every 10–30s)
+- **Framer Motion** for orb pulse, beam particles, and hover animations
+- **Tailwind CSS v4** with glassmorphism design tokens (navy/cyan/violet palette)
+
+---
+
 ## 🗺️ Roadmap
 
 - [x] ✅ Control Plane + Node architecture
@@ -806,9 +959,10 @@ ollabridge-node cloud-connect
 - [x] ✅ LAN mode for classroom/shared network deployments
 - [x] ✅ Cloud compatibility (optional device pairing)
 - [x] ✅ Streaming support for chat completions (Cloud mode)
+- [x] ✅ HomePilot persona integration (smart persona routing)
 - [ ] 🚧 Tag-based routing (send "coding" requests to GPU nodes)
 - [ ] 🚧 Model-specific routing rules
-- [ ] 🚧 Web UI for node management
+- [x] ✅ Web UI dashboard (Broadcast Tower visualization)
 - [ ] 🚧 Prometheus metrics
 - [ ] 🚧 Support for more runtimes (vLLM, llama.cpp, LM Studio)
 
@@ -861,6 +1015,28 @@ Apache License 2.0 - see [LICENSE](LICENSE)
 ## 🌟 Star History
 
 If OllaBridge helped you, give it a star! ⭐
+
+---
+
+## Compatible with HomePilot
+
+<p align="center">
+  <a href="https://github.com/ruslanmv/HomePilot">
+    <img src="assets/homepilot-logo.svg" alt="HomePilot" width="300" />
+  </a>
+</p>
+
+OllaBridge is the recommended gateway for [HomePilot](https://github.com/ruslanmv/HomePilot) personas. Route `persona:*` and `personality:*` models to HomePilot while serving local LLMs via Ollama — all through a single OpenAI-compatible endpoint.
+
+<p align="center">
+  <img src="assets/ollabridge-architecture.svg" alt="OllaBridge Architecture" width="800" />
+</p>
+
+Connect [3D Avatar Chatbot](https://github.com/ruslanmv/3D-Avatar-Chatbot) for an immersive VR persona experience with lip sync, gestures, and voice.
+
+<p align="center">
+  <img src="assets/3d-avatar-pipeline.svg" alt="3D Avatar + HomePilot Pipeline" width="800" />
+</p>
 
 ---
 

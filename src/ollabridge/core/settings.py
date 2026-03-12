@@ -40,6 +40,26 @@ class Settings(BaseSettings):
     LOCAL_NODE_ID: str = "local"
     LOCAL_NODE_TAGS: str = "local"
 
+    # HomePilot integration — optional persona backend
+    # Set HOMEPILOT_ENABLED=true + HOMEPILOT_BASE_URL to register HomePilot
+    # personas as available models routed through OllaBridge.
+    HOMEPILOT_ENABLED: bool = False
+    HOMEPILOT_BASE_URL: str = "http://localhost:8000"
+    HOMEPILOT_API_KEY: str = ""
+    HOMEPILOT_NODE_ID: str = "homepilot"
+    HOMEPILOT_NODE_TAGS: str = "homepilot,persona"
+
+    # Authentication mode: required | local-trust | pairing
+    #   required   – static API keys (default, backwards-compatible)
+    #   local-trust – skip auth for loopback clients (127.0.0.1 / ::1)
+    #   pairing    – device pairing via short-lived code exchange
+    AUTH_MODE: str = "required"
+
+    # Pairing settings (only used when AUTH_MODE=pairing)
+    PAIRING_CODE_LENGTH: int = 6
+    PAIRING_CODE_TTL_SECONDS: int = 300
+    PAIRING_TOKEN_PREFIX: str = "mtx_"
+
     # Database
     DATA_DIR: Path = Path.home() / ".ollabridge"
     DATABASE_URL: str | None = None
