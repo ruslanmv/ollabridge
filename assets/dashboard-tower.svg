@@ -1,0 +1,261 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420" fill="none">
+  <defs>
+    <!-- Background gradient -->
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#0f1129"/>
+      <stop offset="100%" stop-color="#080a1a"/>
+    </radialGradient>
+    <!-- Cyan glow -->
+    <radialGradient id="cyanGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#00e5ff" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Violet glow -->
+    <radialGradient id="violetGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Beam gradient -->
+    <linearGradient id="beamCyan" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#00e5ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="beamViolet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Glass filter -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowLg">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="720" height="420" rx="16" fill="url(#bg)"/>
+  <!-- Subtle grid -->
+  <g stroke="#ffffff" stroke-opacity="0.03" stroke-width="0.5">
+    <line x1="0" y1="100" x2="720" y2="100"/>
+    <line x1="0" y1="200" x2="720" y2="200"/>
+    <line x1="0" y1="300" x2="720" y2="300"/>
+    <line x1="180" y1="0" x2="180" y2="420"/>
+    <line x1="360" y1="0" x2="360" y2="420"/>
+    <line x1="540" y1="0" x2="540" y2="420"/>
+  </g>
+
+  <!-- Ambient glow blobs -->
+  <ellipse cx="360" cy="160" rx="180" ry="120" fill="url(#cyanGlow)" opacity="0.5">
+    <animate attributeName="opacity" values="0.3;0.6;0.3" dur="4s" repeatCount="indefinite"/>
+  </ellipse>
+  <ellipse cx="280" cy="200" rx="120" ry="80" fill="url(#violetGlow)" opacity="0.4">
+    <animate attributeName="opacity" values="0.2;0.5;0.2" dur="5s" repeatCount="indefinite"/>
+  </ellipse>
+
+  <!-- ═══ Source Chips (top) ═══ -->
+  <!-- Source Inputs chip -->
+  <rect x="90" y="80" width="140" height="40" rx="8" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.1"/>
+  <rect x="100" y="90" width="20" height="20" rx="4" fill="#00e5ff" fill-opacity="0.15" stroke="#00e5ff" stroke-opacity="0.3"/>
+  <text x="128" y="104" font-family="system-ui,sans-serif" font-size="11" font-weight="600" fill="#ffffff" fill-opacity="0.8">Source Inputs</text>
+
+  <!-- LLM Models chip -->
+  <rect x="490" y="80" width="140" height="40" rx="8" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.1"/>
+  <rect x="500" y="90" width="20" height="20" rx="4" fill="#00e5ff" fill-opacity="0.15" stroke="#00e5ff" stroke-opacity="0.3"/>
+  <text x="528" y="104" font-family="system-ui,sans-serif" font-size="11" font-weight="600" fill="#ffffff" fill-opacity="0.8">LLM Models</text>
+
+  <!-- Connection dots left -->
+  <circle cx="255" cy="100" r="3" fill="#00e5ff" fill-opacity="0.4">
+    <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="268" cy="100" r="3" fill="#00e5ff" fill-opacity="0.4">
+    <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.5s" begin="0.3s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="281" cy="100" r="3" fill="#00e5ff" fill-opacity="0.4">
+    <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.5s" begin="0.6s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Connection dots right -->
+  <circle cx="439" cy="100" r="3" fill="#00e5ff" fill-opacity="0.4">
+    <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="452" cy="100" r="3" fill="#00e5ff" fill-opacity="0.4">
+    <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.5s" begin="0.3s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="465" cy="100" r="3" fill="#00e5ff" fill-opacity="0.4">
+    <animate attributeName="opacity" values="0.3;0.8;0.3" dur="1.5s" begin="0.6s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- ═══ Central Orb ═══ -->
+  <!-- Outer glow ring -->
+  <circle cx="360" cy="160" r="58" fill="none" stroke="#00e5ff" stroke-opacity="0.1" stroke-width="1" filter="url(#glowLg)">
+    <animate attributeName="r" values="55;62;55" dur="3s" repeatCount="indefinite"/>
+    <animate attributeName="stroke-opacity" values="0.08;0.2;0.08" dur="3s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Orbiting dot -->
+  <circle r="3" fill="#00e5ff" filter="url(#glow)">
+    <animateMotion dur="12s" repeatCount="indefinite">
+      <mpath href="#orbitPath"/>
+    </animateMotion>
+  </circle>
+  <ellipse id="orbitPath" cx="360" cy="160" rx="52" ry="52" fill="none"/>
+
+  <!-- Inner orb body -->
+  <circle cx="360" cy="160" r="42" fill="#0a0c1e" stroke="#00e5ff" stroke-opacity="0.3" stroke-width="1" filter="url(#glow)">
+    <animate attributeName="r" values="42;44;42" dur="2s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Orb internal glow -->
+  <circle cx="350" cy="150" r="30" fill="url(#cyanGlow)" opacity="0.5"/>
+  <circle cx="370" cy="155" r="20" fill="url(#violetGlow)" opacity="0.6"/>
+
+  <!-- Orb labels -->
+  <text x="360" y="154" text-anchor="middle" font-family="system-ui,sans-serif" font-size="7" font-weight="700" letter-spacing="2" fill="#ffffff" fill-opacity="0.4">OLLABRIDGE</text>
+  <text x="360" y="166" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="600" fill="#00e5ff">LLM CORE</text>
+  <text x="360" y="177" text-anchor="middle" font-family="system-ui,sans-serif" font-size="6" fill="#ffffff" fill-opacity="0.25">
+    deepseek-r1
+    <animate attributeName="opacity" values="0.3;0.6;0.3" dur="4s" repeatCount="indefinite"/>
+  </text>
+
+  <!-- Status dot -->
+  <circle cx="392" cy="192" r="4" fill="#00e5ff" filter="url(#glow)">
+    <animate attributeName="r" values="3;5;3" dur="1.5s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.7;1;0.7" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- ═══ Tower Column ═══ -->
+  <line x1="360" y1="202" x2="360" y2="280" stroke="#00e5ff" stroke-opacity="0.3" stroke-width="1.5"/>
+  <!-- Particles flowing down -->
+  <circle r="2.5" fill="#00e5ff" filter="url(#glow)">
+    <animate attributeName="cy" values="205;275" dur="1.5s" repeatCount="indefinite"/>
+    <animate attributeName="cx" values="360;360" dur="1.5s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="1;0" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="2" fill="#8b5cf6" filter="url(#glow)">
+    <animate attributeName="cy" values="205;275" dur="1.5s" begin="0.5s" repeatCount="indefinite"/>
+    <animate attributeName="cx" values="360;360" dur="1.5s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.8;0" dur="1.5s" begin="0.5s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="2.5" fill="#00e5ff" filter="url(#glow)">
+    <animate attributeName="cy" values="205;275" dur="1.5s" begin="1s" repeatCount="indefinite"/>
+    <animate attributeName="cx" values="360;360" dur="1.5s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="1;0" dur="1.5s" begin="1s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Tower base platform -->
+  <ellipse cx="360" cy="285" rx="60" ry="10" fill="none" stroke="#00e5ff" stroke-opacity="0.2">
+    <animate attributeName="stroke-opacity" values="0.15;0.35;0.15" dur="3s" repeatCount="indefinite"/>
+  </ellipse>
+  <ellipse cx="360" cy="285" rx="55" ry="8" fill="#00e5ff" fill-opacity="0.05"/>
+  <text x="430" y="289" font-family="system-ui,sans-serif" font-size="10" font-weight="500" fill="#ffffff" fill-opacity="0.35" letter-spacing="1.5">
+    tower
+    <animate attributeName="opacity" values="0.3;0.6;0.3" dur="4s" repeatCount="indefinite"/>
+  </text>
+
+  <!-- ═══ Signal Beams (fan out to consumer nodes) ═══ -->
+  <!-- Beam 1: far left -->
+  <line x1="360" y1="285" x2="115" y2="365" stroke="url(#beamCyan)" stroke-width="1" opacity="0.4"/>
+  <circle r="3" fill="#00e5ff" filter="url(#glow)">
+    <animate attributeName="cx" values="360;115" dur="2.5s" repeatCount="indefinite"/>
+    <animate attributeName="cy" values="285;365" dur="2.5s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;1;0" dur="2.5s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Beam 2: mid left -->
+  <line x1="360" y1="285" x2="265" y2="365" stroke="url(#beamViolet)" stroke-width="1" opacity="0.35"/>
+  <circle r="3" fill="#8b5cf6" filter="url(#glow)">
+    <animate attributeName="cx" values="360;265" dur="2.5s" begin="0.4s" repeatCount="indefinite"/>
+    <animate attributeName="cy" values="285;365" dur="2.5s" begin="0.4s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;1;0" dur="2.5s" begin="0.4s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Beam 3: mid right -->
+  <line x1="360" y1="285" x2="455" y2="365" stroke="url(#beamViolet)" stroke-width="1" opacity="0.35"/>
+  <circle r="3" fill="#8b5cf6" filter="url(#glow)">
+    <animate attributeName="cx" values="360;455" dur="2.5s" begin="0.8s" repeatCount="indefinite"/>
+    <animate attributeName="cy" values="285;365" dur="2.5s" begin="0.8s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;1;0" dur="2.5s" begin="0.8s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Beam 4: far right -->
+  <line x1="360" y1="285" x2="605" y2="365" stroke="url(#beamCyan)" stroke-width="1" opacity="0.4"/>
+  <circle r="3" fill="#00e5ff" filter="url(#glow)">
+    <animate attributeName="cx" values="360;605" dur="2.5s" begin="1.2s" repeatCount="indefinite"/>
+    <animate attributeName="cy" values="285;365" dur="2.5s" begin="1.2s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;1;0" dur="2.5s" begin="1.2s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- ═══ Consumer Node Cards ═══ -->
+  <!-- Card 1: Mobile App -->
+  <rect x="70" y="355" width="90" height="50" rx="8" fill="#ffffff" fill-opacity="0.04" stroke="#8b5cf6" stroke-opacity="0.15"/>
+  <rect x="80" y="363" width="16" height="16" rx="4" fill="#8b5cf6" fill-opacity="0.12" stroke="#8b5cf6" stroke-opacity="0.25"/>
+  <text x="115" y="374" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="600" fill="#ffffff" fill-opacity="0.7">Mobile App</text>
+  <circle cx="100" cy="393" r="2" fill="#2dd4bf">
+    <animate attributeName="opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite"/>
+  </circle>
+  <text x="110" y="396" font-family="system-ui,sans-serif" font-size="6" fill="#ffffff" fill-opacity="0.3" letter-spacing="1">ONLINE</text>
+
+  <!-- Card 2: Smart Watch -->
+  <rect x="220" y="355" width="90" height="50" rx="8" fill="#ffffff" fill-opacity="0.04" stroke="#8b5cf6" stroke-opacity="0.15"/>
+  <rect x="230" y="363" width="16" height="16" rx="4" fill="#8b5cf6" fill-opacity="0.12" stroke="#8b5cf6" stroke-opacity="0.25"/>
+  <text x="265" y="374" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="600" fill="#ffffff" fill-opacity="0.7">Smart Watch</text>
+  <circle cx="250" cy="393" r="2" fill="#ffffff" fill-opacity="0.2"/>
+  <text x="260" y="396" font-family="system-ui,sans-serif" font-size="6" fill="#ffffff" fill-opacity="0.3" letter-spacing="1">WAITING</text>
+
+  <!-- Card 3: Email Feed -->
+  <rect x="410" y="355" width="90" height="50" rx="8" fill="#ffffff" fill-opacity="0.04" stroke="#8b5cf6" stroke-opacity="0.15"/>
+  <rect x="420" y="363" width="16" height="16" rx="4" fill="#8b5cf6" fill-opacity="0.12" stroke="#8b5cf6" stroke-opacity="0.25"/>
+  <text x="455" y="374" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="600" fill="#ffffff" fill-opacity="0.7">Email Feed</text>
+  <circle cx="440" cy="393" r="2" fill="#ffffff" fill-opacity="0.2"/>
+  <text x="450" y="396" font-family="system-ui,sans-serif" font-size="6" fill="#ffffff" fill-opacity="0.3" letter-spacing="1">WAITING</text>
+
+  <!-- Card 4: Web Portal -->
+  <rect x="560" y="355" width="90" height="50" rx="8" fill="#ffffff" fill-opacity="0.04" stroke="#8b5cf6" stroke-opacity="0.15"/>
+  <rect x="570" y="363" width="16" height="16" rx="4" fill="#8b5cf6" fill-opacity="0.12" stroke="#8b5cf6" stroke-opacity="0.25"/>
+  <text x="605" y="374" text-anchor="middle" font-family="system-ui,sans-serif" font-size="8" font-weight="600" fill="#ffffff" fill-opacity="0.7">Web Portal</text>
+  <circle cx="590" cy="393" r="2" fill="#2dd4bf">
+    <animate attributeName="opacity" values="0.6;1;0.6" dur="2s" begin="0.5s" repeatCount="indefinite"/>
+  </circle>
+  <text x="600" y="396" font-family="system-ui,sans-serif" font-size="6" fill="#ffffff" fill-opacity="0.3" letter-spacing="1">ONLINE</text>
+
+  <!-- ═══ Status HUD (top-right) ═══ -->
+  <rect x="600" y="16" width="104" height="22" rx="6" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.08"/>
+  <circle cx="612" cy="27" r="3" fill="#2dd4bf">
+    <animate attributeName="r" values="2.5;3.5;2.5" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+  <text x="620" y="30" font-family="system-ui,sans-serif" font-size="8" fill="#ffffff" fill-opacity="0.3">Status</text>
+  <text x="658" y="30" font-family="system-ui,sans-serif" font-size="8" font-weight="600" fill="#2dd4bf">Online</text>
+
+  <rect x="600" y="42" width="104" height="22" rx="6" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.08"/>
+  <text x="612" y="56" font-family="system-ui,sans-serif" font-size="8" fill="#ffffff" fill-opacity="0.3">Models</text>
+  <text x="658" y="56" font-family="system-ui,sans-serif" font-size="8" font-weight="600" fill="#00e5ff">3</text>
+
+  <rect x="600" y="68" width="104" height="22" rx="6" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.08"/>
+  <text x="612" y="82" font-family="system-ui,sans-serif" font-size="8" fill="#ffffff" fill-opacity="0.3">Runtimes</text>
+  <text x="665" y="82" font-family="system-ui,sans-serif" font-size="8" font-weight="600" fill="#8b5cf6">2</text>
+
+  <!-- ═══ Sidebar (left) ═══ -->
+  <rect x="16" y="16" width="44" height="388" rx="10" fill="#ffffff" fill-opacity="0.03" stroke="#ffffff" stroke-opacity="0.06"/>
+  <!-- Logo orb -->
+  <circle cx="38" cy="40" r="10" fill="#00e5ff" fill-opacity="0.15" stroke="#00e5ff" stroke-opacity="0.3">
+    <animate attributeName="stroke-opacity" values="0.2;0.5;0.2" dur="3s" repeatCount="indefinite"/>
+  </circle>
+  <text x="38" y="44" text-anchor="middle" font-family="system-ui,sans-serif" font-size="7" font-weight="700" fill="#00e5ff">O</text>
+  <!-- Active indicator -->
+  <rect x="22" y="64" width="32" height="28" rx="6" fill="#00e5ff" fill-opacity="0.1" stroke="#00e5ff" stroke-opacity="0.2"/>
+  <!-- Nav icons (simple squares) -->
+  <rect x="29" y="71" width="18" height="14" rx="3" fill="#00e5ff" fill-opacity="0.6"/>
+  <rect x="29" y="105" width="18" height="14" rx="3" fill="#ffffff" fill-opacity="0.15"/>
+  <rect x="29" y="135" width="18" height="14" rx="3" fill="#ffffff" fill-opacity="0.15"/>
+  <rect x="29" y="165" width="18" height="14" rx="3" fill="#ffffff" fill-opacity="0.15"/>
+  <rect x="29" y="195" width="18" height="14" rx="3" fill="#ffffff" fill-opacity="0.15"/>
+
+  <!-- ═══ Header bar ═══ -->
+  <line x1="70" y1="52" x2="590" y2="52" stroke="#ffffff" stroke-opacity="0.05"/>
+  <text x="80" y="38" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#ffffff" fill-opacity="0.9" letter-spacing="0.3">AI Distribution System</text>
+
+  <!-- Runtime count label -->
+  <text x="360" y="305" text-anchor="middle" font-family="system-ui,sans-serif" font-size="7" fill="#ffffff" fill-opacity="0.15" letter-spacing="2">2 RUNTIMES CONNECTED</text>
+</svg>
