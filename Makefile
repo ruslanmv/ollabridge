@@ -3,8 +3,9 @@
 #
 # Quick start:
 #   make install    - Install OllaBridge (ultra-fast with uv)
-#   make start      - Start the gateway
-#   make dev        - Start in development mode
+#   make start      - Start backend + frontend (full stack)
+#   make start-cli  - Start backend only (CLI mode)
+#   make dev        - Start in development mode (auto-reload)
 #   make mcp        - Start MCP server
 
 .DEFAULT_GOAL := help
@@ -51,13 +52,21 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; /^install/ {printf "  $(COLOR_GREEN)%-20s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
+	@echo "$(COLOR_BOLD)Running:$(COLOR_RESET)"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; /^(start|dev)/ {printf "  $(COLOR_GREEN)%-20s$(COLOR_RESET) %s\n", $$1, $$2}'
+	@echo ""
 	@echo "$(COLOR_BOLD)Development:$(COLOR_RESET)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; /^(dev|start|mcp|logs|env)/ {printf "  $(COLOR_GREEN)%-20s$(COLOR_RESET) %s\n", $$1, $$2}'
+		awk 'BEGIN {FS = ":.*?## "}; /^(mcp|logs|env)/ {printf "  $(COLOR_GREEN)%-20s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(COLOR_BOLD)Testing & Quality:$(COLOR_RESET)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; /^(test|format|lint|type|check)/ {printf "  $(COLOR_GREEN)%-20s$(COLOR_RESET) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "$(COLOR_BOLD)Frontend (UI):$(COLOR_RESET)"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; /^ui-/ {printf "  $(COLOR_GREEN)%-20s$(COLOR_RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(COLOR_BOLD)Build & Publish:$(COLOR_RESET)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -65,9 +74,10 @@ help: ## Show this help message
 	@echo ""
 	@echo "$(COLOR_BOLD)Examples:$(COLOR_RESET)"
 	@echo "  $(COLOR_CYAN)make install$(COLOR_RESET)      # Install OllaBridge (ultra-fast with uv)"
-	@echo "  $(COLOR_CYAN)make dev$(COLOR_RESET)          # Start in development mode with auto-reload"
+	@echo "  $(COLOR_CYAN)make start$(COLOR_RESET)        # Start full stack (backend + UI dashboard)"
+	@echo "  $(COLOR_CYAN)make start-cli$(COLOR_RESET)    # Start backend only (CLI mode)"
+	@echo "  $(COLOR_CYAN)make dev-full$(COLOR_RESET)     # Development: backend + frontend hot reload"
 	@echo "  $(COLOR_CYAN)make test$(COLOR_RESET)         # Run all tests"
-	@echo "  $(COLOR_CYAN)make check$(COLOR_RESET)        # Run all quality checks (format, lint, type)"
 	@echo ""
 
 # ================================
@@ -153,24 +163,82 @@ upgrade: ## Upgrade all dependencies to latest versions
 	@echo "$(COLOR_GREEN)✓ Dependencies upgraded!$(COLOR_RESET)"
 
 # ================================
-# Development Targets
+# Start Targets
 # ================================
 
-.PHONY: dev
-dev: ## Start OllaBridge in development mode (auto-reload)
-	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting OllaBridge in development mode...$(COLOR_RESET)"
-	@echo "$(COLOR_CYAN)Auto-reload enabled. Edit code and see changes instantly.$(COLOR_RESET)"
-	$(PYTHON) -m ollabridge.cli.main start --host 0.0.0.0 --port 11435 --reload --log-level info
-
 .PHONY: start
-start: env ## Start OllaBridge gateway
-	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting OllaBridge gateway...$(COLOR_RESET)"
+start: env ui-build ## Start OllaBridge (backend + frontend, configure from UI)
+	@echo ""
+	@echo "$(COLOR_BOLD)$(COLOR_CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
+	@echo "$(COLOR_BOLD)$(COLOR_GREEN)  OllaBridge — AI Pipeline Builder + Control Tower$(COLOR_RESET)"
+	@echo "$(COLOR_BOLD)$(COLOR_CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
+	@echo ""
+	@echo "$(COLOR_GREEN)  Dashboard UI:$(COLOR_RESET)  http://localhost:11435/ui"
+	@echo "$(COLOR_GREEN)  Backend API:$(COLOR_RESET)   http://localhost:11435/v1"
+	@echo "$(COLOR_GREEN)  Health:$(COLOR_RESET)        http://localhost:11435/health"
+	@echo ""
+	@echo "$(COLOR_CYAN)  Configure models, backends, and auth from the dashboard.$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)  Press Ctrl+C to stop$(COLOR_RESET)"
+	@echo ""
+	@# Open browser after a short delay (best-effort, non-blocking)
+	@(sleep 2 && \
+		URL="http://localhost:11435/ui"; \
+		if command -v wslview >/dev/null 2>&1; then \
+			wslview "$$URL" 2>/dev/null; \
+		elif [ -f /proc/version ] && grep -qi microsoft /proc/version 2>/dev/null; then \
+			cmd.exe /c start "$$URL" 2>/dev/null || explorer.exe "$$URL" 2>/dev/null; \
+		elif command -v open >/dev/null 2>&1; then \
+			open "$$URL" 2>/dev/null; \
+		elif command -v xdg-open >/dev/null 2>&1; then \
+			xdg-open "$$URL" 2>/dev/null; \
+		fi \
+	) &
+	@$(PYTHON) -m ollabridge.cli.main start --no-setup --auth-mode local-trust --log-level info
+
+.PHONY: start-cli
+start-cli: env ## Start OllaBridge with full CLI setup (installs Ollama + pulls model)
+	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting OllaBridge gateway (full setup)...$(COLOR_RESET)"
 	$(PYTHON) -m ollabridge.cli.main start
+
+.PHONY: start-pair
+start-pair: env ## Start OllaBridge with pairing code auth (show code on screen)
+	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting OllaBridge in pairing mode...$(COLOR_RESET)"
+	$(PYTHON) -m ollabridge.cli.main start --auth-mode pairing
 
 .PHONY: start-share
 start-share: env ## Start OllaBridge with public URL (ngrok tunnel)
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting OllaBridge with public sharing...$(COLOR_RESET)"
 	$(PYTHON) -m ollabridge.cli.main start --share
+
+# ================================
+# Development Targets
+# ================================
+
+.PHONY: dev
+dev: env ## Start backend in dev mode (auto-reload, no frontend build)
+	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting OllaBridge in development mode...$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)Auto-reload enabled. Edit code and see changes instantly.$(COLOR_RESET)"
+	$(PYTHON) -m ollabridge.cli.main start --host 0.0.0.0 --port 11435 --reload --log-level info
+
+.PHONY: dev-full
+dev-full: env ## Start backend (dev mode) + frontend (hot reload) concurrently
+	@echo ""
+	@echo "$(COLOR_BOLD)$(COLOR_CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
+	@echo "$(COLOR_BOLD)$(COLOR_GREEN)  OllaBridge — Full-Stack Development Mode$(COLOR_RESET)"
+	@echo "$(COLOR_BOLD)$(COLOR_CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
+	@echo ""
+	@echo "$(COLOR_GREEN)  Backend API:$(COLOR_RESET)   http://localhost:11435/v1   (auto-reload)"
+	@echo "$(COLOR_GREEN)  Frontend UI:$(COLOR_RESET)   http://localhost:3000       (hot reload)"
+	@echo "$(COLOR_GREEN)  Health:$(COLOR_RESET)        http://localhost:11435/health"
+	@echo ""
+	@echo "$(COLOR_CYAN)  Frontend proxies API calls to backend$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)  Press Ctrl+C to stop both$(COLOR_RESET)"
+	@echo ""
+	@# Run backend and frontend concurrently; kill both on Ctrl+C
+	@trap 'kill 0' INT TERM; \
+	$(PYTHON) -m ollabridge.cli.main start --host 0.0.0.0 --port 11435 --reload --log-level info & \
+	(cd frontend && pnpm dev) & \
+	wait
 
 .PHONY: mcp
 mcp: ## Start MCP server (Model Context Protocol)
@@ -198,6 +266,42 @@ logs: ## View recent request logs
 	else \
 		echo "$(COLOR_YELLOW)No logs found. Start OllaBridge to generate logs.$(COLOR_RESET)"; \
 	fi
+
+# ================================
+# Frontend (UI) Targets
+# ================================
+
+.PHONY: ui-install
+ui-install: ## Install frontend dependencies
+	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Installing frontend dependencies...$(COLOR_RESET)"
+	cd frontend && pnpm install
+	@echo "$(COLOR_GREEN)✓ Frontend dependencies installed!$(COLOR_RESET)"
+
+.PHONY: ui-dev
+ui-dev: ## Start frontend dev server (hot reload, proxied to OllaBridge)
+	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting frontend dev server...$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)Proxy: localhost:5173 → localhost:11435$(COLOR_RESET)"
+	cd frontend && pnpm dev
+
+.PHONY: ui-build
+ui-build: ## Build frontend for production (output: frontend/dist/)
+	@if [ -d frontend/dist ] && [ -f frontend/dist/index.html ]; then \
+		NEWEST_SRC=$$(find frontend/src frontend/index.html frontend/vite.config.ts frontend/tsconfig*.json -newer frontend/dist/index.html 2>/dev/null | head -1); \
+		if [ -z "$$NEWEST_SRC" ]; then \
+			echo "$(COLOR_GREEN)✓ Frontend already built (no changes detected)$(COLOR_RESET)"; \
+			exit 0; \
+		fi; \
+	fi; \
+	echo "$(COLOR_BOLD)$(COLOR_GREEN)Building frontend for production...$(COLOR_RESET)"; \
+	cd frontend && pnpm build; \
+	echo "$(COLOR_GREEN)✓ Frontend built → frontend/dist/$(COLOR_RESET)"; \
+	echo "$(COLOR_CYAN)Served at /ui when OllaBridge is running$(COLOR_RESET)"
+
+.PHONY: ui-rebuild
+ui-rebuild: ## Force rebuild frontend (ignore cache)
+	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Rebuilding frontend for production...$(COLOR_RESET)"
+	cd frontend && pnpm build
+	@echo "$(COLOR_GREEN)✓ Frontend rebuilt → frontend/dist/$(COLOR_RESET)"
 
 # ================================
 # Testing Targets
@@ -400,7 +504,9 @@ all: clean install-dev check test build ## Do everything (clean, install, check,
 
 # Declare all targets as phony (not files)
 .PHONY: help install install-dev install-pip install-uv upgrade \
-        dev start start-share mcp env logs \
+        start start-cli start-pair start-share \
+        dev dev-full mcp env logs \
+        ui-install ui-dev ui-build \
         test test-all test-integration test-cov test-watch test-fast \
         format lint type check \
         build publish publish-test clean clean-all \
