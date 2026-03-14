@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 import time
 from collections import deque
 from pathlib import Path
@@ -103,10 +105,56 @@ def _get_memory_bridge(app: FastAPI) -> "MemoryBridge":
     return bridge
 
 
+def _resolve_device_id(app: FastAPI, auth_key: str) -> str | None:
+    """Resolve the device_id from an authenticated pairing token.
+
+    Returns None for static API keys or local-trust connections.
+    """
+    mgr = getattr(app.state, "pairing_manager", None)
+    if mgr is None or not auth_key or auth_key == "__local_trust__":
+        return None
+    return mgr.get_device_for_token(auth_key)
+
+
 def _estimate_tokens(text: str | None) -> int:
     if not text:
         return 0
     return max(1, int(len(text) / 4))
+
+
+# ---------------------------------------------------------------------------
+# Response normalization — strip delivery artifacts before returning to client
+# ---------------------------------------------------------------------------
+
+_SHOW_TAG_RE = re.compile(r"\[show:[^\]]+\]", re.IGNORECASE)
+
+
+def _normalize_content(raw_content: str) -> str:
+    """Clean assistant text of delivery artifacts that clients cannot render.
+
+    Handles two known patterns from HomePilot:
+    1. JSON-wrapped final text: {"type":"final","text":"..."}
+    2. [show:Label] image tags (VR/desktop clients can't render these yet)
+    """
+    text = raw_content or ""
+
+    # 1. Unwrap {"type":"final","text":"..."} wrapper
+    stripped = text.lstrip()
+    if stripped.startswith("{"):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict) and "text" in parsed:
+                text = parsed["text"]
+        except Exception:
+            pass
+
+    # 2. Strip [show:Label] tags
+    text = _SHOW_TAG_RE.sub("", text)
+
+    # 3. Collapse excess whitespace left by stripping
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    return text
 
 
 def _record_flow_event(
@@ -257,9 +305,11 @@ def create_app() -> FastAPI:
 
     from ollabridge.api.pair import router as pair_router
     from ollabridge.api.consumer_nodes import router as consumer_nodes_router
+    from ollabridge.connectors.media_proxy import router as media_proxy_router
 
     app.include_router(pair_router)
     app.include_router(consumer_nodes_router)
+    app.include_router(media_proxy_router)
 
     if (settings.AUTH_MODE or "").lower().strip() == "pairing":
         import os
@@ -348,11 +398,24 @@ def create_app() -> FastAPI:
                     "model": model,
                     "messages": payload_messages,
                     "api_key": (node.meta or {}).get("api_key", ""),
+                    "client_type": request.headers.get("x-client-type", ""),
                 }
                 if req.temperature is not None:
                     hp_payload["temperature"] = req.temperature
                 if req.max_tokens is not None:
                     hp_payload["max_tokens"] = req.max_tokens
+
+                # --- Phase 2: Bridge session persistence ---
+                # Resolve device identity and reuse existing HomePilot
+                # conversation so Memory V2 continues naturally.
+                device_id = _resolve_device_id(app, _key)
+                bridge_session = None
+                if device_id:
+                    sessions = app.state.obridge.sessions
+                    bridge_session = sessions.get_session(device_id, model)
+                    if bridge_session:
+                        hp_payload["conversation_id"] = bridge_session.homepilot_conversation_id
+                        sessions.touch_session(device_id, model)
 
                 data = await hp_connector.chat(base=node.endpoint or "", payload=hp_payload)
 
@@ -364,6 +427,19 @@ def create_app() -> FastAPI:
                     )
 
                 content = data.get("content", "")
+
+                # Store session mapping if we got a conversation_id back
+                if device_id and not bridge_session:
+                    conv_id = (data.get("raw") or {}).get("conversation_id", "")
+                    if not conv_id:
+                        # Use a stable hash so the same device+model always
+                        # maps to the same conversation lineage
+                        conv_id = f"hp-{device_id}-{model}"
+                    app.state.obridge.sessions.upsert_session(
+                        device_id=device_id,
+                        model=model,
+                        homepilot_conversation_id=conv_id,
+                    )
 
             else:
                 from ollabridge.providers.ollama_client import chat as ollama_chat
@@ -394,6 +470,12 @@ def create_app() -> FastAPI:
                 completion_tokens_est=_estimate_tokens(content),
             )
 
+            # --- Phase 1A: Normalize response text ---
+            # Strip delivery artifacts (JSON wrappers, [show:] tags) that
+            # non-web clients cannot render.
+            client_type = request.headers.get("x-client-type", "")
+            content = _normalize_content(content)
+
             result: dict[str, Any] = {
                 "id": "ollabridge-chat",
                 "object": "chat.completion",
@@ -418,6 +500,20 @@ def create_app() -> FastAPI:
                     api_key=(node.meta or {}).get("api_key", ""),
                 )
                 result["x_persona_context"] = ctx.to_dict()
+
+            # --- Phase 4: Rewrite HomePilot attachment URLs to proxy URLs ---
+            # If the upstream HomePilot response included x_attachments,
+            # forward them through the OllaBridge media proxy.
+            raw_data = data if node.connector == "homepilot" else {}
+            upstream_attachments = (raw_data.get("raw") or {}).get("x_attachments", [])
+            if upstream_attachments:
+                from ollabridge.connectors.media_proxy import rewrite_attachment_urls
+                result["x_attachments"] = rewrite_attachment_urls(upstream_attachments)
+
+            # Forward x_directives if present
+            upstream_directives = (raw_data.get("raw") or {}).get("x_directives")
+            if upstream_directives:
+                result["x_avatar_directives"] = upstream_directives
 
             return result
 
@@ -449,11 +545,6 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------
     # Persona context endpoint — read-only bridge to HomePilot memory
     # ------------------------------------------------------------------
-
-    @app.options("/v1/persona/context/{model:path}")
-    async def persona_context_preflight(model: str, request: Request) -> Response:
-        """Handle CORS preflight for persona context — no auth required."""
-        return Response(status_code=200)
 
     @app.get("/v1/persona/context/{model:path}")
     async def persona_context(
