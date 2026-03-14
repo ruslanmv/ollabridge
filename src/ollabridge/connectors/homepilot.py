@@ -66,7 +66,20 @@ class HomePilotConnector(Connector):
         headers = self._headers(api_key)
 
         response = await self._client.post(url, json=request_body, headers=headers)
-        response.raise_for_status()
+
+        # Propagate structured errors from HomePilot (e.g. 404 persona_unpublished)
+        if response.status_code >= 400:
+            try:
+                error_body = response.json()
+            except Exception:
+                error_body = {"detail": response.text}
+            return {
+                "content": "",
+                "error": True,
+                "status_code": response.status_code,
+                "error_body": error_body,
+            }
+
         data = response.json()
 
         content = ""

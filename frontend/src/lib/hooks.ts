@@ -82,5 +82,14 @@ export function useSettings() {
   })
 }
 
+export function useConsumerNodes() {
+  return useQuery({
+    queryKey: ['consumerNodes'],
+    queryFn: api.consumerNodes,
+    refetchInterval: 10_000,
+    retry: false,
+  })
+}
+
 // Backward-compatible alias for older components
 export const usePairDevices = usePairedDevices
