@@ -65,6 +65,12 @@ class HomePilotConnector(Connector):
         api_key = str(payload.get("api_key") or "")
         headers = self._headers(api_key)
 
+        # Phase 3/4: Forward client identification headers to HomePilot
+        # so it can activate enriched response mode (x_attachments, x_directives).
+        client_type = payload.get("client_type", "")
+        if client_type:
+            headers["X-Client-Type"] = client_type
+
         response = await self._client.post(url, json=request_body, headers=headers)
 
         # Propagate structured errors from HomePilot (e.g. 404 persona_unpublished)
