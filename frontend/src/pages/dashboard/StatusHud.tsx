@@ -1,20 +1,20 @@
 import { motion } from 'framer-motion'
 import { deriveSourceMode } from '../../lib/api'
-import { useFlowMetrics, useHealth, useModels, usePairedDevices, useRuntimes, useSettings } from '../../lib/hooks'
+import { useConsumerNodes, useFlowMetrics, useHealth, useModels, useRuntimes, useSettings } from '../../lib/hooks'
 
 export function StatusHud() {
   const { data: health } = useHealth()
   const { data: settings } = useSettings()
   const { data: modelsData } = useModels()
   const { data: runtimesData } = useRuntimes()
-  const { data: devicesData } = usePairedDevices()
+  const { data: consumersData } = useConsumerNodes()
   const { data: flow } = useFlowMetrics()
 
   const isOnline = health?.status === 'ok'
   const sourceMode = deriveSourceMode(settings)
   const modelCount = modelsData?.data?.length ?? 0
   const runtimeCount = runtimesData?.count ?? 0
-  const consumerCount = Math.max(1, devicesData?.devices?.length ?? 0)
+  const consumerCount = consumersData?.count ?? 0
 
   const badges = [
     { label: 'Status', value: isOnline ? 'Online' : 'Offline', color: isOnline ? '#14b8a6' : '#ec4899', dot: true },
