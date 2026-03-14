@@ -56,6 +56,15 @@ class PersonaContext:
     # Image style hint (for avatar rendering decisions)
     image_style_hint: str = ""
 
+    # --- Phase 7: VR-safe bootstrap metadata ---
+    display_name: str = ""
+    short_bio: str = ""
+    voice_hints: str = ""               # e.g. "female,warm,English"
+    supported_directives: list[str] = field(default_factory=list)  # e.g. ["emotion","pose"]
+    default_avatar_mood: str = ""       # e.g. "happy", "calm"
+    image_support: bool = False         # persona has images available
+    default_appearance_url: str = ""    # preview image URL
+
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
             "persona_id": self.persona_id,
@@ -85,6 +94,17 @@ class PersonaContext:
             d["user_preferences"] = self.user_preferences
         if self.image_style_hint:
             d["image_style_hint"] = self.image_style_hint
+
+        # Phase 7: VR bootstrap metadata
+        d["vr_bootstrap"] = {
+            "display_name": self.display_name or self.label,
+            "short_bio": self.short_bio,
+            "voice_hints": self.voice_hints,
+            "supported_directives": self.supported_directives,
+            "default_avatar_mood": self.default_avatar_mood or self.emotional_base,
+            "image_support": self.image_support,
+            "default_appearance_url": self.default_appearance_url,
+        }
         return d
 
 
@@ -242,6 +262,23 @@ class MemoryBridge:
         dynamics = agent_data.get("dynamics", {}) or {}
         safety = agent_data.get("safety", {}) or {}
 
+        # Phase 7: Extract VR bootstrap metadata
+        display_name = agent_data.get("label", "") or agent_data.get("display_name", "")
+        short_bio = agent_data.get("short_bio", "") or agent_data.get("goal", "")
+        emotional_base_str = str(dynamics.get("emotional_base", "neutral"))
+
+        # Determine image support from appearance data
+        appearance = agent_data.get("persona_appearance", {}) or {}
+        has_images = bool(
+            appearance.get("selected_filename")
+            or appearance.get("sets")
+            or appearance.get("outfits")
+        )
+        default_img = ""
+        sel_file = appearance.get("selected_filename", "")
+        if sel_file:
+            default_img = f"/files/{sel_file}"
+
         return PersonaContext(
             persona_id=personality_id or pid or model,
             label=agent_data.get("label", ""),
@@ -251,11 +288,19 @@ class MemoryBridge:
             response_max_length=str(resp_style.get("max_length", "medium")),
             response_tone=str(resp_style.get("tone", "neutral")),
             response_use_emoji=bool(resp_style.get("use_emoji", False)),
-            emotional_base=str(dynamics.get("emotional_base", "neutral")),
+            emotional_base=emotional_base_str,
             initiative=str(dynamics.get("initiative", "balanced")),
             requires_adult_gate=bool(safety.get("requires_adult_gate", False)),
             allow_explicit=bool(safety.get("allow_explicit", False)),
             user_facts=user_facts,
             user_preferences=user_prefs,
             image_style_hint=str(agent_data.get("image_style_hint", "") or ""),
+            # Phase 7 fields
+            display_name=display_name,
+            short_bio=short_bio,
+            voice_hints=str(voice.get("hints", "")),
+            supported_directives=["emotion", "pose"],
+            default_avatar_mood=emotional_base_str,
+            image_support=has_images,
+            default_appearance_url=default_img,
         )

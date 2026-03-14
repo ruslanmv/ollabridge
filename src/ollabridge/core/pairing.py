@@ -121,6 +121,14 @@ class PairingManager:
         h = self._hash(raw_token)
         return any(d.token_hash == h for d in self._devices.values())
 
+    def get_device_for_token(self, raw_token: str) -> Optional[str]:
+        """Return the device_id for a valid paired token, or None."""
+        h = self._hash(raw_token)
+        for d in self._devices.values():
+            if d.token_hash == h:
+                return d.device_id
+        return None
+
     # ------------------------------------------------------------------
     # Revocation
     # ------------------------------------------------------------------
