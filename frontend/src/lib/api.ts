@@ -174,6 +174,33 @@ export type SourceHealthResponse = {
   models: string[]
 }
 
+export type ConsumerNodeStatus = 'online' | 'waiting' | 'offline'
+
+export type ConsumerNode = {
+  id: string
+  name: string
+  kind: string
+  protocol: string
+  description: string
+  enabled: boolean
+  paired_device_id?: string | null
+  created_at?: number
+  last_seen?: number | null
+}
+
+export type ConsumerNodesResponse = {
+  nodes: ConsumerNode[]
+  count: number
+}
+
+export type CreateConsumerNodeBody = {
+  name: string
+  kind?: string
+  protocol?: string
+  description?: string
+  enabled?: boolean
+}
+
 export type SourceMode = 'ollama' | 'homepilot' | 'hybrid' | 'none'
 
 export function deriveSourceMode(settings?: Partial<GatewaySettings> | null): SourceMode {
@@ -223,4 +250,19 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+  consumerNodes: () => request<ConsumerNodesResponse>('/consumer-nodes'),
+  createConsumerNode: (body: CreateConsumerNodeBody) =>
+    request<{ ok: boolean; node: ConsumerNode }>('/consumer-nodes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  patchConsumerNode: (id: string, patch: Partial<ConsumerNode>) =>
+    request<{ ok: boolean; node: ConsumerNode }>(`/consumer-nodes/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }),
+  deleteConsumerNode: (id: string) =>
+    request<{ ok: boolean; deleted: string }>(`/consumer-nodes/${id}`, { method: 'DELETE' }),
 }

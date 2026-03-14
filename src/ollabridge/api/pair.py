@@ -118,6 +118,17 @@ async def pair_exchange(body: PairRequest, request: Request):
     # Find the device_id that was just created
     devices = mgr.list_devices()
     device_id = devices[-1]["device_id"] if devices else ""
+
+    # Auto-create a consumer node for the paired device
+    consumers = getattr(request.app.state, "obridge", None)
+    if consumers is not None:
+        consumers = getattr(consumers, "consumers", None)
+    if consumers is not None:
+        try:
+            consumers.ensure_from_pair(device_id, body.label)
+        except Exception:
+            pass  # non-critical — don't block pairing
+
     return PairResponse(ok=True, device_id=device_id, token=raw_token)
 
 
