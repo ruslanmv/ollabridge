@@ -92,6 +92,17 @@ def _parse_origins(raw: str) -> list[str]:
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 
+def _get_memory_bridge(app: FastAPI) -> "MemoryBridge":
+    """Lazily initialise the shared MemoryBridge instance."""
+    bridge = getattr(app.state, "_memory_bridge", None)
+    if bridge is None:
+        from ollabridge.connectors.memory_bridge import MemoryBridge
+
+        bridge = MemoryBridge()
+        app.state._memory_bridge = bridge
+    return bridge
+
+
 def _estimate_tokens(text: str | None) -> int:
     if not text:
         return 0
@@ -245,8 +256,10 @@ def create_app() -> FastAPI:
         app.include_router(build_relay_router(registry=app.state.relay_hub.registry, hub=app.state.relay_hub))
 
     from ollabridge.api.pair import router as pair_router
+    from ollabridge.api.consumer_nodes import router as consumer_nodes_router
 
     app.include_router(pair_router)
+    app.include_router(consumer_nodes_router)
 
     if (settings.AUTH_MODE or "").lower().strip() == "pairing":
         import os
@@ -342,6 +355,14 @@ def create_app() -> FastAPI:
                     hp_payload["max_tokens"] = req.max_tokens
 
                 data = await hp_connector.chat(base=node.endpoint or "", payload=hp_payload)
+
+                # Forward structured errors from HomePilot (e.g. persona unpublished)
+                if data.get("error"):
+                    raise HTTPException(
+                        status_code=data.get("status_code", 502),
+                        detail=data.get("error_body", {"detail": "upstream error"}),
+                    )
+
                 content = data.get("content", "")
 
             else:
@@ -373,7 +394,7 @@ def create_app() -> FastAPI:
                 completion_tokens_est=_estimate_tokens(content),
             )
 
-            return {
+            result: dict[str, Any] = {
                 "id": "ollabridge-chat",
                 "object": "chat.completion",
                 "choices": [
@@ -383,6 +404,22 @@ def create_app() -> FastAPI:
                     }
                 ],
             }
+
+            # Attach persona context when client opts in via header
+            include_ctx = (
+                request.headers.get("x-include-persona-context", "").lower()
+                in ("true", "1", "yes")
+            )
+            if include_ctx and node.connector == "homepilot":
+                bridge = _get_memory_bridge(app)
+                ctx = await bridge.fetch_context(
+                    base=node.endpoint or "",
+                    model=model,
+                    api_key=(node.meta or {}).get("api_key", ""),
+                )
+                result["x_persona_context"] = ctx.to_dict()
+
+            return result
 
         except Exception as e:
             latency = int((time.time() - t0) * 1000)
@@ -408,6 +445,47 @@ def create_app() -> FastAPI:
                 completion_tokens_est=0,
             )
             raise HTTPException(500, str(e))
+
+    # ------------------------------------------------------------------
+    # Persona context endpoint — read-only bridge to HomePilot memory
+    # ------------------------------------------------------------------
+
+    @app.options("/v1/persona/context/{model:path}")
+    async def persona_context_preflight(model: str, request: Request) -> Response:
+        """Handle CORS preflight for persona context — no auth required."""
+        return Response(status_code=200)
+
+    @app.get("/v1/persona/context/{model:path}")
+    async def persona_context(
+        model: str,
+        request: Request,
+        _key: str = Depends(require_api_key),
+    ) -> dict[str, Any]:
+        """Return lightweight persona context for a HomePilot model.
+
+        Clients (e.g. 3D-Avatar-Chatbot on Oculus Quest) call this once
+        on model selection to get voice parameters, emotional baseline,
+        user facts, and preferences — everything needed to personalise
+        the avatar without re-fetching on every chat turn.
+        """
+        # Find the HomePilot node that serves this model
+        try:
+            decision = await app.state.obridge.router.choose_node(model=model)
+            node = decision.node
+        except Exception:
+            return {"ok": False, "context": {}, "error": "no_node_for_model"}
+
+        if node.connector != "homepilot":
+            return {"ok": False, "context": {}, "error": "not_a_persona_model"}
+
+        bridge = _get_memory_bridge(app)
+        ctx = await bridge.fetch_context(
+            base=node.endpoint or "",
+            model=model,
+            api_key=(node.meta or {}).get("api_key", ""),
+        )
+
+        return {"ok": True, "context": ctx.to_dict()}
 
     @app.post("/v1/embeddings")
     async def embeddings(
