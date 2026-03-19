@@ -311,6 +311,14 @@ def create_app() -> FastAPI:
     app.include_router(consumer_nodes_router)
     app.include_router(media_proxy_router)
 
+    # World-State & Motion relay routes (additive — VR spatial awareness)
+    from ollabridge.api.world_state import router as world_state_router
+    app.include_router(world_state_router)
+
+    # Trace relay routes (additive — embodiment trace → spatial memory)
+    from ollabridge.api.trace_relay_routes import router as trace_relay_router
+    app.include_router(trace_relay_router)
+
     if (settings.AUTH_MODE or "").lower().strip() == "pairing":
         import os
         from ollabridge.core.pairing import PairingManager, PairingCode
