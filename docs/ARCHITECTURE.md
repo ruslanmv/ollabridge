@@ -568,15 +568,69 @@ Last 200 requests with latency, model, status.
 
 ---
 
+## Cloud Relay Architecture
+
+OllaBridge Cloud extends the local gateway with a hosted relay service for remote access.
+
+### Cloud Components
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   OllaBridge Cloud                            │
+│                                                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │  Relay Hub   │  │  Web Routes  │  │  Device Pair │      │
+│  │ (WebSocket)  │  │ (Dashboard)  │  │ (TV-style)   │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│                                                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │  Federation  │  │  HomePilot   │  │  Ollama      │      │
+│  │  (Peer Mesh) │  │  Connector   │  │  Proxy       │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+└──────────────┬──────────────────────────────────────────────┘
+               │
+      WebSocket Relay
+               │
+┌──────────────▼──────────────────────────────────────────────┐
+│              OllaBridge Local (Your PC)                       │
+│  CloudBridgeManager → WebSocket → Relay Hub                  │
+│  ├─ Discovers models from local Ollama                       │
+│  ├─ Sends hello + model list                                 │
+│  └─ Handles chat/model requests via tunnel                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Device Pairing Flow
+
+```
+1. PC: POST /device/start → user_code + device_code
+2. User: Opens /link → enters code → confirms pairing
+3. PC: POST /device/poll → approved + device_token
+4. PC: WS /relay/connect (Bearer token) → persistent tunnel
+5. Cloud: Routes client requests through WebSocket to PC
+```
+
+### Key Cloud Endpoints
+
+| Path | Purpose |
+|------|---------|
+| `/link` | Device verification — code entry page |
+| `/dashboard` | Enterprise sidebar dashboard |
+| `/relay/connect` | WebSocket relay tunnel |
+| `/device/start` | Start pairing (called by PC) |
+| `/device/poll` | Poll for approval (called by PC) |
+| `/v1/chat/completions` | OpenAI-compatible chat (routes to relay) |
+| `/v1/models` | List models (local + relay devices) |
+
+For full Cloud documentation, see [Cloud Guide](CLOUD.md).
+
+---
+
 ## Future Enhancements
 
 ### Planned Features
 
-**1. Streaming Support**
-- WebSocket or SSE for streaming responses
-- Compatible with OpenAI streaming API
-
-**2. Tag-Based Routing**
+**1. Tag-Based Routing**
 ```python
 # Route "coding" requests to GPU nodes
 @app.post("/v1/chat/completions")
@@ -585,7 +639,7 @@ async def chat(req: ChatReq, tags: list[str] = ["coding"]):
     ...
 ```
 
-**3. Model-Specific Routes**
+**2. Model-Specific Routes**
 ```yaml
 routes:
   - model: "llama-70b"
@@ -594,15 +648,10 @@ routes:
     nodes: ["any"]
 ```
 
-**4. Metrics & Observability**
+**3. Metrics & Observability**
 - Prometheus `/metrics` endpoint
 - OpenTelemetry tracing
 - Grafana dashboards
-
-**5. Web UI**
-- Visual node management
-- Real-time monitoring
-- Configuration interface
 
 ---
 

@@ -751,49 +751,63 @@ In this case, OllaBridge will write the generated key to `.env`. For production 
 
 ## ☁️ Optional: OllaBridge Cloud
 
-OllaBridge Local can **optionally** connect to **OllaBridge Cloud** for multi-user, multi-device deployments.
+OllaBridge Local can **optionally** connect to **[OllaBridge Cloud](https://ruslanmv-ollabridge.hf.space)** for multi-user, multi-device deployments.
 
 ### Cloud Features
 
-- 🔐 **Secure device pairing** with user approval
-- 👥 **Multi-user support** with device ownership
-- 🌍 **No port forwarding needed** (devices dial out to Cloud)
+- 🔐 **TV-style device pairing** with ABCD-1234 codes
+- 👥 **Multi-user support** with email/password or Google OAuth
+- 🌍 **No port forwarding needed** (devices dial out via WebSocket)
 - 📱 **Multi-device per user** (PC + Quest + phone, etc.)
 - 🔄 **Streaming support** for real-time responses
+- 🏢 **Enterprise dashboard** with sidebar layout, device management, server monitoring
+- 🤝 **HomePilot personas** routed through the cloud relay
+- 🔗 **Federation** for peer mesh across multiple cloud instances
 
-**Cloud Relay UI**: The OllaBridge dashboard now includes a **Cloud** tab — click "Link to Cloud", enter the pairing code on the Cloud dashboard, and your PC's GPU is instantly available to all Quest VR headsets through an encrypted WebSocket tunnel.
+**Cloud Relay UI**: The OllaBridge dashboard includes a **Cloud** tab — click "Link to Cloud", enter the pairing code on the [Cloud dashboard](https://ruslanmv-ollabridge.hf.space/link), and your PC's GPU is instantly available to Quest VR headsets through an encrypted WebSocket tunnel.
 
 ### Pairing Your Device with Cloud
 
+#### Option A: From Dashboard (Recommended)
+
+1. Open OllaBridge dashboard → Click **Cloud** in sidebar
+2. Click **"Link to Cloud"** (defaults to `https://ruslanmv-ollabridge.hf.space`)
+3. A pairing code appears (e.g., `ABCD-1234`)
+4. Open `https://ruslanmv-ollabridge.hf.space/link` → enter the code → confirm
+
+#### Option B: From CLI
+
 ```bash
 # 1. Pair this device with OllaBridge Cloud
-ollabridge-node cloud-pair --cloud https://your-cloud-url.com
+ollabridge-node cloud-pair --cloud https://ruslanmv-ollabridge.hf.space
 
-# Shows pairing code - approve via web UI
+# Shows pairing code - approve at /link on the Cloud dashboard
 
 # 2. Connect to Cloud (uses saved credentials)
 ollabridge-node cloud-connect
 ```
 
 **How it works:**
-1. `cloud-pair` gets a pairing code from Cloud
-2. You approve the code via Cloud's web UI
+1. `cloud-pair` gets a pairing code from Cloud (`/device/start`)
+2. You approve the code at `/link` on the Cloud web UI
 3. Device credentials saved to `~/.ollabridge/cloud_device.json`
-4. `cloud-connect` connects your device to Cloud relay
-5. Cloud routes requests to your device securely
+4. WebSocket tunnel opens to `/relay/connect` — models registered automatically
+5. Cloud routes client requests to your device through the tunnel
 
 ### Local Mode (Default) vs Cloud Mode
 
 | Feature | Local Mode | Cloud Mode |
 |---------|------------|------------|
-| **Setup** | `ollabridge-node join --control <gateway> --token <token>` | `ollabridge-node cloud-pair --cloud <url>` |
-| **Authentication** | Enrollment token | Device pairing + approval |
-| **Users** | Single self-hosted | Multi-user cloud accounts |
-| **Devices** | Manual node management | Per-user device ownership |
-| **Streaming** | Not yet | ✅ Supported |
-| **Port forwarding** | Not needed (outbound) | Not needed (outbound) |
+| **Setup** | `ollabridge-node join --control <gateway> --token <token>` | Dashboard Cloud tab or `cloud-pair` CLI |
+| **Authentication** | Enrollment token | TV-style device pairing + user accounts |
+| **Users** | Single self-hosted | Multi-user with Google OAuth |
+| **Devices** | Manual node management | Per-user device ownership with dashboard |
+| **Dashboard** | Local React UI | Enterprise sidebar with device monitoring |
+| **Port forwarding** | Not needed (outbound) | Not needed (WebSocket relay) |
 
 **Both modes work together!** Run local gateway + nodes for self-hosting, and optionally pair devices with Cloud for multi-user scenarios.
+
+> **Full Cloud documentation:** [docs/CLOUD.md](docs/CLOUD.md)
 
 ---
 
