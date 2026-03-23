@@ -6,7 +6,6 @@ import {
   WifiOff,
   Link2,
   Unlink,
-  RefreshCw,
   Copy,
   Check,
   AlertTriangle,
