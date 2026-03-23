@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { useFlowMetrics, useHealth, useModels, useRuntimes, useSettings } from '../../lib/hooks'
+import { useCloudStatus, useFlowMetrics, useHealth, useModels, useRuntimes, useSettings } from '../../lib/hooks'
 import { deriveSourceMode } from '../../lib/api'
 import { TowerOrb } from './TowerOrb'
 import { SignalBeams } from './SignalBeams'
@@ -19,8 +19,11 @@ export function TowerCanvas({ onNavigate }: { onNavigate: (page: Page) => void }
   const { data: modelsData } = useModels()
   const { data: runtimesData } = useRuntimes()
   const { data: flow } = useFlowMetrics()
+  const { data: cloud } = useCloudStatus()
 
   const isOnline = health?.status === 'ok'
+  const cloudConnected = cloud?.state === 'connected'
+  const cloudLabel = cloud?.state === 'connected' ? `${cloud.models_count} model${cloud.models_count !== 1 ? 's' : ''} shared` : cloud?.state === 'pairing' ? 'Pairing...' : 'Not linked'
   const models = modelsData?.data ?? []
   const modelIds = models.map((m) => m.id)
   const personaCount = countPersonaModels(modelIds)
@@ -101,6 +104,17 @@ export function TowerCanvas({ onNavigate }: { onNavigate: (page: Page) => void }
 
         <div className="mt-3 text-[11px] text-white/22 uppercase tracking-[0.22em] font-medium">
           {isFlowing ? `Live flow · ${flow?.requests_8s ?? 0} request${(flow?.requests_8s ?? 0) !== 1 ? 's' : ''} in 8s` : `Model routing · ${runtimeCount} runtime${runtimeCount !== 1 ? 's' : ''} connected`}
+        </div>
+
+        {/* Cloud Relay chip — entry point to Cloud page */}
+        <div className="mt-6">
+          <SourceChip
+            label="Cloud Relay"
+            subtitle={cloudLabel}
+            color={cloudConnected ? '#14b8a6' : '#8b5cf6'}
+            dim={!cloudConnected}
+            onClick={() => onNavigate('cloud')}
+          />
         </div>
       </div>
     </div>

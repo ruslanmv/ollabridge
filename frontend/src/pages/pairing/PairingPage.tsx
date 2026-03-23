@@ -418,7 +418,7 @@ function DevicesList() {
                 </p>
               </div>
               <span className="text-xs text-white/20 shrink-0">
-                {new Date(device.paired_at).toLocaleDateString()}
+                {new Date(Number(device.paired_at) * 1000).toLocaleDateString()}
               </span>
               <button
                 onClick={() => {
