@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Database, Brain, Boxes, Link2, Settings } from 'lucide-react'
+import { LayoutDashboard, Database, Brain, Boxes, Link2, Cloud, Settings } from 'lucide-react'
 import type { Page } from '../App'
 
 const NAV_ITEMS: { id: Page; icon: typeof LayoutDashboard; label: string }[] = [
@@ -8,6 +8,7 @@ const NAV_ITEMS: { id: Page; icon: typeof LayoutDashboard; label: string }[] = [
   { id: 'models', icon: Brain, label: 'Models' },
   { id: 'nodes', icon: Boxes, label: 'Nodes' },
   { id: 'pairing', icon: Link2, label: 'Pairing' },
+  { id: 'cloud', icon: Cloud, label: 'Cloud' },
   { id: 'settings', icon: Settings, label: 'Settings' },
 ]
 

@@ -300,6 +300,17 @@ def create_app() -> FastAPI:
 
         asyncio.get_event_loop().create_task(_init_nodes())
 
+        # Initialize cloud bridge manager and auto-connect if credentials exist
+        from ollabridge.cloud.bridge_manager import CloudBridgeManager
+        bridge_mgr = CloudBridgeManager(
+            ollama_base_url=settings.OLLAMA_BASE_URL,
+            homepilot_base_url=settings.HOMEPILOT_BASE_URL,
+            homepilot_api_key=settings.HOMEPILOT_API_KEY,
+            homepilot_enabled=settings.HOMEPILOT_ENABLED,
+        )
+        app.state.cloud_bridge = bridge_mgr
+        asyncio.get_event_loop().create_task(bridge_mgr.try_auto_connect())
+
     if settings.RELAY_ENABLED:
         app.include_router(build_relay_router(registry=app.state.relay_hub.registry, hub=app.state.relay_hub))
 
@@ -318,6 +329,10 @@ def create_app() -> FastAPI:
     # Trace relay routes (additive — embodiment trace → spatial memory)
     from ollabridge.api.trace_relay_routes import router as trace_relay_router
     app.include_router(trace_relay_router)
+
+    # Cloud relay bridge (connect local GPU to OllaBridge Cloud)
+    from ollabridge.api.cloud_routes import router as cloud_router
+    app.include_router(cloud_router)
 
     if (settings.AUTH_MODE or "").lower().strip() == "pairing":
         import os

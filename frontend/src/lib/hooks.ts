@@ -91,5 +91,14 @@ export function useConsumerNodes() {
   })
 }
 
+export function useCloudStatus() {
+  return useQuery({
+    queryKey: ['cloudStatus'],
+    queryFn: api.cloudStatus,
+    refetchInterval: 3_000,
+    retry: false,
+  })
+}
+
 // Backward-compatible alias for older components
 export const usePairDevices = usePairedDevices
