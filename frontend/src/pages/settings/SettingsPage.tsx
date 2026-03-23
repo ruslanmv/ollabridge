@@ -477,6 +477,22 @@ export function SettingsPage() {
           </div>
         </GlassCard>
 
+        {/* Cloud Relay */}
+        <GlassCard delay={0.25}>
+          <SectionTitle
+            icon={Server}
+            title="Cloud Relay"
+            subtitle="Link this gateway to OllaBridge Cloud for remote Quest VR access"
+            color="#00e5ff"
+          />
+          <div className="py-3 text-xs text-white/30">
+            Cloud relay settings are managed on the{' '}
+            <span className="text-glow-cyan/70 font-medium">Cloud</span> page
+            in the sidebar. Use it to pair this PC with OllaBridge Cloud, view connection
+            status, and manage the WebSocket tunnel to your Quest VR headsets.
+          </div>
+        </GlassCard>
+
         {/* Save bar */}
         <div className="sticky bottom-0 pb-6 pt-2">
           <motion.div

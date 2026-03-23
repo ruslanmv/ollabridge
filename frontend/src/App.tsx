@@ -7,8 +7,9 @@ import { PairingPage } from './pages/pairing/PairingPage'
 import { SettingsPage } from './pages/settings/SettingsPage'
 import { SourcesPage } from './pages/sources/SourcesPage'
 import { NodesPage } from './pages/nodes/NodesPage'
+import { CloudPage } from './pages/cloud/CloudPage'
 
-export type Page = 'dashboard' | 'sources' | 'models' | 'nodes' | 'pairing' | 'settings'
+export type Page = 'dashboard' | 'sources' | 'models' | 'nodes' | 'pairing' | 'cloud' | 'settings'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -24,6 +25,7 @@ export default function App() {
           {page === 'models' && <ModelsPage onNavigate={setPage} />}
           {page === 'nodes' && <NodesPage />}
           {page === 'pairing' && <PairingPage />}
+          {page === 'cloud' && <CloudPage />}
           {page === 'settings' && <SettingsPage />}
         </main>
       </div>
