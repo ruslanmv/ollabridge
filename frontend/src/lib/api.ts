@@ -212,6 +212,32 @@ export function deriveSourceMode(settings?: Partial<GatewaySettings> | null): So
   return 'none'
 }
 
+export type CloudStatus = {
+  state: 'disconnected' | 'pairing' | 'connecting' | 'connected' | 'reconnecting' | 'error'
+  cloud_url: string
+  device_id: string
+  models_shared: string[]
+  models_count: number
+  connected_since: number | null
+  uptime_seconds: number | null
+  last_error: string
+  pairing_code: string
+  pairing_expires_at: number
+  reconnect_attempt: number
+}
+
+export type CloudPairStartResponse = {
+  ok: boolean
+  user_code: string
+  verification_url: string
+  expires_in: number
+}
+
+export type CloudPairPollResponse = {
+  status: 'pending' | 'approved' | 'expired'
+  device_id?: string
+}
+
 export type FlowMetricsResponse = {
   active: boolean
   requests_8s: number
@@ -265,4 +291,25 @@ export const api = {
     }),
   deleteConsumerNode: (id: string) =>
     request<{ ok: boolean; deleted: string }>(`/consumer-nodes/${id}`, { method: 'DELETE' }),
+
+  // Cloud relay bridge
+  cloudStatus: () => request<CloudStatus>('/admin/cloud/status'),
+  cloudPairStart: (cloud_url: string) =>
+    request<CloudPairStartResponse>('/admin/cloud/pair/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cloud_url }),
+    }),
+  cloudPairPoll: () =>
+    request<CloudPairPollResponse>('/admin/cloud/pair/poll', { method: 'POST' }),
+  cloudConnect: (cloud_url: string, device_token: string, device_id: string = '') =>
+    request<{ ok: boolean; state: string }>('/admin/cloud/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cloud_url, device_token, device_id }),
+    }),
+  cloudDisconnect: () =>
+    request<{ ok: boolean; state: string }>('/admin/cloud/disconnect', { method: 'POST' }),
+  cloudUnlink: () =>
+    request<{ ok: boolean; state: string; credentials_deleted: boolean }>('/admin/cloud/unlink', { method: 'POST' }),
 }
