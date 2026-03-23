@@ -761,6 +761,8 @@ OllaBridge Local can **optionally** connect to **OllaBridge Cloud** for multi-us
 - 📱 **Multi-device per user** (PC + Quest + phone, etc.)
 - 🔄 **Streaming support** for real-time responses
 
+**Cloud Relay UI**: The OllaBridge dashboard now includes a **Cloud** tab — click "Link to Cloud", enter the pairing code on the Cloud dashboard, and your PC's GPU is instantly available to all Quest VR headsets through an encrypted WebSocket tunnel.
+
 ### Pairing Your Device with Cloud
 
 ```bash

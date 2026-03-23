@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { deriveSourceMode } from '../../lib/api'
-import { useConsumerNodes, useFlowMetrics, useHealth, useModels, useRuntimes, useSettings } from '../../lib/hooks'
+import { useCloudStatus, useConsumerNodes, useFlowMetrics, useHealth, useModels, useRuntimes, useSettings } from '../../lib/hooks'
 
 export function StatusHud() {
   const { data: health } = useHealth()
@@ -9,6 +9,7 @@ export function StatusHud() {
   const { data: runtimesData } = useRuntimes()
   const { data: consumersData } = useConsumerNodes()
   const { data: flow } = useFlowMetrics()
+  const { data: cloud } = useCloudStatus()
 
   const isOnline = health?.status === 'ok'
   const sourceMode = deriveSourceMode(settings)
@@ -16,8 +17,13 @@ export function StatusHud() {
   const runtimeCount = runtimesData?.count ?? 0
   const consumerCount = consumersData?.count ?? 0
 
+  const cloudConnected = cloud?.state === 'connected'
+  const cloudLabel = cloud?.state === 'connected' ? `${cloud.models_count} models` : cloud?.state ?? 'Off'
+  const cloudColor = cloudConnected ? '#14b8a6' : cloud?.state === 'reconnecting' ? '#f59e0b' : 'rgba(255,255,255,0.35)'
+
   const badges = [
     { label: 'Status', value: isOnline ? 'Online' : 'Offline', color: isOnline ? '#14b8a6' : '#ec4899', dot: true },
+    { label: 'Cloud', value: cloudLabel, color: cloudColor, dot: cloudConnected },
     { label: 'Source Mode', value: sourceMode === 'none' ? '—' : sourceMode[0].toUpperCase() + sourceMode.slice(1), color: '#68f4ff' },
     { label: 'Models', value: String(modelCount), color: '#68f4ff' },
     { label: 'Runtimes', value: String(runtimeCount), color: '#8b5cf6' },
