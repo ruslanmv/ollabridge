@@ -399,63 +399,142 @@ ollabridge start --share
 
 ## Cloud Mode (Multi-User)
 
-**OllaBridge Cloud** enables multi-user, multi-device deployments.
+**OllaBridge Cloud** enables multi-user, multi-device deployments with an enterprise-grade dashboard.
 
 ### What is Cloud Mode?
 
 | Feature | Local Mode | Cloud Mode |
 |---------|------------|------------|
-| **Users** | Single (you) | Multiple users |
-| **Devices** | Manual management | Per-user ownership |
-| **Setup** | Self-hosted | Hosted service |
-| **Streaming** | Coming soon | ✅ Available |
-| **Authentication** | Tokens | Device pairing |
+| **Users** | Single (you) | Multiple users with accounts |
+| **Devices** | Manual management | Per-user device ownership |
+| **Setup** | Self-hosted | Hosted service or self-hosted |
+| **Streaming** | Coming soon | Available |
+| **Authentication** | API key tokens | TV-style device pairing |
+| **Dashboard** | Local React UI | Enterprise sidebar UI |
+| **VR Support** | LAN only | Cloud relay (no port forwarding) |
+
+### Architecture: How Cloud Relay Works
+
+```
+Your PC (GPU)              OllaBridge Cloud            Oculus Quest
+┌───────────────┐         ┌──────────────┐         ┌─────────────┐
+│ Ollama        │         │              │         │ 3D Avatar   │
+│ HomePilot     │◄──WSS──►│  Relay Hub   │◄──HTTPS─│ Chatbot     │
+│ OllaBridge    │         │              │         │             │
+└───────────────┘         └──────────────┘         └─────────────┘
+```
+
+1. **Your PC** runs Ollama/HomePilot with the models (your GPU does the work)
+2. **OllaBridge Cloud** acts as a relay — it doesn't store data, just routes requests
+3. **Quest/Web clients** connect to the cloud URL with standard OpenAI-compatible API
+4. **No port forwarding** — your PC dials OUT via WebSocket, works behind any NAT/firewall
 
 ### How to Join OllaBridge Cloud
 
-#### Step 1: Pair Your Device
+#### Method A: From OllaBridge Dashboard (Recommended)
+
+1. Open your local OllaBridge dashboard at `http://localhost:11435`
+2. Click the **Cloud** icon in the sidebar
+3. Enter the Cloud URL: `https://ruslanmv-ollabridge.hf.space`
+4. Click **"Link to Cloud"**
+5. A pairing code appears (e.g., `ABCD-1234`)
+
+#### Method B: From CLI
 
 ```bash
-ollabridge-node cloud-pair --cloud https://your-cloud-url.com
+ollabridge-node cloud-pair --cloud https://ruslanmv-ollabridge.hf.space
 ```
 
 **You'll see:**
 ```
-╭─────────────── 🔗 OllaBridge Cloud Pairing ───────────────╮
-│                                                            │
-│ User code:     ABC-123                                     │
-│ Verify at:     https://your-cloud-url.com/pair            │
-│                                                            │
-│ Open the verification URL, log in, and enter the code.    │
-│ This code expires in ~300 seconds.                        │
-│                                                            │
-╰────────────────────────────────────────────────────────────╯
+╭─────────────── OllaBridge Cloud Pairing ───────────────╮
+│                                                         │
+│ User code:     ABCD-1234                                │
+│ Verify at:     https://ruslanmv-ollabridge.hf.space/link│
+│                                                         │
+│ Open the verification URL, log in, and enter the code. │
+│ This code expires in ~600 seconds.                     │
+│                                                         │
+╰─────────────────────────────────────────────────────────╯
 
 ⠋ Waiting for approval...
 ```
 
-#### Step 2: Approve on Cloud Website
+#### Step 2: Approve on Cloud Dashboard
 
-1. Open `https://your-cloud-url.com/pair`
-2. Log in to your account
-3. Enter code: `ABC-123`
-4. Click "Approve Device"
+1. Open `https://ruslanmv-ollabridge.hf.space/link` (the verification URL)
+2. Log in or create an account (email/password or Google OAuth)
+3. Enter the 8-character pairing code: `ABCD-1234`
+4. Click **"Confirm & Link"**
+5. Your PC auto-connects via WebSocket
 
-#### Step 3: Connect
+> **Note:** If you're already logged in, navigating to `/link` takes you directly
+> to the code entry page. If not, you'll be redirected to login first and then
+> sent back to the linking page automatically.
+
+#### Step 3: Verify Connection
+
+Once approved, your OllaBridge local dashboard shows:
+- **Cloud Relay: Connected** with a green status dot
+- Number of models shared with the cloud
+- Device ID and uptime
+
+The Cloud dashboard (`/dashboard`) shows your device in the sidebar with online/offline status.
+
+### Cloud Dashboard Features
+
+The OllaBridge Cloud dashboard has an **enterprise sidebar layout**:
+
+**Left Sidebar:**
+- **Navigation** — Overview, Link Device
+- **Devices** — Lists all your paired PCs with online/offline badges
+- **Resources** — Documentation, API Status, Admin Panel
+- **Settings** — Sign Out
+- **User Profile** — Avatar, name, and email at the bottom
+
+**Main Content Area:**
+- Server status (Gateway, Ollama, Relay health)
+- Stats (Devices, Relay Connections, Models Available, API Endpoint)
+- Device cards with rename/delete actions
+- Quick Start connection guide
+
+### Cloud API Endpoints
+
+Once connected, clients (Quest VR, web apps) use the cloud URL:
 
 ```bash
-ollabridge-node cloud-connect
-```
+# Chat with a model through the cloud relay
+curl -X POST https://ruslanmv-ollabridge.hf.space/ollama/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5:1.5b",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "stream": false
+  }'
 
-**Done!** Your device is now connected to OllaBridge Cloud.
+# List available models (includes relay device models)
+curl https://ruslanmv-ollabridge.hf.space/ollama/v1/models
+
+# Chat with a HomePilot persona
+curl -X POST https://ruslanmv-ollabridge.hf.space/ollama/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "personality:therapist",
+    "messages": [{"role": "user", "content": "I need advice"}]
+  }'
+```
 
 ### Cloud Advantages
 
-- ✅ **Multi-device:** Use PC + Quest + phone under one account
-- ✅ **Team sharing:** Share access with team members
-- ✅ **Streaming:** Real-time token-by-token responses
-- ✅ **Billing & quotas:** Enterprise features
-- ✅ **Web dashboard:** Manage devices via web UI
+- **Multi-device:** Use PC + Quest + phone under one account
+- **Team sharing:** Share access with team members
+- **Streaming:** Real-time token-by-token responses
+- **Enterprise dashboard:** Sidebar layout with device management
+- **Web dashboard:** Manage devices, monitor server status
+- **No port forwarding:** WebSocket relay works behind any NAT/firewall
+- **Google OAuth:** Quick sign-in with Google account
+- **HomePilot personas:** Route persona and personality agents through the cloud
+- **Federation:** Peer mesh across multiple cloud instances for load balancing
 
 ---
 
