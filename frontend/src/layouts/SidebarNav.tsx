@@ -14,11 +14,11 @@ const NAV_ITEMS: { id: Page; icon: typeof LayoutDashboard; label: string }[] = [
 
 export function SidebarNav({ activePage, onNavigate }: { activePage: Page; onNavigate: (p: Page) => void }) {
   return (
-    <aside className="w-16 h-full flex flex-col items-center py-5 gap-2 border-r border-white/5 bg-navy-900/80 backdrop-blur-sm z-20">
-      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-glow-cyan/30 to-glow-violet/30 border border-white/10 flex items-center justify-center mb-4">
+    <aside className="w-[72px] h-full flex flex-col items-center py-4 gap-0.5 border-r border-white/5 bg-navy-900/80 backdrop-blur-sm z-20">
+      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-glow-cyan/30 to-glow-violet/30 border border-white/10 flex items-center justify-center mb-3">
         <div className="w-4 h-4 rounded-full bg-glow-cyan/60" />
       </div>
-      <nav className="flex flex-col gap-1 flex-1">
+      <nav className="flex flex-col gap-0.5 flex-1">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon
           const active = activePage === item.id
@@ -26,7 +26,7 @@ export function SidebarNav({ activePage, onNavigate }: { activePage: Page; onNav
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 group ${active ? 'text-glow-cyan bg-glow-cyan/10' : 'text-white/30 hover:text-white/60 hover:bg-white/5'}`}
+              className={`relative w-14 rounded-xl flex flex-col items-center justify-center gap-0.5 py-2 transition-all duration-200 group ${active ? 'text-glow-cyan bg-glow-cyan/10' : 'text-white/30 hover:text-white/60 hover:bg-white/5'}`}
               title={item.label}
             >
               {active && (
@@ -36,8 +36,8 @@ export function SidebarNav({ activePage, onNavigate }: { activePage: Page; onNav
                   transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                 />
               )}
-              <Icon size={18} className="relative z-10" />
-              <span className="absolute left-14 px-2 py-1 rounded-md bg-navy-700 text-xs text-white/80 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-30 border border-white/10">
+              <Icon size={17} className="relative z-10" />
+              <span className="relative z-10 text-[9px] font-medium leading-none tracking-wide">
                 {item.label}
               </span>
             </button>

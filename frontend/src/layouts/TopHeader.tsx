@@ -8,6 +8,7 @@ const PAGE_TITLES: Record<Page, string> = {
   models: 'Model Inventory',
   nodes: 'Node Fleet Manager',
   pairing: 'Device Pairing',
+  cloud: 'Cloud Relay',
   settings: 'Settings',
 }
 
