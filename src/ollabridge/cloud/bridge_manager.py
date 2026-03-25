@@ -299,6 +299,9 @@ class CloudBridgeManager:
                     "ok": True,
                     "data": {"models": models},
                 }
+            elif op == "media_fetch":
+                result = await self._fetch_media(payload)
+                response = {"type": "res", "id": req_id, "ok": True, "data": result}
             else:
                 response = {
                     "type": "res",
@@ -340,6 +343,55 @@ class CloudBridgeManager:
             )
             resp.raise_for_status()
             return resp.json()
+
+    async def _fetch_media(self, payload: dict) -> dict:
+        """Fetch media from local HomePilot and return as base64.
+
+        Called by the cloud via relay when it needs to serve media that
+        is only accessible from the local network (HomePilot behind NAT).
+
+        Args:
+            payload: {"path": "files/projects/.../image.png", "max_size_mb": 10}
+
+        Returns:
+            {"content": "<base64>", "mime_type": "image/png", "size_bytes": 12345}
+        """
+        import base64
+
+        media_path = payload.get("path", "")
+        max_size = int(payload.get("max_size_mb", 10)) * 1024 * 1024
+
+        if not media_path:
+            raise ValueError("Missing 'path' in media_fetch payload")
+
+        if ".." in media_path:
+            raise ValueError("Invalid path")
+
+        # Fetch from local OllaBridge gateway's media proxy (which reaches HomePilot)
+        from ollabridge.core.settings import settings
+
+        gateway_url = f"http://127.0.0.1:{settings.PORT}"
+        url = f"{gateway_url}/v1/media/proxy/{media_path}"
+
+        headers: dict[str, str] = {}
+        keys = settings.API_KEYS.split(",")
+        if keys and keys[0].strip():
+            headers["X-API-Key"] = keys[0].strip()
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+
+            if len(resp.content) > max_size:
+                raise ValueError(f"File exceeds {max_size // 1024 // 1024}MB limit")
+
+            mime_type = resp.headers.get("content-type", "application/octet-stream")
+
+            return {
+                "content": base64.b64encode(resp.content).decode(),
+                "mime_type": mime_type,
+                "size_bytes": len(resp.content),
+            }
 
     async def _bridge_loop(self) -> None:
         """Main bridge loop with auto-reconnect."""
@@ -401,7 +453,7 @@ class CloudBridgeManager:
                     hello = {
                         "type": "hello",
                         "models": models,
-                        "capabilities": ["chat", "models"],
+                        "capabilities": ["chat", "models", "media_fetch"],
                         "client_version": "ollabridge-gateway-1.0",
                         "platform": sys.platform,
                     }
@@ -470,7 +522,7 @@ class CloudBridgeManager:
                 hello = {
                     "type": "hello",
                     "models": models,
-                    "capabilities": ["chat", "models"],
+                    "capabilities": ["chat", "models", "media_fetch"],
                     "client_version": "ollabridge-gateway-1.0",
                     "platform": sys.platform,
                 }
