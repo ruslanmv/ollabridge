@@ -137,6 +137,15 @@ Credentials are saved to `~/.ollabridge/cloud_device.json`. On restart, OllaBrid
 | POST | `/device/poll` | PC polls for approval |
 | WS | `/relay/connect` | WebSocket relay tunnel (Bearer token auth) |
 
+### Media Cache Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/media/upload` | Upload media to cloud cache (50 MB max) |
+| GET | `/media/cache/{filename}` | Serve cached media (token auth) |
+
+> **How it works:** When a relay-connected HomePilot returns chat responses with file attachments, the cloud uses the `media_fetch` relay operation to pull files through the WebSocket tunnel, caches them, and rewrites URLs to `/media/cache/` paths so clients (e.g., Quest VR) can access them directly.
+
 ### Web UI Routes
 
 | Method | Path | Description |
