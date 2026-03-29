@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────────────────────
+# OllaBridge Cloud — Integration Test Matrix
+# ─────────────────────────────────────────────────────────────
+# Smoke tests for each provider. Run via:
+#   python scripts/test_providers.py
+# ─────────────────────────────────────────────────────────────
+
+tests:
+  - id: smoke-gemini
+    provider: gemini-free
+    type: chat
+    model: gemini-2.5-flash
+    prompt: "Say hello in one sentence."
+
+  - id: smoke-groq
+    provider: groq-free
+    type: chat
+    model: llama-3.3-70b-versatile
+    prompt: "Summarize: routing based on latency and quotas."
+
+  - id: smoke-openrouter
+    provider: openrouter-free
+    type: chat
+    model: google/gemma-3-27b-it:free
+    prompt: "Return JSON with provider=test"
+
+  - id: smoke-hf
+    provider: huggingface-free
+    type: chat
+    model: meta-llama/Llama-3.1-8B-Instruct
+    prompt: "List 3 cloud routing goals."
+
+  - id: smoke-deepseek
+    provider: deepseek-cheap
+    type: chat
+    model: deepseek-chat
+    prompt: "Explain weighted failover in 2 lines."
+
+  - id: smoke-local
+    provider: ollama-node-01
+    type: chat
+    model: qwen2.5:14b
+    prompt: "Confirm local node is working."
