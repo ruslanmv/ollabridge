@@ -67,7 +67,7 @@ providers:
     category: free-lab
     priority: 70
     weight: 10
-    base_url: https://api-inference.huggingface.co
+    base_url: https://router.huggingface.co
     credential_env: HUGGINGFACE_API_KEY
     tags: [free, experimental, oss, testing]
     notes: "Best for experimentation"

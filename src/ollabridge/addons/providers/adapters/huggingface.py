@@ -1,8 +1,11 @@
 """
 Hugging Face Inference API adapter.
 
-HF Inference uses a different request format from OpenAI.
-This adapter translates between the two.
+HF serverless inference uses the router endpoint:
+    https://router.huggingface.co/hf/{model}/v1/chat/completions
+
+The base_url should be https://router.huggingface.co
+(api-inference.huggingface.co is deprecated and returns 410).
 """
 
 from __future__ import annotations
@@ -18,10 +21,11 @@ logger = logging.getLogger(__name__)
 
 
 class HuggingFaceAdapter(BaseProviderAdapter):
-    """Adapter for Hugging Face Inference API."""
+    """Adapter for Hugging Face serverless Inference API (router endpoint)."""
 
     def _chat_url(self, model: str) -> str:
-        return f"{self.base_url}/models/{model}/v1/chat/completions"
+        # router.huggingface.co/hf/{model}/v1/chat/completions
+        return f"{self.base_url}/hf/{model}/v1/chat/completions"
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -47,11 +51,11 @@ class HuggingFaceAdapter(BaseProviderAdapter):
             resp.raise_for_status()
             data = resp.json()
 
-        # HF may return OpenAI-compatible format directly or a simpler format
+        # HF router returns OpenAI-compatible format
         if "choices" in data:
             return data
 
-        # Fallback: wrap raw text response
+        # Fallback: wrap raw text response (legacy format)
         text = ""
         if isinstance(data, list) and data:
             text = data[0].get("generated_text", "")
@@ -73,9 +77,8 @@ class HuggingFaceAdapter(BaseProviderAdapter):
     async def health_check(self) -> bool:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    f"{self.base_url}/status", headers=self._headers()
-                )
-                return resp.status_code == 200
+                # Simple GET to the router base — returns 200 if reachable
+                resp = await client.get(self.base_url, headers=self._headers())
+                return resp.status_code < 500
         except Exception:
             return False
