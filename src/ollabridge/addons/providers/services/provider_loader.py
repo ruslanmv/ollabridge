@@ -79,6 +79,104 @@ def load_aliases(path: str | Path | None = None) -> dict[str, list[AliasCandidat
     return aliases
 
 
+def append_provider_to_seed(provider: dict, path: str | Path | None = None) -> None:
+    """
+    Append a single provider entry to providers.seed.yaml.
+
+    This is additive only — existing entries are never modified or removed.
+    """
+    if path is None:
+        path = _CATALOG_DIR / "providers.seed.yaml"
+    path = Path(path)
+
+    if not path.exists():
+        data: dict = {"providers": []}
+    else:
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {"providers": []}
+
+    providers_list = data.get("providers", [])
+
+    # Guard: don't duplicate an existing id
+    existing_ids = {p.get("id") for p in providers_list}
+    if provider.get("id") in existing_ids:
+        raise ValueError(f"Provider '{provider['id']}' already exists in seed file")
+
+    providers_list.append(provider)
+    data["providers"] = providers_list
+
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    logger.info("Appended provider '%s' to %s", provider.get("id"), path)
+
+
+def toggle_provider_in_seed(provider_id: str, enabled: bool, path: str | Path | None = None) -> bool:
+    """
+    Toggle the enabled flag of a provider in providers.seed.yaml.
+
+    Returns True if the provider was found and toggled.
+    """
+    if path is None:
+        path = _CATALOG_DIR / "providers.seed.yaml"
+    path = Path(path)
+
+    if not path.exists():
+        return False
+
+    with open(path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+
+    found = False
+    for entry in data.get("providers", []):
+        if entry.get("id") == provider_id:
+            entry["enabled"] = enabled
+            found = True
+            break
+
+    if found:
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        logger.info("Toggled provider '%s' enabled=%s in %s", provider_id, enabled, path)
+
+    return found
+
+
+def append_alias_to_seed(alias_name: str, candidates: list[dict], path: str | Path | None = None) -> None:
+    """
+    Append or update a model alias in model_aliases.yaml.
+
+    If the alias already exists, the new candidates are appended to it.
+    """
+    if path is None:
+        path = _CATALOG_DIR / "model_aliases.yaml"
+    path = Path(path)
+
+    if not path.exists():
+        data: dict = {"aliases": {}}
+    else:
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {"aliases": {}}
+
+    aliases = data.get("aliases", {})
+    if alias_name in aliases:
+        # Append new candidates to existing alias
+        existing = aliases[alias_name]
+        existing_keys = {(c.get("provider"), c.get("model")) for c in existing}
+        for c in candidates:
+            if (c.get("provider"), c.get("model")) not in existing_keys:
+                existing.append(c)
+    else:
+        aliases[alias_name] = candidates
+
+    data["aliases"] = aliases
+
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    logger.info("Updated alias '%s' in %s", alias_name, path)
+
+
 def load_test_matrix(path: str | Path | None = None) -> list[dict]:
     """
     Load the test matrix from test-matrix.yaml.
