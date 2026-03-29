@@ -484,24 +484,24 @@ def create_app() -> FastAPI:
 
             else:
                 # --- Addon: multi-provider routing ---
-                # Try the additive provider layer before falling back to local Ollama.
+                # Only route through the addon layer for recognized aliases
+                # (free-best, free-fast, etc.).  Concrete model names must
+                # fall through to the local Ollama instance below.
                 provider_router = getattr(app.state, "provider_router", None)
                 addon_handled = False
-                if provider_router:
+                if provider_router and provider_router.registry.is_alias(model):
                     try:
-                        candidates = provider_router.resolve(model)
-                        if candidates:
-                            result_data = await provider_router.route_chat(
-                                model, payload_messages,
-                                temperature=req.temperature,
-                                max_tokens=req.max_tokens,
-                            )
-                            choices = result_data.get("choices", [])
-                            if choices:
-                                content = choices[0].get("message", {}).get("content", "")
-                                addon_handled = True
+                        result_data = await provider_router.route_chat(
+                            model, payload_messages,
+                            temperature=req.temperature,
+                            max_tokens=req.max_tokens,
+                        )
+                        choices = result_data.get("choices", [])
+                        if choices:
+                            content = choices[0].get("message", {}).get("content", "")
+                            addon_handled = True
                     except Exception as addon_exc:
-                        log.debug("Addon providers exhausted for model=%s, falling back to Ollama: %s", model, addon_exc)
+                        log.debug("Addon providers exhausted for alias=%s, falling back to Ollama: %s", model, addon_exc)
 
                 if not addon_handled:
                     from ollabridge.providers.ollama_client import chat as ollama_chat
