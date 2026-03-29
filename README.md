@@ -967,14 +967,22 @@ Built-in aliases: `free-best`, `free-fast`, `free-flex`, `cheap-reasoning`, `loc
 
 ### Configuration
 
-Set API keys in your environment:
+Get your free API keys (click, sign up, copy):
 
-```env
-GEMINI_API_KEY=your-gemini-key
-GROQ_API_KEY=your-groq-key
-OPENROUTER_API_KEY=your-openrouter-key
-HUGGINGFACE_API_KEY=your-hf-key
-DEEPSEEK_API_KEY=your-deepseek-key
+| Provider | Get Free Key | Env Variable |
+|----------|-------------|--------------|
+| **Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` |
+| **Groq** | [console.groq.com/keys](https://console.groq.com/keys) | `GROQ_API_KEY` |
+| **OpenRouter** | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) | `OPENROUTER_API_KEY` |
+| **Hugging Face** | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) | `HUGGINGFACE_API_KEY` |
+| **DeepSeek** | [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) | `DEEPSEEK_API_KEY` |
+
+Quick setup:
+
+```bash
+cp .env.providers.example .env.providers
+# Paste your keys in .env.providers
+source .env.providers
 ```
 
 Add or remove providers by editing:
