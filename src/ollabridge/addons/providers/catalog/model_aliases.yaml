@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────
+# OllaBridge Cloud — Model Alias Mapping
+# ─────────────────────────────────────────────────────────────
+# Aliases let clients request a logical model name (e.g. "free-best")
+# and the router resolves it to a concrete provider + model pair.
+#
+# The router tries candidates in order; if the first provider is
+# unhealthy or over quota, it falls through to the next.
+# ─────────────────────────────────────────────────────────────
+
+aliases:
+  free-best:
+    - provider: gemini-free
+      model: gemini-2.5-flash
+    - provider: groq-free
+      model: llama-3.3-70b-versatile
+    - provider: openrouter-free
+      model: google/gemma-3-27b-it:free
+
+  free-fast:
+    - provider: groq-free
+      model: llama-3.3-70b-versatile
+    - provider: gemini-free
+      model: gemini-2.5-flash
+
+  free-flex:
+    - provider: openrouter-free
+      model: meta-llama/llama-3.3-70b-instruct:free
+    - provider: huggingface-free
+      model: meta-llama/Llama-3.1-8B-Instruct
+
+  cheap-reasoning:
+    - provider: deepseek-cheap
+      model: deepseek-chat
+    - provider: openrouter-free
+      model: deepseek/deepseek-chat:free
+
+  local-private:
+    - provider: ollama-node-01
+      model: qwen2.5:14b
+    - provider: ollama-node-02
+      model: llama3.1:8b

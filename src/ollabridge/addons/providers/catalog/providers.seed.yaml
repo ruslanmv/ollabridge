@@ -1,0 +1,116 @@
+# ─────────────────────────────────────────────────────────────
+# OllaBridge Cloud — Provider Seed Catalog
+# ─────────────────────────────────────────────────────────────
+# Single source of truth for all provider registrations.
+#
+# Categories:
+#   free       — no cost, subject to rate limits
+#   free-flex  — aggregator with free model options
+#   free-lab   — experimental / OSS inference
+#   cheap      — low cost, not guaranteed free
+#   local      — private OllamaBridge nodes
+#
+# Tiers:
+#   main       — preferred routing targets
+#   secondary  — overflow / fallback targets
+# ─────────────────────────────────────────────────────────────
+
+providers:
+  # ── Free Primary ──────────────────────────────────────────
+
+  - id: gemini-free
+    name: Google Gemini API
+    kind: gemini
+    enabled: true
+    tier: main
+    category: free
+    priority: 100
+    weight: 30
+    base_url: https://generativelanguage.googleapis.com
+    credential_env: GEMINI_API_KEY
+    tags: [free, general, large-context, testing]
+    notes: "Best free overall test provider"
+
+  - id: groq-free
+    name: Groq API
+    kind: groq
+    enabled: true
+    tier: main
+    category: free
+    priority: 95
+    weight: 25
+    base_url: https://api.groq.com
+    credential_env: GROQ_API_KEY
+    tags: [free, fast, testing]
+    notes: "Fastest provider for latency benchmarks"
+
+  - id: openrouter-free
+    name: OpenRouter
+    kind: openrouter
+    enabled: true
+    tier: main
+    category: free-flex
+    priority: 90
+    weight: 20
+    base_url: https://openrouter.ai/api/v1
+    credential_env: OPENROUTER_API_KEY
+    tags: [free, aggregator, flexible, testing]
+    notes: "Best for many free model experiments"
+
+  # ── Free Secondary ────────────────────────────────────────
+
+  - id: huggingface-free
+    name: Hugging Face Inference API
+    kind: huggingface
+    enabled: true
+    tier: secondary
+    category: free-lab
+    priority: 70
+    weight: 10
+    base_url: https://api-inference.huggingface.co
+    credential_env: HUGGINGFACE_API_KEY
+    tags: [free, experimental, oss, testing]
+    notes: "Best for experimentation"
+
+  # ── Cheap Secondary ───────────────────────────────────────
+
+  - id: deepseek-cheap
+    name: DeepSeek API
+    kind: deepseek
+    enabled: true
+    tier: secondary
+    category: cheap
+    priority: 85
+    weight: 15
+    base_url: https://api.deepseek.com
+    credential_env: DEEPSEEK_API_KEY
+    tags: [cheap, reasoning, testing]
+    notes: "Cheap alternative, not guaranteed free"
+
+  # ── Local OllamaBridge Nodes ──────────────────────────────
+
+  - id: ollama-node-01
+    name: OllamaBridge Node 01
+    kind: ollama_bridge
+    enabled: true
+    tier: main
+    category: local
+    priority: 110
+    weight: 40
+    base_url: ws://node-01.internal
+    credential_env: null
+    tags: [local, private, ollama, testing]
+    notes: "Local private node — highest priority"
+
+  - id: ollama-node-02
+    name: OllamaBridge Node 02
+    kind: ollama_bridge
+    enabled: true
+    tier: main
+    category: local
+    priority: 110
+    weight: 40
+    base_url: ws://node-02.internal
+    credential_env: null
+    tags: [local, private, ollama, testing]
+    notes: "Local private node — highest priority"
