@@ -300,6 +300,24 @@ def create_app() -> FastAPI:
 
         asyncio.get_event_loop().create_task(_init_nodes())
 
+        # Initialize addons: provider orchestration layer
+        async def _init_providers() -> None:
+            try:
+                from ollabridge.addons.providers.services.provider_seeder import seed_providers
+                registry, provider_router = await seed_providers()
+                app.state.provider_registry = registry
+                app.state.provider_router = provider_router
+                log.info(
+                    "Provider addon initialized: %d providers, %d aliases",
+                    registry.provider_count, len(registry.aliases),
+                )
+            except Exception as exc:
+                log.warning("Provider addon init failed (non-fatal): %s", exc)
+                app.state.provider_registry = None
+                app.state.provider_router = None
+
+        asyncio.get_event_loop().create_task(_init_providers())
+
         # Initialize cloud bridge manager and auto-connect if credentials exist
         from ollabridge.cloud.bridge_manager import CloudBridgeManager
         bridge_mgr = CloudBridgeManager(
@@ -465,9 +483,29 @@ def create_app() -> FastAPI:
                     )
 
             else:
-                from ollabridge.providers.ollama_client import chat as ollama_chat
+                # --- Addon: multi-provider routing ---
+                # Try the additive provider layer before falling back to local Ollama.
+                provider_router = getattr(app.state, "provider_router", None)
+                addon_handled = False
+                if provider_router:
+                    try:
+                        candidates = provider_router.resolve(model)
+                        if candidates:
+                            result_data = await provider_router.route_chat(
+                                model, payload_messages,
+                                temperature=req.temperature,
+                                max_tokens=req.max_tokens,
+                            )
+                            choices = result_data.get("choices", [])
+                            if choices:
+                                content = choices[0].get("message", {}).get("content", "")
+                                addon_handled = True
+                    except Exception as addon_exc:
+                        log.debug("Addon providers exhausted for model=%s, falling back to Ollama: %s", model, addon_exc)
 
-                content = await ollama_chat(model=model, messages=payload_messages)
+                if not addon_handled:
+                    from ollabridge.providers.ollama_client import chat as ollama_chat
+                    content = await ollama_chat(model=model, messages=payload_messages)
 
             latency = int((time.time() - t0) * 1000)
 
