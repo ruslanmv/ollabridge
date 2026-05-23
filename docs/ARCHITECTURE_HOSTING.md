@@ -164,6 +164,36 @@ the SessionMiddleware for cross-subdomain sessions.
 | `src/.../web/routes.py` | Email login + signup redirect to `POST_LOGIN_URL`. |
 | `.github/workflows/sync-hf-space.yml` | Push to HF Space on every master push (already exists). |
 
+## Vercel project settings (for the marketing site)
+
+The `ollabridge` repo also contains the Python gateway (`pyproject.toml`,
+`src/ollabridge/`, `frontend/`, `tests/`). Vercel's framework auto-detector
+will see `pyproject.toml` and try to build a FastAPI deployment unless we
+tell it otherwise. Two defenses are wired in this repo:
+
+1. **`.vercelignore`** at the repo root hides `/src/`, `/tests/`,
+   `/frontend/`, `/pyproject.toml`, etc. from the build context. With those
+   gone, the FastAPI detector finds nothing.
+2. **`vercel.json`** at the repo root sets `framework: null`,
+   `buildCommand: null`, `installCommand: null`, `outputDirectory: docs`,
+   plus security/caching headers.
+
+In addition, in the Vercel project dashboard:
+
+| Setting | Value |
+|---|---|
+| Framework Preset | **Other** |
+| Root Directory | `./` (repo root) — `.vercelignore` and `vercel.json` handle it |
+| Build Command | (leave empty) |
+| Output Directory | `docs` (already set by `vercel.json`) |
+| Install Command | (leave empty) |
+
+> If a deploy ever fails with *"No FastAPI entrypoint found"*, that's
+> Vercel's auto-detector running before our config. Verify `.vercelignore`
+> exists at repo root and re-deploy. As a last resort, switch the project's
+> Root Directory to `docs` in the Vercel dashboard — that puts Vercel
+> entirely inside the static folder and the Python tree becomes invisible.
+
 ## Migration sequence
 
 ```
