@@ -17,12 +17,14 @@
   <script id="obridge-config">
     // Single source of truth for downstream URLs. Change here, not in 12 places.
     // Single source of truth for downstream URLs. Change here, not in 12 places.
-    // Once api/app.ollabridge.com are bound at the HF Space, these are the
-    // canonical URLs; *.hf.space stays as a documented fallback.
+    // Canonical endpoints once DNS is live; *.hf.space stays as a
+    // documented fallback so login/forgot-password still work end-to-end
+    // even before the api / app subdomains are bound at the HF Space.
     window.OBRIDGE = {
       cloudUrl:         "https://api.ollabridge.com",
       appUrl:           "https://app.ollabridge.com",
-      cloudUrlFallback: "https://ruslanmv-ollabridge-cloud.hf.space",
+      cloudUrlFallback: "https://ruslanmv-ollabridge.hf.space",
+      appUrlFallback:   "https://ruslanmv-ollabridge.hf.space",
       githubUrl:        "https://github.com/ruslanmv/ollabridge",
       pypiUrl:          "https://pypi.org/project/ollabridge/",
       docsUrl:          "https://github.com/ruslanmv/ollabridge#readme",
@@ -382,6 +384,9 @@
       <form onsubmit="event.preventDefault(); loginEmail(this)" class="space-y-3">
         <input name="email" type="email" required placeholder="you@company.com" class="w-full px-4 py-3 bg-slate-950 rounded-xl border border-slate-800 focus:border-indigo-500 outline-none text-sm" />
         <input name="password" type="password" required placeholder="Password" class="w-full px-4 py-3 bg-slate-950 rounded-xl border border-slate-800 focus:border-indigo-500 outline-none text-sm" />
+        <div class="flex justify-end -mt-1">
+          <a id="modalForgot" href="#" onclick="event.preventDefault(); goForgotPassword()" class="text-xs text-indigo-300 hover:text-indigo-200 hover:underline">Forgot password?</a>
+        </div>
         <button type="submit" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold transition">Log in</button>
       </form>
       <p class="text-sm text-slate-400 mt-5 text-center">New here? <button onclick="closeModal('loginModal'); openModal('signupModal')" class="text-indigo-300 hover:underline">Create an account</button></p>
@@ -420,8 +425,21 @@
     document.getElementById('ghLink').href = C.githubUrl;
     document.getElementById('localRepo').href = C.githubUrl;
     document.getElementById('footerGh').href = C.githubUrl;
-    document.getElementById('footerForgot').href = C.appUrl + '/forgot-password';
+    document.getElementById('footerForgot').href = cloudAppBase() + '/forgot-password';
     document.getElementById('year').textContent = new Date().getFullYear();
+
+    // Resolve which user-facing cloud host to link to. Prefer the
+    // canonical app subdomain; fall back to the HF Space URL when DNS
+    // isn't bound yet (or the user is on a network that can't resolve
+    // app.ollabridge.com). The Space host is publicly reachable and
+    // serves the same FastAPI app that handles /forgot-password.
+    function cloudAppBase() {
+      return (C.appUrl || C.appUrlFallback || C.cloudUrlFallback).replace(/\/+$/, '');
+    }
+
+    function goForgotPassword() {
+      window.location.href = cloudAppBase() + '/forgot-password';
+    }
 
     function openModal(id) {
       const el = document.getElementById(id);
