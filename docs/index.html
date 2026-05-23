@@ -24,7 +24,6 @@
       appUrl:           "https://app.ollabridge.com",
       cloudUrlFallback: "https://ruslanmv-ollabridge-cloud.hf.space",
       githubUrl:        "https://github.com/ruslanmv/ollabridge",
-      cloudRepoUrl:     "https://github.com/ruslanmv/ollabridge-cloud",
       pypiUrl:          "https://pypi.org/project/ollabridge/",
       docsUrl:          "https://github.com/ruslanmv/ollabridge#readme",
     };
@@ -345,7 +344,7 @@
             <li class="flex gap-2"><span class="text-slate-300">✓</span> Dedicated support &amp; SLA</li>
             <li class="flex gap-2"><span class="text-slate-300">✓</span> Self-hosted option</li>
           </ul>
-          <a href="mailto:hello@ollabridge.com?subject=Enterprise%20enquiry" class="w-full py-2.5 text-center border border-slate-700 rounded-xl font-semibold hover:bg-slate-800 transition">Contact sales</a>
+          <a href="mailto:contact@ruslanmv.com?subject=Enterprise%20enquiry" class="w-full py-2.5 text-center border border-slate-700 rounded-xl font-semibold hover:bg-slate-800 transition">Contact sales</a>
         </div>
       </div>
     </div>
@@ -360,9 +359,9 @@
       </div>
       <div class="flex gap-6">
         <a id="footerGh" href="#" class="hover:text-slate-300">GitHub</a>
-        <a id="footerCloudRepo" href="#" class="hover:text-slate-300">Cloud repo</a>
         <a href="#pricing" class="hover:text-slate-300">Pricing</a>
-        <a href="mailto:hello@ollabridge.com" class="hover:text-slate-300">Contact</a>
+        <a id="footerForgot" href="#" class="hover:text-slate-300">Forgot password</a>
+        <a href="mailto:contact@ruslanmv.com" class="hover:text-slate-300">Contact</a>
       </div>
     </div>
   </footer>
@@ -421,7 +420,7 @@
     document.getElementById('ghLink').href = C.githubUrl;
     document.getElementById('localRepo').href = C.githubUrl;
     document.getElementById('footerGh').href = C.githubUrl;
-    document.getElementById('footerCloudRepo').href = C.cloudRepoUrl;
+    document.getElementById('footerForgot').href = C.appUrl + '/forgot-password';
     document.getElementById('year').textContent = new Date().getFullYear();
 
     function openModal(id) {
