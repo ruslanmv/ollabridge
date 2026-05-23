@@ -329,6 +329,53 @@ def create_app() -> FastAPI:
         app.state.cloud_bridge = bridge_mgr
         asyncio.get_event_loop().create_task(bridge_mgr.try_auto_connect())
 
+        # Initialize local model catalog (discovery, scoring, pull management)
+        async def _init_local_catalog() -> None:
+            try:
+                from ollabridge.addons.local_catalog.client import LocalRuntimeClient
+                from ollabridge.addons.local_catalog.health import LocalModelHealthChecker
+                from ollabridge.addons.local_catalog.pulls import LocalPullManager
+                from ollabridge.addons.local_catalog.repository import LocalCatalogRepository
+                from ollabridge.addons.local_catalog.scheduler import LocalCatalogScheduler
+                from ollabridge.addons.local_catalog.sync_service import LocalCatalogSyncService
+
+                repo = LocalCatalogRepository()
+                repo.load()
+                svc = LocalCatalogSyncService(repository=repo)
+                health = LocalModelHealthChecker(repository=repo)
+                pulls = LocalPullManager(repository=repo)
+
+                node_id = settings.LOCAL_NODE_ID or "local"
+
+                def _provider():
+                    yield node_id, LocalRuntimeClient(base_url=settings.OLLAMA_BASE_URL)
+
+                scheduler = LocalCatalogScheduler(svc, _provider)
+                await scheduler.start()
+
+                app.state.local_catalog_repo = repo
+                app.state.local_catalog_sync = svc
+                app.state.local_catalog_health = health
+                app.state.local_catalog_pulls = pulls
+                app.state.local_catalog_scheduler = scheduler
+
+                # Wire the bridge so cloud heartbeats use the catalog model list.
+                bridge_mgr.set_local_catalog(repo, node_id=node_id)
+
+                log.info(
+                    "local catalog initialised: node=%s models_loaded=%d",
+                    node_id, len(repo.list_models(node_id)),
+                )
+            except Exception as exc:
+                log.warning("local catalog init failed (non-fatal): %s", exc)
+                app.state.local_catalog_repo = None
+                app.state.local_catalog_sync = None
+                app.state.local_catalog_health = None
+                app.state.local_catalog_pulls = None
+                app.state.local_catalog_scheduler = None
+
+        asyncio.get_event_loop().create_task(_init_local_catalog())
+
     if settings.RELAY_ENABLED:
         app.include_router(build_relay_router(registry=app.state.relay_hub.registry, hub=app.state.relay_hub))
 
@@ -351,6 +398,10 @@ def create_app() -> FastAPI:
     # Cloud relay bridge (connect local GPU to OllaBridge Cloud)
     from ollabridge.api.cloud_routes import router as cloud_router
     app.include_router(cloud_router)
+
+    # Local model catalog (discovery, scoring, pull, test)
+    from ollabridge.addons.local_catalog.routes import router as local_catalog_router
+    app.include_router(local_catalog_router)
 
     if (settings.AUTH_MODE or "").lower().strip() == "pairing":
         import os
