@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OllaBridge — One gateway for every LLM, local and cloud</title>
+  <meta name="description" content="OllaBridge is the open-source AI gateway that unifies every LLM you run — Ollama, llama.cpp, free clouds, paid APIs — behind one OpenAI-compatible URL. Local nodes dial out; no port forwarding, no VPN." />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="icon" type="image/png" href="./assets/icon.png" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="OllaBridge — One gateway for every LLM" />
+  <meta property="og:description" content="The open-source AI gateway. Run Ollama locally, share GPUs across machines, route to free + paid LLMs from one OpenAI-compatible URL." />
+  <meta property="og:url" content="https://ollabridge.com/" />
+  <meta property="og:image" content="https://ollabridge.com/assets/architecture.svg" />
+
+  <script id="obridge-config">
+    // Single source of truth for downstream URLs. Change here, not in 12 places.
+    // Single source of truth for downstream URLs. Change here, not in 12 places.
+    // Once api/app.ollabridge.com are bound at the HF Space, these are the
+    // canonical URLs; *.hf.space stays as a documented fallback.
+    window.OBRIDGE = {
+      cloudUrl:         "https://api.ollabridge.com",
+      appUrl:           "https://app.ollabridge.com",
+      cloudUrlFallback: "https://ruslanmv-ollabridge-cloud.hf.space",
+      githubUrl:        "https://github.com/ruslanmv/ollabridge",
+      cloudRepoUrl:     "https://github.com/ruslanmv/ollabridge-cloud",
+      pypiUrl:          "https://pypi.org/project/ollabridge/",
+      docsUrl:          "https://github.com/ruslanmv/ollabridge#readme",
+    };
+  </script>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    code, pre, .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .gradient-text {
+      background: linear-gradient(135deg, #00e5ff 0%, #6366f1 50%, #ec4899 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-gradient {
+      background:
+        radial-gradient(circle at 18% 30%, rgba(0,229,255,0.12) 0%, transparent 45%),
+        radial-gradient(circle at 82% 20%, rgba(99,102,241,0.14) 0%, transparent 45%),
+        radial-gradient(circle at 50% 95%, rgba(236,72,153,0.10) 0%, transparent 45%),
+        #0a0f1f;
+    }
+    .glow { box-shadow: 0 0 60px rgba(99,102,241,0.35); }
+    .card { transition: border-color .25s ease, transform .25s ease, box-shadow .25s ease; }
+    .card:hover { transform: translateY(-2px); border-color: rgba(99,102,241,0.45); box-shadow: 0 12px 40px rgba(99,102,241,0.10); }
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(99,102,241,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99,102,241,0.06) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+    }
+    .terminal-cursor::after { content: "▌"; color: #6366f1; animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-200 antialiased">
+
+  <!-- Nav -->
+  <nav class="fixed inset-x-0 top-0 z-40 backdrop-blur-md bg-slate-950/75 border-b border-slate-800/80">
+    <div class="max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between">
+      <a href="#top" class="flex items-center gap-2.5">
+        <img src="./assets/logo.svg" alt="" class="h-8 w-8" />
+        <span class="text-lg font-semibold tracking-tight">OllaBridge</span>
+      </a>
+      <div class="hidden md:flex items-center gap-7 text-sm font-medium text-slate-300">
+        <a href="#products" class="hover:text-white transition">Products</a>
+        <a href="#how-it-works" class="hover:text-white transition">How it works</a>
+        <a href="#install" class="hover:text-white transition">Install</a>
+        <a href="#pricing" class="hover:text-white transition">Pricing</a>
+        <a id="navDocs" href="#" class="hover:text-white transition">Docs</a>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="openModal('loginModal')" class="px-3.5 py-2 text-sm font-medium text-slate-300 hover:text-white transition">Log in</button>
+        <button onclick="openModal('signupModal')" class="px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 rounded-lg transition shadow-lg shadow-indigo-500/25">Sign up free</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section id="top" class="hero-gradient relative pt-32 pb-24 px-6 overflow-hidden">
+    <div class="absolute inset-0 grid-bg pointer-events-none"></div>
+    <div class="relative max-w-6xl mx-auto text-center">
+      <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-600/15 border border-indigo-400/30 text-xs font-medium text-indigo-200 mb-7">
+        <span class="relative flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+        </span>
+        Free forever · Open source · Apache 2.0
+      </div>
+
+      <h1 class="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] mb-6">
+        One gateway. <br class="hidden sm:block" />
+        <span class="gradient-text">Every LLM. Anywhere.</span>
+      </h1>
+
+      <p class="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-9">
+        OllaBridge unifies every model you run — local Ollama, your gaming PC,
+        free Colab GPUs, paid OpenAI — behind one OpenAI-compatible URL. Nodes
+        dial out, so there's nothing to port-forward. Nothing to VPN.
+      </p>
+
+      <div class="flex flex-col sm:flex-row gap-3 justify-center mb-12">
+        <a href="#install" class="px-7 py-3.5 text-base font-semibold bg-indigo-600 hover:bg-indigo-500 rounded-xl transition shadow-xl shadow-indigo-500/30 glow">
+          Install free →
+        </a>
+        <button onclick="openCloud()" class="px-7 py-3.5 text-base font-semibold border border-slate-700 hover:border-slate-500 hover:bg-slate-900 rounded-xl transition">
+          Open the Cloud Dashboard
+        </button>
+      </div>
+
+      <!-- Live install terminal -->
+      <div class="max-w-3xl mx-auto bg-slate-900/80 rounded-2xl border border-slate-800 backdrop-blur-sm text-left overflow-hidden">
+        <div class="flex items-center gap-2 px-4 py-2.5 border-b border-slate-800 bg-slate-950/60">
+          <div class="flex gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-red-400/70"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-yellow-400/70"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-green-400/70"></span>
+          </div>
+          <span class="ml-2 text-xs text-slate-500">terminal — install &amp; auto-pair</span>
+        </div>
+        <pre class="mono text-sm leading-relaxed overflow-x-auto p-5"><code><span class="text-slate-500">$</span> pip install ollabridge
+<span class="text-slate-500">$</span> ollabridge start
+
+<span class="text-cyan-300">→</span> Local gateway:   <span class="text-emerald-300">http://localhost:11435/v1</span>
+<span class="text-cyan-300">→</span> Cloud connected: <span class="text-emerald-300">https://api.ollabridge.com</span>
+<span class="text-cyan-300">→</span> Your API key:    <span class="text-pink-300">sk-ollabridge-xY9kL2mN…</span>
+
+<span class="text-slate-500">$</span> <span class="terminal-cursor">curl -H "Authorization: Bearer sk-…" localhost:11435/v1/models</span></code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Products: Local vs Cloud -->
+  <section id="products" class="py-24 px-6">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center mb-14">
+        <h2 class="text-4xl font-bold mb-3">Two products. One ecosystem.</h2>
+        <p class="text-slate-400 text-lg">Run OllaBridge alone, or pair it with the Cloud to share compute across machines and devices.</p>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <!-- Local -->
+        <div class="card bg-slate-900/60 rounded-3xl p-8 border border-slate-800">
+          <div class="flex items-center justify-between mb-4">
+            <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-400/20">Open source</span>
+            <span class="text-xs text-slate-500 mono">pip install ollabridge</span>
+          </div>
+          <h3 class="text-2xl font-semibold mb-2">OllaBridge Local</h3>
+          <p class="text-slate-400 mb-5">The gateway you install. OpenAI-compatible API on top of Ollama and any local runtime — with a smart router, an admin UI, and a model catalog that auto-picks the best models for your hardware.</p>
+          <ul class="space-y-2.5 text-sm text-slate-300">
+            <li class="flex gap-2"><span class="text-emerald-400">›</span> OpenAI-compatible <code class="mono text-xs bg-slate-800/80 px-1.5 py-0.5 rounded">/v1/chat/completions</code></li>
+            <li class="flex gap-2"><span class="text-emerald-400">›</span> Model catalog with auto-scoring &amp; one-click pull</li>
+            <li class="flex gap-2"><span class="text-emerald-400">›</span> Multi-provider routing — local, free clouds, paid APIs</li>
+            <li class="flex gap-2"><span class="text-emerald-400">›</span> Admin dashboard at <code class="mono text-xs bg-slate-800/80 px-1.5 py-0.5 rounded">localhost:11435</code></li>
+          </ul>
+          <a id="localRepo" href="#" class="inline-flex items-center gap-1.5 mt-7 text-sm font-medium text-indigo-300 hover:text-indigo-200">Source on GitHub →</a>
+        </div>
+
+        <!-- Cloud -->
+        <div class="card relative bg-gradient-to-br from-indigo-600/10 via-slate-900/70 to-slate-900/60 rounded-3xl p-8 border border-indigo-400/30">
+          <div class="flex items-center justify-between mb-4">
+            <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">Hosted</span>
+            <span class="text-xs text-slate-500">Auto-paired on install</span>
+          </div>
+          <h3 class="text-2xl font-semibold mb-2">OllaBridge Cloud</h3>
+          <p class="text-slate-400 mb-5">The relay and control plane. Pair your machines, share GPUs across devices, manage users and keys — all from a single dashboard. Devices dial out via WebSocket: nothing to port-forward.</p>
+          <ul class="space-y-2.5 text-sm text-slate-300">
+            <li class="flex gap-2"><span class="text-indigo-300">›</span> TV-style pairing — pair a PC in seconds with an ABCD-1234 code</li>
+            <li class="flex gap-2"><span class="text-indigo-300">›</span> Works behind NAT, CGNAT, and firewalls</li>
+            <li class="flex gap-2"><span class="text-indigo-300">›</span> Federated mesh with overflow load-balancing</li>
+            <li class="flex gap-2"><span class="text-indigo-300">›</span> Google OAuth, sessions, RBAC, audit logs</li>
+          </ul>
+          <button onclick="openCloud()" class="inline-flex items-center gap-1.5 mt-7 text-sm font-medium text-indigo-300 hover:text-indigo-200">Open the dashboard →</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="how-it-works" class="py-20 px-6 bg-slate-900/30 border-y border-slate-800/60">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center mb-14">
+        <h2 class="text-4xl font-bold mb-3">Connected in 60 seconds</h2>
+        <p class="text-slate-400 text-lg">The gateway is one command. Pairing the cloud is automatic.</p>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-5">
+        <div class="card bg-slate-900/60 rounded-2xl p-7 border border-slate-800">
+          <div class="w-9 h-9 rounded-full bg-indigo-600/20 border border-indigo-400/30 grid place-items-center text-indigo-300 font-semibold mb-4">1</div>
+          <h3 class="text-lg font-semibold mb-1.5">Install on any machine</h3>
+          <p class="text-sm text-slate-400 mb-3">One pip install. Runs on your laptop, gaming PC, Colab, or a cloud VM.</p>
+          <code class="mono text-xs text-indigo-300 bg-slate-950 border border-slate-800 px-2.5 py-1.5 rounded-md inline-block">pip install ollabridge</code>
+        </div>
+        <div class="card bg-slate-900/60 rounded-2xl p-7 border border-slate-800">
+          <div class="w-9 h-9 rounded-full bg-indigo-600/20 border border-indigo-400/30 grid place-items-center text-indigo-300 font-semibold mb-4">2</div>
+          <h3 class="text-lg font-semibold mb-1.5">Auto-pair to the Cloud</h3>
+          <p class="text-sm text-slate-400 mb-3">First start opens a browser, you sign in once, and your machine dials out — no ports opened.</p>
+          <code class="mono text-xs text-indigo-300 bg-slate-950 border border-slate-800 px-2.5 py-1.5 rounded-md inline-block">ollabridge start</code>
+        </div>
+        <div class="card bg-slate-900/60 rounded-2xl p-7 border border-slate-800">
+          <div class="w-9 h-9 rounded-full bg-indigo-600/20 border border-indigo-400/30 grid place-items-center text-indigo-300 font-semibold mb-4">3</div>
+          <h3 class="text-lg font-semibold mb-1.5">Use it from anywhere</h3>
+          <p class="text-sm text-slate-400 mb-3">Apps point at one URL. OllaBridge routes the request to the right node, every time.</p>
+          <code class="mono text-xs text-indigo-300 bg-slate-950 border border-slate-800 px-2.5 py-1.5 rounded-md inline-block">/v1/chat/completions</code>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features grid -->
+  <section class="py-24 px-6">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center mb-14">
+        <h2 class="text-4xl font-bold mb-3">Built for the way you actually ship</h2>
+        <p class="text-slate-400 text-lg">From a single laptop to a federated fleet.</p>
+      </div>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div class="card bg-slate-900/60 rounded-2xl p-6 border border-slate-800">
+          <div class="text-2xl mb-3">🔌</div>
+          <h3 class="font-semibold mb-1.5">OpenAI-compatible</h3>
+          <p class="text-sm text-slate-400">Drop-in for any SDK. Change one URL, keep your code.</p>
+        </div>
+        <div class="card bg-slate-900/60 rounded-2xl p-6 border border-slate-800">
+          <div class="text-2xl mb-3">📡</div>
+          <h3 class="font-semibold mb-1.5">No port forwarding</h3>
+          <p class="text-sm text-slate-400">Nodes dial out via WebSocket. Works behind NAT, CGNAT, café Wi-Fi.</p>
+        </div>
+        <div class="card bg-slate-900/60 rounded-2xl p-6 border border-slate-800">
+          <div class="text-2xl mb-3">🎚️</div>
+          <h3 class="font-semibold mb-1.5">Smart routing</h3>
+          <p class="text-sm text-slate-400">Aliases like <code class="mono text-xs">free-best</code> or <code class="mono text-xs">local-private</code> resolve to the best node available.</p>
+        </div>
+        <div class="card bg-slate-900/60 rounded-2xl p-6 border border-slate-800">
+          <div class="text-2xl mb-3">📚</div>
+          <h3 class="font-semibold mb-1.5">Model catalog</h3>
+          <p class="text-sm text-slate-400">Auto-discover, score, and pull the right models for your hardware.</p>
+        </div>
+        <div class="card bg-slate-900/60 rounded-2xl p-6 border border-slate-800">
+          <div class="text-2xl mb-3">🔐</div>
+          <h3 class="font-semibold mb-1.5">Real security</h3>
+          <p class="text-sm text-slate-400">API keys, rate limits, HMAC tokens, Google OAuth, audit logs.</p>
+        </div>
+        <div class="card bg-slate-900/60 rounded-2xl p-6 border border-slate-800">
+          <div class="text-2xl mb-3">🥽</div>
+          <h3 class="font-semibold mb-1.5">VR-ready</h3>
+          <p class="text-sm text-slate-400">Powers Quest avatars and HomePilot personas out of the box.</p>
+        </div>
+        <div class="card bg-slate-900/60 rounded-2xl p-6 border border-slate-800">
+          <div class="text-2xl mb-3">🧠</div>
+          <h3 class="font-semibold mb-1.5">Free + paid LLMs</h3>
+          <p class="text-sm text-slate-400">Route across Gemini, Groq, OpenAI, your local Ollama — with failover.</p>
+        </div>
+        <div class="card bg-slate-900/60 rounded-2xl p-6 border border-slate-800">
+          <div class="text-2xl mb-3">🤖</div>
+          <h3 class="font-semibold mb-1.5">Agent-ready</h3>
+          <p class="text-sm text-slate-400">Built-in MCP server lets agents manage nodes, routes, and health.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install -->
+  <section id="install" class="py-20 px-6">
+    <div class="max-w-3xl mx-auto bg-slate-900/80 rounded-3xl border border-slate-800 p-8 sm:p-10 text-center relative overflow-hidden">
+      <div class="absolute -top-24 -right-24 w-56 h-56 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -left-24 w-56 h-56 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="relative">
+        <h3 class="text-3xl font-bold mb-3">Get started in one line</h3>
+        <p class="text-slate-400 mb-7">Runs on macOS, Linux, Windows. Requires Python 3.10+ and Ollama installed locally.</p>
+        <div class="flex items-center max-w-md mx-auto gap-2 bg-slate-950 rounded-xl p-1.5 border border-slate-700">
+          <code class="flex-1 text-left pl-3 py-2.5 text-indigo-300 mono text-sm">pip install ollabridge</code>
+          <button onclick="copyToClipboard('pip install ollabridge')" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-semibold transition flex items-center gap-2">
+            <span id="copyIcon">Copy</span>
+          </button>
+        </div>
+        <div class="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-6 text-xs text-slate-500">
+          <a id="pypiLink" href="#" class="hover:text-slate-300">PyPI →</a>
+          <a id="ghLink" href="#" class="hover:text-slate-300">GitHub →</a>
+          <a id="docsLink" href="#" class="hover:text-slate-300">Docs →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing -->
+  <section id="pricing" class="py-24 px-6 border-t border-slate-800/60">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center mb-14">
+        <h2 class="text-4xl font-bold mb-3">Free now. Built to scale later.</h2>
+        <p class="text-slate-400 text-lg">The gateway is open source forever. Cloud is free while we're in early access — paid tiers arrive when you actually need them.</p>
+      </div>
+      <div class="grid md:grid-cols-3 gap-5">
+        <!-- Free -->
+        <div class="card bg-slate-900/60 rounded-3xl p-7 border border-slate-800 flex flex-col">
+          <h3 class="text-lg font-semibold mb-1">Local</h3>
+          <p class="text-slate-400 text-sm mb-5">For developers, hobbyists, homelabs.</p>
+          <p class="text-4xl font-bold mb-1">$0</p>
+          <p class="text-xs text-slate-500 mb-6">Apache 2.0, forever</p>
+          <ul class="space-y-2.5 mb-7 text-sm text-slate-300 flex-1">
+            <li class="flex gap-2"><span class="text-emerald-400">✓</span> Unlimited local gateway</li>
+            <li class="flex gap-2"><span class="text-emerald-400">✓</span> Multi-provider routing</li>
+            <li class="flex gap-2"><span class="text-emerald-400">✓</span> Admin dashboard + model catalog</li>
+            <li class="flex gap-2"><span class="text-emerald-400">✓</span> Community support</li>
+          </ul>
+          <a href="#install" class="w-full py-2.5 text-center border border-slate-700 rounded-xl font-semibold hover:bg-slate-800 transition">Install</a>
+        </div>
+        <!-- Pro -->
+        <div class="card bg-gradient-to-b from-indigo-600/20 via-slate-900/60 to-slate-900/60 rounded-3xl p-7 border border-indigo-400/40 flex flex-col relative">
+          <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 px-3 py-0.5 rounded-full text-xs font-semibold">Free in early access</div>
+          <h3 class="text-lg font-semibold mb-1">Cloud</h3>
+          <p class="text-slate-400 text-sm mb-5">For power users and small teams.</p>
+          <p class="text-4xl font-bold mb-1">$0<span class="text-base font-normal text-slate-400"> · now</span></p>
+          <p class="text-xs text-slate-500 mb-6">Paid plans arrive later</p>
+          <ul class="space-y-2.5 mb-7 text-sm text-slate-300 flex-1">
+            <li class="flex gap-2"><span class="text-indigo-300">✓</span> Everything in Local</li>
+            <li class="flex gap-2"><span class="text-indigo-300">✓</span> Hosted relay + auto pairing</li>
+            <li class="flex gap-2"><span class="text-indigo-300">✓</span> Share GPUs across devices</li>
+            <li class="flex gap-2"><span class="text-indigo-300">✓</span> Priority routing &amp; failover</li>
+            <li class="flex gap-2"><span class="text-indigo-300">✓</span> Generous usage during early access</li>
+          </ul>
+          <button onclick="openModal('signupModal')" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold transition shadow-lg shadow-indigo-500/25">Sign up free</button>
+        </div>
+        <!-- Enterprise -->
+        <div class="card bg-slate-900/60 rounded-3xl p-7 border border-slate-800 flex flex-col">
+          <h3 class="text-lg font-semibold mb-1">Enterprise</h3>
+          <p class="text-slate-400 text-sm mb-5">For organisations with compliance needs.</p>
+          <p class="text-4xl font-bold mb-1">Custom</p>
+          <p class="text-xs text-slate-500 mb-6">Annual contract</p>
+          <ul class="space-y-2.5 mb-7 text-sm text-slate-300 flex-1">
+            <li class="flex gap-2"><span class="text-slate-300">✓</span> SSO / SAML / SCIM</li>
+            <li class="flex gap-2"><span class="text-slate-300">✓</span> Unlimited cloud requests</li>
+            <li class="flex gap-2"><span class="text-slate-300">✓</span> Audit logs &amp; RBAC</li>
+            <li class="flex gap-2"><span class="text-slate-300">✓</span> Dedicated support &amp; SLA</li>
+            <li class="flex gap-2"><span class="text-slate-300">✓</span> Self-hosted option</li>
+          </ul>
+          <a href="mailto:hello@ollabridge.com?subject=Enterprise%20enquiry" class="w-full py-2.5 text-center border border-slate-700 rounded-xl font-semibold hover:bg-slate-800 transition">Contact sales</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800 py-10 px-6">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-slate-500">
+      <div class="flex items-center gap-2.5">
+        <img src="./assets/logo.svg" alt="" class="h-5 w-5 opacity-80" />
+        <span>© <span id="year"></span> OllaBridge · Built by <a href="https://ruslanmv.com" class="hover:text-slate-300">Ruslan Magana</a></span>
+      </div>
+      <div class="flex gap-6">
+        <a id="footerGh" href="#" class="hover:text-slate-300">GitHub</a>
+        <a id="footerCloudRepo" href="#" class="hover:text-slate-300">Cloud repo</a>
+        <a href="#pricing" class="hover:text-slate-300">Pricing</a>
+        <a href="mailto:hello@ollabridge.com" class="hover:text-slate-300">Contact</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Login modal -->
+  <div id="loginModal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/65 backdrop-blur-sm" onclick="if(event.target===this) closeModal('loginModal')">
+    <div class="bg-slate-900 rounded-2xl p-7 w-full max-w-md mx-4 border border-slate-800 relative">
+      <button onclick="closeModal('loginModal')" aria-label="Close" class="absolute top-3.5 right-4 text-slate-500 hover:text-white text-2xl leading-none">&times;</button>
+      <h2 class="text-2xl font-bold mb-1.5">Log in to OllaBridge Cloud</h2>
+      <p class="text-sm text-slate-400 mb-6">Pair your machines, share GPUs, manage keys.</p>
+      <button onclick="loginGoogle()" class="w-full py-3 bg-white text-slate-900 hover:bg-slate-100 rounded-xl font-semibold transition flex items-center justify-center gap-2.5 mb-3">
+        <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        Continue with Google
+      </button>
+      <div class="flex items-center gap-3 my-5 text-xs text-slate-500">
+        <div class="flex-1 h-px bg-slate-800"></div><span>or</span><div class="flex-1 h-px bg-slate-800"></div>
+      </div>
+      <form onsubmit="event.preventDefault(); loginEmail(this)" class="space-y-3">
+        <input name="email" type="email" required placeholder="you@company.com" class="w-full px-4 py-3 bg-slate-950 rounded-xl border border-slate-800 focus:border-indigo-500 outline-none text-sm" />
+        <input name="password" type="password" required placeholder="Password" class="w-full px-4 py-3 bg-slate-950 rounded-xl border border-slate-800 focus:border-indigo-500 outline-none text-sm" />
+        <button type="submit" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold transition">Log in</button>
+      </form>
+      <p class="text-sm text-slate-400 mt-5 text-center">New here? <button onclick="closeModal('loginModal'); openModal('signupModal')" class="text-indigo-300 hover:underline">Create an account</button></p>
+    </div>
+  </div>
+
+  <!-- Signup modal -->
+  <div id="signupModal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/65 backdrop-blur-sm" onclick="if(event.target===this) closeModal('signupModal')">
+    <div class="bg-slate-900 rounded-2xl p-7 w-full max-w-md mx-4 border border-slate-800 relative">
+      <button onclick="closeModal('signupModal')" aria-label="Close" class="absolute top-3.5 right-4 text-slate-500 hover:text-white text-2xl leading-none">&times;</button>
+      <h2 class="text-2xl font-bold mb-1.5">Create your account</h2>
+      <p class="text-sm text-slate-400 mb-6">Free tier. No credit card.</p>
+      <button onclick="signupGoogle()" class="w-full py-3 bg-white text-slate-900 hover:bg-slate-100 rounded-xl font-semibold transition flex items-center justify-center gap-2.5 mb-3">
+        <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        Continue with Google
+      </button>
+      <div class="flex items-center gap-3 my-5 text-xs text-slate-500">
+        <div class="flex-1 h-px bg-slate-800"></div><span>or</span><div class="flex-1 h-px bg-slate-800"></div>
+      </div>
+      <form onsubmit="event.preventDefault(); signupEmail(this)" class="space-y-3">
+        <input name="name" type="text" required placeholder="Full name" class="w-full px-4 py-3 bg-slate-950 rounded-xl border border-slate-800 focus:border-indigo-500 outline-none text-sm" />
+        <input name="email" type="email" required placeholder="you@company.com" class="w-full px-4 py-3 bg-slate-950 rounded-xl border border-slate-800 focus:border-indigo-500 outline-none text-sm" />
+        <input name="password" type="password" required minlength="8" placeholder="Password (8+ chars)" class="w-full px-4 py-3 bg-slate-950 rounded-xl border border-slate-800 focus:border-indigo-500 outline-none text-sm" />
+        <button type="submit" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold transition">Create account</button>
+      </form>
+      <p class="text-xs text-slate-500 mt-5 text-center">By signing up you agree to the terms and privacy notice.</p>
+      <p class="text-sm text-slate-400 mt-2 text-center">Already have an account? <button onclick="closeModal('signupModal'); openModal('loginModal')" class="text-indigo-300 hover:underline">Log in</button></p>
+    </div>
+  </div>
+
+  <script>
+    const C = window.OBRIDGE;
+    document.getElementById('navDocs').href = C.docsUrl;
+    document.getElementById('docsLink').href = C.docsUrl;
+    document.getElementById('pypiLink').href = C.pypiUrl;
+    document.getElementById('ghLink').href = C.githubUrl;
+    document.getElementById('localRepo').href = C.githubUrl;
+    document.getElementById('footerGh').href = C.githubUrl;
+    document.getElementById('footerCloudRepo').href = C.cloudRepoUrl;
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    function openModal(id) {
+      const el = document.getElementById(id);
+      el.classList.remove('hidden');
+      el.classList.add('flex');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeModal(id) {
+      const el = document.getElementById(id);
+      el.classList.add('hidden');
+      el.classList.remove('flex');
+      document.body.style.overflow = '';
+    }
+
+    function openCloud() { window.location.href = C.appUrl; }
+    function loginGoogle() { window.location.href = C.cloudUrl + '/auth/google/login'; }
+    function signupGoogle() { window.location.href = C.cloudUrl + '/auth/google/login'; }
+    function loginEmail(form) {
+      const params = new URLSearchParams({ email: form.email.value, password: form.password.value });
+      window.location.href = C.cloudUrl + '/login?' + params.toString();
+    }
+    function signupEmail(form) {
+      const params = new URLSearchParams({ name: form.name.value, email: form.email.value, password: form.password.value });
+      window.location.href = C.cloudUrl + '/register?' + params.toString();
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        const icon = document.getElementById('copyIcon');
+        icon.textContent = 'Copied';
+        setTimeout(() => { icon.textContent = 'Copy'; }, 1500);
+      });
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { closeModal('loginModal'); closeModal('signupModal'); }
+    });
+  </script>
+</body>
+</html>
