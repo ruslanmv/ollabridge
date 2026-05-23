@@ -468,6 +468,18 @@
     // (matches FastAPI's existing Form(...) parameters — no backend change to
     // accept JSON-bodies needed), asks for JSON back via Accept header, and
     // sends cookies so the session lands on .ollabridge.com.
+    // Resolve a server-returned redirect target. Absolute URLs are
+    // honoured as-is; bare paths (e.g. "/dashboard") are anchored to
+    // the dashboard subdomain — NEVER the marketing host. Without this,
+    // a path response sends the browser to ollabridge.com/dashboard,
+    // which is on Vercel and 404s.
+    function resolveRedirect(target, fallbackPath) {
+      const v = target || fallbackPath || '/dashboard';
+      if (/^https?:\/\//i.test(v)) return v;          // absolute URL → use it
+      const path = v.startsWith('/') ? v : '/' + v;   // ensure leading slash
+      return C.appUrl + path;                         // anchor to app subdomain
+    }
+
     async function postAuth(form, endpoint, fields) {
       const btn = form.querySelector('button[type=submit]');
       const originalLabel = btn ? btn.textContent : '';
@@ -498,7 +510,7 @@
         if (res.ok && data && data.ok) {
           // Session cookie is already set on .ollabridge.com. Navigate to
           // the dashboard subdomain — the cookie travels with the request.
-          window.location.href = data.redirect || (C.appUrl + '/dashboard');
+          window.location.href = resolveRedirect(data.redirect, '/dashboard');
           return;
         }
         setFormStatus(form, (data && data.error) || 'Invalid email or password.', 'error');
@@ -515,7 +527,7 @@
           password_confirm: form.password.value,  // modal has one password field
         });
         if (res.ok && data && data.ok) {
-          window.location.href = data.redirect || (C.appUrl + '/dashboard');
+          window.location.href = resolveRedirect(data.redirect, '/dashboard');
           return;
         }
         setFormStatus(form, (data && data.error) || 'Could not create account.', 'error');
