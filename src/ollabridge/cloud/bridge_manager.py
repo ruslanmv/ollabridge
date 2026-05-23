@@ -111,6 +111,55 @@ class CloudBridgeManager:
         self._stop_event = asyncio.Event()
         self._ws: Any = None
         self._creds: Optional[CloudDeviceCredentials] = None
+        # Optional reference to the local catalog — set after startup so the
+        # heartbeat can ship a richer manifest than the legacy name list.
+        self._local_catalog: Any = None
+        self._local_catalog_node_id: str = ""
+
+    # ── Local catalog integration ──────────────────────────────────────
+
+    def set_local_catalog(self, repository: Any, *, node_id: str) -> None:
+        """Attach the local catalog so heartbeats include the rich manifest."""
+        self._local_catalog = repository
+        self._local_catalog_node_id = node_id
+
+    def _build_catalog_manifest(self) -> Optional[dict[str, Any]]:
+        """Compose the catalog payload the cloud Admin ingests."""
+        repo = self._local_catalog
+        if repo is None or not self._local_catalog_node_id:
+            return None
+        try:
+            stats = repo.stats(self._local_catalog_node_id).model_dump(mode="json")
+            models = []
+            for m in repo.list_models(self._local_catalog_node_id):
+                models.append({
+                    "router_model_id": m.router_model_id,
+                    "external_model_id": m.external_model_id,
+                    "display_name": m.display_name,
+                    "family": m.family,
+                    "parameter_size": m.parameter_size,
+                    "quantization": m.quantization,
+                    "context_window": m.context_window,
+                    "supports_chat": bool(m.capabilities and m.capabilities.supports_chat),
+                    "supports_tools": bool(m.capabilities and m.capabilities.supports_tools),
+                    "supports_vision": bool(m.capabilities and m.capabilities.supports_vision),
+                    "supports_embeddings": bool(m.capabilities and m.capabilities.supports_embeddings),
+                    "enabled": m.enabled,
+                    "is_top_recommended": m.is_top_recommended,
+                    "rank": m.rank,
+                    "score": round(m.score, 4),
+                    "setup_status": m.setup_status.value,
+                    "latency_ms": m.latency_observed_ms,
+                })
+            return {
+                "node_id": self._local_catalog_node_id,
+                "execution_location": "local",
+                "stats": stats,
+                "models": models,
+            }
+        except Exception as exc:
+            log.warning("Failed to build local catalog manifest: %s", exc)
+            return None
 
     # ── Auto-connect on startup ──────────────────────────────────────
 
@@ -457,6 +506,9 @@ class CloudBridgeManager:
                         "client_version": "ollabridge-gateway-1.0",
                         "platform": sys.platform,
                     }
+                    catalog_manifest = self._build_catalog_manifest()
+                    if catalog_manifest is not None:
+                        hello["local_catalog"] = catalog_manifest
                     await ws.send(json.dumps(hello))
                     log.info(
                         "Registered %d models with cloud: %s",
