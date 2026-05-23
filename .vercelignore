@@ -1,0 +1,39 @@
+# Vercel only serves the static landing page in docs/.
+# Hide everything else so the FastAPI auto-detector doesn't pick up
+# pyproject.toml and try to deploy the Python gateway. The gateway is
+# distributed via PyPI (`pip install ollabridge`), not Vercel.
+
+# Python project tree
+/src/
+/tests/
+/notebooks/
+/scripts/
+/pyproject.toml
+/pyproject.toml.bak
+/MANIFEST.in
+/Makefile
+
+# React/Vite admin SPA — bundled into the pip package, not hosted here
+/frontend/
+
+# Container / compose
+/Dockerfile
+/docker-compose.yml
+
+# Repo-level docs / examples — not part of the marketing site
+/INSTALL.md
+/CONTRIBUTING.md
+/README.md
+/UPGRADE_PLAN.md
+/LICENSE
+/example/
+
+# Brand assets stay in the repo for README usage; the site uses
+# docs/assets/ for its own copy.
+/assets/
+/logos/
+
+# Local-only
+/.env*
+/.pytest_cache/
+/.github/

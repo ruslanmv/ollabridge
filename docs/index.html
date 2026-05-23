@@ -440,13 +440,88 @@
     function openCloud() { window.location.href = C.appUrl; }
     function loginGoogle() { window.location.href = C.cloudUrl + '/auth/google/login'; }
     function signupGoogle() { window.location.href = C.cloudUrl + '/auth/google/login'; }
-    function loginEmail(form) {
-      const params = new URLSearchParams({ email: form.email.value, password: form.password.value });
-      window.location.href = C.cloudUrl + '/login?' + params.toString();
+
+    // Inline error/status banner inside a modal form.
+    function setFormStatus(form, message, kind /* 'error' | 'success' | '' */) {
+      let el = form.querySelector('[data-status]');
+      if (!el) {
+        el = document.createElement('div');
+        el.setAttribute('data-status', '');
+        el.style.cssText = 'margin:0 0 12px 0;padding:10px 12px;border-radius:10px;font-size:13px;line-height:18px;';
+        form.insertBefore(el, form.firstChild);
+      }
+      el.textContent = message || '';
+      if (!message) { el.style.display = 'none'; return; }
+      el.style.display = 'block';
+      if (kind === 'success') {
+        el.style.background = 'rgba(16,185,129,0.10)';
+        el.style.border = '1px solid rgba(16,185,129,0.30)';
+        el.style.color = '#a7f3d0';
+      } else {
+        el.style.background = 'rgba(239,68,68,0.10)';
+        el.style.border = '1px solid rgba(239,68,68,0.30)';
+        el.style.color = '#fecaca';
+      }
     }
-    function signupEmail(form) {
-      const params = new URLSearchParams({ name: form.name.value, email: form.email.value, password: form.password.value });
-      window.location.href = C.cloudUrl + '/register?' + params.toString();
+
+    // Shared POST helper. Sends form fields as application/x-www-form-urlencoded
+    // (matches FastAPI's existing Form(...) parameters — no backend change to
+    // accept JSON-bodies needed), asks for JSON back via Accept header, and
+    // sends cookies so the session lands on .ollabridge.com.
+    async function postAuth(form, endpoint, fields) {
+      const btn = form.querySelector('button[type=submit]');
+      const originalLabel = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = 'Please wait…'; }
+      setFormStatus(form, '', '');
+      try {
+        const body = new URLSearchParams(fields);
+        const res = await fetch(C.cloudUrl + endpoint, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' },
+          body,
+        });
+        let data = null;
+        try { data = await res.json(); } catch (_) { /* non-JSON */ }
+        return { res, data };
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+      }
+    }
+
+    async function loginEmail(form) {
+      try {
+        const { res, data } = await postAuth(form, '/login', {
+          email: form.email.value,
+          password: form.password.value,
+        });
+        if (res.ok && data && data.ok) {
+          // Session cookie is already set on .ollabridge.com. Navigate to
+          // the dashboard subdomain — the cookie travels with the request.
+          window.location.href = data.redirect || (C.appUrl + '/dashboard');
+          return;
+        }
+        setFormStatus(form, (data && data.error) || 'Invalid email or password.', 'error');
+      } catch (e) {
+        setFormStatus(form, 'Network error. Please try again.', 'error');
+      }
+    }
+
+    async function signupEmail(form) {
+      try {
+        const { res, data } = await postAuth(form, '/register', {
+          email: form.email.value,
+          password: form.password.value,
+          password_confirm: form.password.value,  // modal has one password field
+        });
+        if (res.ok && data && data.ok) {
+          window.location.href = data.redirect || (C.appUrl + '/dashboard');
+          return;
+        }
+        setFormStatus(form, (data && data.error) || 'Could not create account.', 'error');
+      } catch (e) {
+        setFormStatus(form, 'Network error. Please try again.', 'error');
+      }
     }
 
     function copyToClipboard(text) {
