@@ -300,21 +300,79 @@ def create_app() -> FastAPI:
 
         asyncio.get_event_loop().create_task(_init_nodes())
 
-        # Initialize addons: provider orchestration layer
+        # Initialize addons: provider orchestration layer + HF catalog + secret store
         async def _init_providers() -> None:
             try:
-                from ollabridge.addons.providers.services.provider_seeder import seed_providers
+                from pathlib import Path
+
+                from ollabridge.addons.providers.hf_catalog.client import (
+                    HuggingFaceCatalogClient,
+                )
+                from ollabridge.addons.providers.hf_catalog.snapshot import (
+                    CatalogSnapshot,
+                )
+                from ollabridge.addons.providers.hf_catalog.sync import (
+                    HFCatalogSyncService,
+                )
+                from ollabridge.addons.providers.secret_store import SecretStore
+                from ollabridge.addons.providers.services.provider_seeder import (
+                    reload_aliases,
+                    seed_providers,
+                )
+
                 registry, provider_router = await seed_providers()
                 app.state.provider_registry = registry
                 app.state.provider_router = provider_router
+
+                # Encrypted token store — survives restarts, decrypts on demand.
+                store = SecretStore()
+                app.state.secret_store = store
+
+                # If a token is already saved, hot-load it into the HF adapter
+                # so the user doesn't need to reconnect after a restart.
+                hf_adapter = registry.get_adapter("huggingface-free")
+                saved_token = store.get("huggingface")
+                if hf_adapter is not None and saved_token:
+                    hf_adapter.api_key = saved_token
+                    saved_bill_to = store.get("huggingface_bill_to")
+                    if hasattr(hf_adapter, "bill_to") and saved_bill_to:
+                        hf_adapter.bill_to = saved_bill_to
+                    log.info("Restored Hugging Face token from secret store")
+
+                # HF catalog: snapshot + sync orchestrator.
+                snapshot = CatalogSnapshot()
+                snapshot.load()
+                aliases_path = (
+                    Path(__file__).resolve().parent.parent
+                    / "addons" / "providers" / "catalog" / "model_aliases.yaml"
+                )
+                hf_client = HuggingFaceCatalogClient(token=saved_token or None)
+
+                def _reload():
+                    return reload_aliases(registry, aliases_path)
+
+                sync_service = HFCatalogSyncService(
+                    snapshot=snapshot,
+                    client=hf_client,
+                    aliases_path=aliases_path,
+                    registry_reload_hook=_reload,
+                )
+                app.state.hf_catalog_snapshot = snapshot
+                app.state.hf_catalog_sync = sync_service
+
                 log.info(
-                    "Provider addon initialized: %d providers, %d aliases",
+                    "Provider addon initialized: %d providers, %d aliases, "
+                    "%d HF catalog rows (encrypted=%s)",
                     registry.provider_count, len(registry.aliases),
+                    snapshot.entry_count, store.is_encrypted,
                 )
             except Exception as exc:
                 log.warning("Provider addon init failed (non-fatal): %s", exc)
                 app.state.provider_registry = None
                 app.state.provider_router = None
+                app.state.secret_store = None
+                app.state.hf_catalog_snapshot = None
+                app.state.hf_catalog_sync = None
 
         asyncio.get_event_loop().create_task(_init_providers())
 
@@ -402,6 +460,15 @@ def create_app() -> FastAPI:
     # Local model catalog (discovery, scoring, pull, test)
     from ollabridge.addons.local_catalog.routes import router as local_catalog_router
     app.include_router(local_catalog_router)
+
+    # Providers admin API (HF connect/refresh, catalog browsing, alias map,
+    # provider enable/disable, end-to-end model test)
+    from ollabridge.api.providers_routes import router as providers_admin_router
+    app.include_router(providers_admin_router)
+
+    # OpenAI-compatible image + video generation
+    from ollabridge.api.media_routes import router as media_routes
+    app.include_router(media_routes)
 
     if (settings.AUTH_MODE or "").lower().strip() == "pairing":
         import os

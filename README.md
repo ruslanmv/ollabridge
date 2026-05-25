@@ -53,27 +53,30 @@ graph TB
 ## 🚀 Why OllaBridge?
 
 ### 🎯 **Single Source of Truth**
-- ✅ **One URL for everything** — Your apps never change code
-- ✅ **Zero config** — Add new GPUs without touching your app
-- ✅ **Smart routing** — OllaBridge picks the best node automatically
-- ✅ **OpenAI compatible** — Works with any SDK, framework, or tool
+- **One URL for everything** — Your apps never change code
+- **Zero config** — Add new GPUs without touching your app
+- **Smart routing** — OllaBridge picks the best node automatically
+- **OpenAI compatible** — Works with any SDK, framework, or tool
 
 ### 🛡️ **Enterprise-Grade Security**
-- ✅ **API key authentication** — Protect your LLMs
-- ✅ **Rate limiting** — Control usage per key
-- ✅ **Request logging** — Full audit trail
-- ✅ **Encrypted connections** — TLS for remote nodes
+- **API key authentication** — Protect your LLMs
+- **Rate limiting** — Control usage per key
+- **Request logging** — Full audit trail
+- **Encrypted connections** — TLS for remote nodes
 
 ### 🌍 **Works Everywhere**
-- ✅ **Free GPU clouds** — Colab, Kaggle, Lightning AI (no port forwarding needed!)
-- ✅ **Ephemeral instances** — Nodes dial out, IPs don't matter
-- ✅ **Behind firewalls** — Your laptop can join from coffee shop WiFi
-- ✅ **Mixed environments** — Combine local + cloud seamlessly
+- **Free GPU clouds** — Colab, Kaggle, Lightning AI (no port forwarding needed!)
+- **Ephemeral instances** — Nodes dial out, IPs don't matter
+- **Behind firewalls** — Your laptop can join from coffee shop WiFi
+- **Mixed environments** — Combine local + cloud seamlessly
 
 ### 🤖 **AI Agent Ready**
-- ✅ **MCP server** — Agents can control your infrastructure
-- ✅ **Tool exposure** — Manage nodes, routes, health via tools
-- ✅ **Self-healing** — Auto-install, auto-configure, auto-recover
+- **MCP server** — Agents can control your infrastructure
+- **Tool exposure** — Manage nodes, routes, health via tools
+- **Self-healing** — Auto-install, auto-configure, auto-recover
+
+### **Providers Hub — Hugging Face Inference**
+OllaBridge ships a capability-routed Providers Hub that discovers, scores and persists the live Hugging Face Inference Providers catalog (DeepSeek, Llama, Qwen, vision-language and image/video models served across Together, Groq, Novita, Fireworks and others), then exposes them through stable intent aliases such as `ollabridge:auto`, `ollabridge:fast`, `ollabridge:reasoning`, `ollabridge:vision`, `ollabridge:tools`, `ollabridge:json`, plus convenience `hf:best | hf:fast | hf:cheap | hf:deepseek | hf:vision` — the underlying model rotates as the catalog refreshes, so applications written today against `model="ollabridge:auto"` keep using the strongest available route as new models are released. Tokens are stored Fernet-encrypted at rest under `~/.ollabridge/secrets.enc`, free-credit usage is enforced with hard-stop on HTTP 402/429, and the full admin surface lives under `/admin/providers`.
 
 ---
 
@@ -94,13 +97,13 @@ ollabridge start
 **That's it!** You'll see:
 
 ```
-✅ Ollama installed (if needed)
-✅ Model downloaded (if needed)
-✅ Gateway online at http://localhost:11435
+Ollama installed (if needed)
+Model downloaded (if needed)
+Gateway online at http://localhost:11435
 
 ╭─────────────────── 🚀 Gateway Ready ────────────────────╮
 │                                                          │
-│ ✅ OllaBridge is Online                                  │
+│ OllaBridge is Online                                  │
 │                                                          │
 │ Model:        deepseek-r1                                │
 │ Local API:    http://localhost:11435/v1                 │
@@ -153,10 +156,10 @@ ollabridge-node join \
 ```
 
 **That's it!** The remote GPU:
-- ✅ Auto-installs Ollama if needed
-- ✅ Auto-downloads models if needed
-- ✅ **Dials out** to your gateway (no port forwarding!)
-- ✅ Shows up as available compute
+- Auto-installs Ollama if needed
+- Auto-downloads models if needed
+- **Dials out** to your gateway (no port forwarding!)
+- Shows up as available compute
 
 ### Your Apps See It Automatically
 
@@ -306,11 +309,11 @@ make run
 ### 📚 Perfect for Learning
 
 The example client shows you:
-- ✅ How to connect to OllaBridge from a browser
-- ✅ How to handle CORS properly
-- ✅ How to implement authentication with API keys
-- ✅ How to load models dynamically
-- ✅ How to send chat requests and handle responses
+- How to connect to OllaBridge from a browser
+- How to handle CORS properly
+- How to implement authentication with API keys
+- How to load models dynamically
+- How to send chat requests and handle responses
 
 **[View Full Documentation →](example/README.md)**
 
@@ -321,10 +324,10 @@ The example client shows you:
 OllaBridge has a **Model Context Protocol (MCP) server** built-in.
 
 Agents can:
-- ✅ Create enrollment tokens
-- ✅ List connected compute nodes
-- ✅ Check gateway health
-- ✅ Manage your LLM infrastructure via tools
+- Create enrollment tokens
+- List connected compute nodes
+- Check gateway health
+- Manage your LLM infrastructure via tools
 
 ### Start MCP Server
 
@@ -472,17 +475,17 @@ curl -H "X-API-Key: your-key" http://localhost:11435/admin/runtimes
 **Traditional (broken):**
 ```
 App → Gateway → Try to reach GPU
-                ❌ Blocked by firewall
-                ❌ NAT issues
-                ❌ No public IP
+                  Blocked by firewall
+                  NAT issues
+                  No public IP
 ```
 
 **OllaBridge (works everywhere):**
 ```
 App → Gateway ← GPU dials in
-               ✅ Works from anywhere
-               ✅ No port forwarding
-               ✅ Ephemeral IPs OK
+               Works from anywhere
+               No port forwarding
+               Ephemeral IPs OK
 ```
 
 ### Connector Types
@@ -628,9 +631,9 @@ ollabridge doctor
 ┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Check               ┃ Result                          ┃
 ┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ Ollama /api/tags    │ ✅ OK                           │
-│ OllaBridge /health  │ ✅ OK                           │
-│ API_KEYS configured │ ✅ yes                          │
+│ Ollama /api/tags    │ OK                           │
+│ OllaBridge /health  │ OK                           │
+│ API_KEYS configured │ yes                          │
 │ CORS_ORIGINS        │ http://localhost:5173,...       │
 │ Auth usage          │ Use Authorization: Bearer <key> │
 └─────────────────────┴─────────────────────────────────┘
@@ -752,6 +755,10 @@ In this case, OllaBridge will write the generated key to `.env`. For production 
 ## ☁️ Optional: OllaBridge Cloud
 
 OllaBridge Local can **optionally** connect to **[OllaBridge Cloud](https://ruslanmv-ollabridge.hf.space)** for multi-user, multi-device deployments.
+
+<p align="center">
+  <img src="assets/diagrams/architecture.svg" alt="OllaBridge end-to-end architecture: local gateway, Providers Hub, Hugging Face Inference Providers, and OllaBridge Cloud" width="100%" />
+</p>
 
 ### Cloud Features
 
@@ -1061,20 +1068,20 @@ Once built, access the dashboard at **`http://localhost:11435/ui`** when OllaBri
 
 ## 🗺️ Roadmap
 
-- [x] ✅ Control Plane + Node architecture
-- [x] ✅ Outbound-only node enrollment (no port forwarding)
-- [x] ✅ MCP server for AI agent control
-- [x] ✅ Multi-node load balancing
-- [x] ✅ Diagnostic CLI commands (doctor, models, test-chat)
-- [x] ✅ Enhanced CORS handling for browser clients
-- [x] ✅ LAN mode for classroom/shared network deployments
-- [x] ✅ Cloud compatibility (optional device pairing)
-- [x] ✅ Streaming support for chat completions (Cloud mode)
-- [x] ✅ HomePilot persona integration (smart persona routing)
-- [x] ✅ Multi-provider routing (free/cheap/paid LLM APIs with score-based selection)
+- [x] Control Plane + Node architecture
+- [x] Outbound-only node enrollment (no port forwarding)
+- [x] MCP server for AI agent control
+- [x] Multi-node load balancing
+- [x] Diagnostic CLI commands (doctor, models, test-chat)
+- [x] Enhanced CORS handling for browser clients
+- [x] LAN mode for classroom/shared network deployments
+- [x] Cloud compatibility (optional device pairing)
+- [x] Streaming support for chat completions (Cloud mode)
+- [x] HomePilot persona integration (smart persona routing)
+- [x] Multi-provider routing (free/cheap/paid LLM APIs with score-based selection)
 - [ ] 🚧 Tag-based routing (send "coding" requests to GPU nodes)
 - [ ] 🚧 Model-specific routing rules
-- [x] ✅ Web UI dashboard (Broadcast Tower visualization)
+- [x] Web UI dashboard (Broadcast Tower visualization)
 - [ ] 🚧 Prometheus metrics
 - [ ] 🚧 Support for more runtimes (vLLM, llama.cpp, LM Studio)
 

@@ -618,7 +618,13 @@ function FilterBar({
   )
 }
 
-function BulkActionsDrawer({ count, onClear, onEnable, onPin, onTest }: any) {
+function BulkActionsDrawer({ count, onClear, onEnable, onPin, onTest }: {
+  count: number
+  onClear: () => void
+  onEnable: (on: boolean) => void
+  onPin: (on: boolean) => void
+  onTest: () => void
+}) {
   return (
     <div className="rounded-xl border border-glow-cyan/25 bg-glow-cyan/[0.06] p-2.5 flex items-center gap-2 text-xs">
       <strong className="text-glow-cyan">{count} selected</strong>
@@ -636,7 +642,17 @@ function BulkActionsDrawer({ count, onClear, onEnable, onPin, onTest }: any) {
 // SECTION 7 — Per-node table
 // ─────────────────────────────────────────────────────────────────────
 
-function NodeTable({ nodeId, rows, selected, onSelect, onEnable, onPin, onTest, onMetadata, onRemove }: any) {
+function NodeTable({ nodeId, rows, selected, onSelect, onEnable, onPin, onTest, onMetadata, onRemove }: {
+  nodeId: string
+  rows: LocalModel[]
+  selected: Set<string>
+  onSelect: (id: string, on: boolean) => void
+  onEnable: (m: LocalModel) => void
+  onPin: (m: LocalModel) => void
+  onTest: (m: LocalModel) => void
+  onMetadata: (m: LocalModel) => void
+  onRemove: (m: LocalModel) => void
+}) {
   return (
     <section className="rounded-2xl border border-white/8 overflow-hidden">
       <header className="px-4 py-2.5 bg-white/[0.04] flex items-center gap-2">
@@ -861,7 +877,23 @@ function ModalBackdrop({ children, onClose }: any) {
   )
 }
 
-function ManualAddModal({ nodes, onClose, onSubmit }: any) {
+type ManualAddPayload = {
+  node_id: string
+  external_model_id: string
+  runtime?: string
+  display_name?: string
+  enabled?: boolean
+  pinned?: boolean
+  supports_tools?: boolean
+  supports_vision?: boolean
+  supports_embeddings?: boolean
+}
+
+function ManualAddModal({ nodes, onClose, onSubmit }: {
+  nodes: string[]
+  onClose: () => void
+  onSubmit: (payload: ManualAddPayload) => void
+}) {
   const [node, setNode] = useState(nodes[0] ?? 'local')
   const [tag, setTag] = useState('')
   const [tools, setTools] = useState(false)
@@ -904,7 +936,12 @@ function ManualAddModal({ nodes, onClose, onSubmit }: any) {
   )
 }
 
-function PullProgressModal({ initialTag, nodeId, onClose, onStart }: any) {
+function PullProgressModal({ initialTag, nodeId, onClose, onStart }: {
+  initialTag: string
+  nodeId?: string
+  onClose: () => void
+  onStart: (tag: string) => void
+}) {
   const [tag, setTag] = useState(initialTag)
   const [started, setStarted] = useState(false)
   return (

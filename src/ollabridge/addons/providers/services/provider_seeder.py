@@ -51,17 +51,22 @@ def _create_adapter(config: ProviderConfig) -> BaseProviderAdapter | None:
         )
         return None
 
-    # Resolve API key from environment variable
+    # Resolve API key from environment variable, with provider-specific
+    # fallbacks for canonical SDK env var names.
     api_key: str | None = None
     if config.credential_env:
         api_key = os.environ.get(config.credential_env, "")
-        if not api_key:
-            logger.info(
-                "No API key found in env var %s for provider %s — "
-                "provider will be registered but may fail requests",
-                config.credential_env,
-                config.id,
-            )
+    if not api_key and config.kind == "huggingface":
+        # HF_TOKEN is the canonical name; HUGGINGFACE_API_KEY is the legacy
+        # OllaBridge env var. Try both so existing deployments still work.
+        api_key = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_API_KEY")
+    if not api_key:
+        logger.info(
+            "No API key found for provider %s (env: %s) — "
+            "provider will be registered but may fail requests",
+            config.id,
+            config.credential_env,
+        )
 
     return adapter_cls(base_url=config.base_url, api_key=api_key)
 
@@ -105,3 +110,19 @@ async def seed_providers(
         len(aliases),
     )
     return registry, router
+
+
+def reload_aliases(
+    registry: ProviderRegistry,
+    aliases_path: str | Path | None = None,
+) -> int:
+    """Re-read the aliases YAML and apply it to the running registry.
+
+    Returns the number of aliases now active. Safe to call from a sync hook
+    so freshly-written ``hf:*`` / ``ollabridge:*`` routes become visible
+    without restarting the gateway.
+    """
+    aliases = load_aliases(aliases_path)
+    registry.set_aliases(aliases)
+    logger.info("Reloaded %d aliases", len(aliases))
+    return len(aliases)
