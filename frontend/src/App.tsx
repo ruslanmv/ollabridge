@@ -8,8 +8,17 @@ import { SettingsPage } from './pages/settings/SettingsPage'
 import { SourcesPage } from './pages/sources/SourcesPage'
 import { NodesPage } from './pages/nodes/NodesPage'
 import { CloudPage } from './pages/cloud/CloudPage'
+import { ProvidersPage } from './pages/providers/ProvidersPage'
 
-export type Page = 'dashboard' | 'sources' | 'models' | 'nodes' | 'pairing' | 'cloud' | 'settings'
+export type Page =
+  | 'dashboard'
+  | 'sources'
+  | 'models'
+  | 'providers'
+  | 'nodes'
+  | 'pairing'
+  | 'cloud'
+  | 'settings'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -23,6 +32,7 @@ export default function App() {
           {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
           {page === 'sources' && <SourcesPage onNavigate={setPage} />}
           {page === 'models' && <ModelsPage onNavigate={setPage} />}
+          {page === 'providers' && <ProvidersPage />}
           {page === 'nodes' && <NodesPage />}
           {page === 'pairing' && <PairingPage />}
           {page === 'cloud' && <CloudPage />}

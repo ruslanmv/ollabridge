@@ -14,6 +14,12 @@ import logging
 import time
 from typing import Any
 
+from ollabridge.addons.providers.errors import (
+    ProviderAuthError,
+    ProviderBadRequest,
+    ProviderError,
+    ProviderQuotaExceeded,
+)
 from ollabridge.addons.providers.models import (
     HealthStatus,
     ProviderConfig,
@@ -135,7 +141,50 @@ class ProviderRouter:
                 )
                 return result
 
-            except Exception as exc:
+            except ProviderQuotaExceeded as exc:
+                latency_ms = (time.monotonic() - start) * 1000
+                await self.registry.record_request(
+                    route.provider_id, latency_ms=latency_ms, success=False
+                )
+                await self.registry.update_health(
+                    route.provider_id,
+                    HealthStatus.QUOTA_EXHAUSTED,
+                    error=str(exc),
+                )
+                logger.warning(
+                    "Provider %s quota exhausted (%.0fms): %s — failing over",
+                    route.provider_id, latency_ms, exc,
+                )
+                last_error = exc
+
+            except ProviderAuthError as exc:
+                # Wrong/missing credentials: failing over to the same provider
+                # via another model won't help. Skip remaining routes on this
+                # provider but keep trying others.
+                latency_ms = (time.monotonic() - start) * 1000
+                await self.registry.record_request(
+                    route.provider_id, latency_ms=latency_ms, success=False
+                )
+                logger.warning(
+                    "Provider %s auth error (%.0fms): %s — skipping provider",
+                    route.provider_id, latency_ms, exc,
+                )
+                last_error = exc
+
+            except ProviderBadRequest as exc:
+                # 4xx that isn't auth/quota — usually a model-specific issue.
+                # Move on to next route without penalising provider health.
+                latency_ms = (time.monotonic() - start) * 1000
+                await self.registry.record_request(
+                    route.provider_id, latency_ms=latency_ms, success=True
+                )
+                logger.warning(
+                    "Provider %s rejected request for model %s (%.0fms): %s",
+                    route.provider_id, route.model, latency_ms, exc,
+                )
+                last_error = exc
+
+            except (ProviderError, Exception) as exc:
                 latency_ms = (time.monotonic() - start) * 1000
                 await self.registry.record_request(
                     route.provider_id, latency_ms=latency_ms, success=False

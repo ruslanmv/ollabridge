@@ -102,3 +102,51 @@ export function useCloudStatus() {
 
 // Backward-compatible alias for older components
 export const usePairDevices = usePairedDevices
+
+// ── Providers Hub ────────────────────────────────────────────
+
+import type { HFModelsQuery } from './api'
+
+export function useProvidersList() {
+  return useQuery({
+    queryKey: ['providersList'],
+    queryFn: api.providersList,
+    refetchInterval: 8_000,
+    retry: false,
+  })
+}
+
+export function useProvidersAliases() {
+  return useQuery({
+    queryKey: ['providersAliases'],
+    queryFn: api.providersAliases,
+    refetchInterval: 15_000,
+    retry: false,
+  })
+}
+
+export function useHFStatus() {
+  return useQuery({
+    queryKey: ['hfStatus'],
+    queryFn: api.hfStatus,
+    refetchInterval: 5_000,
+    retry: false,
+  })
+}
+
+export function useHFModels(params: HFModelsQuery) {
+  return useQuery({
+    queryKey: ['hfModels', params],
+    queryFn: () => api.hfModels(params),
+    retry: false,
+  })
+}
+
+export function useHFRecommendations(n = 3) {
+  return useQuery({
+    queryKey: ['hfRecommendations', n],
+    queryFn: () => api.hfRecommendations(n),
+    refetchInterval: 30_000,
+    retry: false,
+  })
+}

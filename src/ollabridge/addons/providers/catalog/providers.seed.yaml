@@ -60,17 +60,19 @@ providers:
   # ── Free Secondary ────────────────────────────────────────
 
   - id: huggingface-free
-    name: Hugging Face Inference API
+    name: Hugging Face Inference Providers
     kind: huggingface
     enabled: true
-    tier: secondary
-    category: free-lab
-    priority: 70
-    weight: 10
+    tier: main
+    category: free-flex
+    priority: 85
+    weight: 20
     base_url: https://router.huggingface.co
-    credential_env: HUGGINGFACE_API_KEY
-    tags: [free, experimental, oss, testing]
-    notes: "Best for experimentation"
+    # HF_TOKEN is the canonical name HF uses in its own docs and SDKs.
+    # HUGGINGFACE_API_KEY is kept as a fallback for older deployments.
+    credential_env: HF_TOKEN
+    tags: [free, free-credit, aggregator, multimodal, vision, tools, oss]
+    notes: "OpenAI-compatible router across many upstream providers (Together, Novita, Groq, Fireworks, DeepInfra, ...). Uses HF monthly credits."
 
   # ── Cheap Secondary ───────────────────────────────────────
 

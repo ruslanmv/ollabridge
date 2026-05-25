@@ -312,4 +312,199 @@ export const api = {
     request<{ ok: boolean; state: string }>('/admin/cloud/disconnect', { method: 'POST' }),
   cloudUnlink: () =>
     request<{ ok: boolean; state: string; credentials_deleted: boolean }>('/admin/cloud/unlink', { method: 'POST' }),
+
+  // ── Providers Hub (admin) ──────────────────────────────────────
+  providersList: () => request<ProvidersListResponse>('/admin/providers'),
+  providersAliases: () => request<ProvidersAliasesResponse>('/admin/providers/aliases'),
+  providersEnable: (id: string) =>
+    request<{ ok: boolean; provider: string; enabled: boolean }>(
+      `/admin/providers/${id}/enable`,
+      { method: 'POST' },
+    ),
+  providersDisable: (id: string) =>
+    request<{ ok: boolean; provider: string; enabled: boolean }>(
+      `/admin/providers/${id}/disable`,
+      { method: 'POST' },
+    ),
+  providersTest: (body: { model: string; prompt?: string; max_tokens?: number }) =>
+    request<ProviderTestResponse>('/admin/providers/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  hfStatus: () => request<HFStatusResponse>('/admin/providers/huggingface/status'),
+  hfConnect: (body: { token: string; bill_to?: string; mode?: string }) =>
+    request<HFConnectResponse>('/admin/providers/huggingface/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  hfDisconnect: () =>
+    request<{ ok: boolean; connected: boolean }>(
+      '/admin/providers/huggingface/disconnect',
+      { method: 'POST' },
+    ),
+  hfRefresh: (body?: { limit?: number; profile?: string }) =>
+    request<HFRefreshResponse>('/admin/providers/huggingface/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    }),
+  hfModels: (params: HFModelsQuery = {}) => {
+    const qs = new URLSearchParams()
+    if (params.task) qs.set('task', params.task)
+    if (params.supports_tools !== undefined) qs.set('supports_tools', String(params.supports_tools))
+    if (params.supports_structured_output !== undefined)
+      qs.set('supports_structured_output', String(params.supports_structured_output))
+    if (params.free_credit_only) qs.set('free_credit_only', 'true')
+    if (params.max_price_per_1m !== undefined)
+      qs.set('max_price_per_1m', String(params.max_price_per_1m))
+    if (params.limit !== undefined) qs.set('limit', String(params.limit))
+    if (params.offset !== undefined) qs.set('offset', String(params.offset))
+    const query = qs.toString()
+    return request<HFModelsResponse>(
+      `/admin/providers/huggingface/models${query ? `?${query}` : ''}`,
+    )
+  },
+  hfRecommendations: (n = 3) =>
+    request<HFRecommendationsResponse>(
+      `/admin/providers/huggingface/recommendations?n=${n}`,
+    ),
+}
+
+// ── Providers Hub types ──────────────────────────────────────────
+
+export type ProviderState = {
+  health: string
+  avg_latency_ms: number
+  request_count: number
+  token_count: number
+  consecutive_failures: number
+  monthly_tokens_used: number
+  monthly_requests_used: number
+  is_quota_exhausted: boolean
+  last_error: string | null
+}
+
+export type ProviderSummary = {
+  id: string
+  name: string
+  kind: string
+  enabled: boolean
+  tier: string
+  category: string
+  priority: number
+  weight: number
+  base_url: string
+  credential_env: string | null
+  tags: string[]
+  notes: string
+  state: ProviderState | null
+}
+
+export type ProvidersListResponse = {
+  providers: ProviderSummary[]
+  total: number
+  enabled: number
+}
+
+export type AliasCandidate = { provider: string; model: string }
+export type ProvidersAliasesResponse = {
+  aliases: Record<string, AliasCandidate[]>
+  total: number
+}
+
+export type HFLastSync = {
+  started_at: string
+  finished_at: string
+  duration_s: number
+  ok: boolean
+  fetched: number
+  upserted: number
+  marked_stale: number
+  aliases_written: number
+  error: string | null
+}
+
+export type HFStatusResponse = {
+  connected: boolean
+  bill_to: string | null
+  mode: string
+  encrypted_at_rest: boolean
+  catalog: {
+    entries: number
+    last_sync: HFLastSync | null
+  }
+}
+
+export type HFConnectResponse = {
+  ok: boolean
+  connected: boolean
+  bill_to: string | null
+  mode: string
+  encrypted: boolean
+}
+
+export type HFRefreshResponse = {
+  ok: boolean
+  duration_s: number
+  fetched: number
+  upserted: number
+  marked_stale: number
+  aliases_written: number
+  error: string | null
+}
+
+export type HFCatalogEntry = {
+  router_model_id: string
+  model_id: string
+  hf_provider: string
+  task: string
+  rank: number
+  score: number
+  input_price_per_1m: number | null
+  output_price_per_1m: number | null
+  context_window: number | null
+  latency_s: number | null
+  throughput_tps: number | null
+  supports_tools: boolean
+  supports_structured_output: boolean
+  trending_score: number | null
+  labels: string[]
+  manually_added: boolean
+  last_seen_at: string | null
+}
+
+export type HFModelsQuery = {
+  task?: string
+  supports_tools?: boolean
+  supports_structured_output?: boolean
+  free_credit_only?: boolean
+  max_price_per_1m?: number
+  limit?: number
+  offset?: number
+}
+
+export type HFModelsResponse = {
+  total: number
+  offset: number
+  limit: number
+  models: HFCatalogEntry[]
+}
+
+export type HFRecommendationsResponse = {
+  total_buckets: number
+  buckets: Record<string, AliasCandidate[]>
+}
+
+export type ProviderTestResponse = {
+  ok: boolean
+  chose: { provider_id: string; model: string; score: number; reason: string }
+  response: {
+    id: string
+    object: string
+    choices: Array<{ message: { role: string; content: string } }>
+    usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+    model?: string
+  }
 }

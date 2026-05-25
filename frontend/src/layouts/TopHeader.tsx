@@ -6,6 +6,7 @@ const PAGE_TITLES: Record<Page, string> = {
   dashboard: 'AI Distribution System',
   sources: 'Sources',
   models: 'Model Inventory',
+  providers: 'Providers Hub',
   nodes: 'Node Fleet Manager',
   pairing: 'Device Pairing',
   cloud: 'Cloud Relay',
