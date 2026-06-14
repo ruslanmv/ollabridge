@@ -1,13 +1,10 @@
 import { motion } from 'framer-motion'
-import { useCloudStatus, useFlowMetrics, useHealth, useModels, useRuntimes, useSettings } from '../../lib/hooks'
-import { deriveSourceMode } from '../../lib/api'
+import { Cloud as CloudIcon, FileText, Layers, Plug } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { useCloudStatus, useFlowMetrics, useHealth, useModels, useRuntimes, useSources } from '../../lib/hooks'
 import { TowerOrb } from './TowerOrb'
 import { SignalBeams } from './SignalBeams'
 import type { Page } from '../../App'
-
-function countPersonaModels(ids: string[]) {
-  return ids.filter((id) => id.startsWith('persona:') || id.startsWith('personality:')).length
-}
 
 function countStandardModels(ids: string[]) {
   return ids.filter((id) => !id.startsWith('persona:') && !id.startsWith('personality:')).length
@@ -15,26 +12,24 @@ function countStandardModels(ids: string[]) {
 
 export function TowerCanvas({ onNavigate }: { onNavigate: (page: Page) => void }) {
   const { data: health } = useHealth()
-  const { data: settings } = useSettings()
   const { data: modelsData } = useModels()
   const { data: runtimesData } = useRuntimes()
   const { data: flow } = useFlowMetrics()
   const { data: cloud } = useCloudStatus()
+  const { data: sourcesData } = useSources()
 
   const isOnline = health?.status === 'ok'
   const cloudConnected = cloud?.state === 'connected'
   const cloudLabel = cloud?.state === 'connected' ? `${cloud.models_count} model${cloud.models_count !== 1 ? 's' : ''} shared` : cloud?.state === 'pairing' ? 'Pairing...' : 'Not linked'
   const models = modelsData?.data ?? []
-  const modelIds = models.map((m) => m.id)
-  const personaCount = countPersonaModels(modelIds)
-  const standardCount = countStandardModels(modelIds)
+  const standardCount = countStandardModels(models.map((m) => m.id))
   const runtimeCount = runtimesData?.count ?? 0
-  const sourceMode = deriveSourceMode(settings)
   const isFlowing = !!flow?.active && (flow?.requests_8s ?? 0) > 0
   const pulseCount = Math.max(1, Math.min(5, flow?.requests_8s ?? 1))
+  const providerCount = sourcesData?.configured?.filter((s) => s.key_configured && s.enabled).length ?? 0
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center">
+    <div className="absolute inset-0">
       <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
         <defs>
           <linearGradient id="shaft-grad-v6" x1="0" y1="0" x2="0" y2="1">
@@ -63,34 +58,65 @@ export function TowerCanvas({ onNavigate }: { onNavigate: (page: Page) => void }
         <SignalBeams isOnline={isOnline} isFlowing={isFlowing} pulseCount={pulseCount} />
       </svg>
 
-      <div className="relative flex flex-col items-center" style={{ marginTop: '-2%' }}>
-        <div className="flex items-center justify-between mb-10" style={{ width: 930 }}>
-          <SourceChip label="Source Inputs" subtitle="API · RSS · Docs · Manual" color="#68f4ff" onClick={() => onNavigate('sources')} />
+      {/* Flow layout (not centered-overflow) so the top cards can never be
+          clipped under the header on short viewports. */}
+      <div className="relative h-full w-full flex flex-col items-center px-6 pt-5 pb-2 min-h-0">
+        {/* Top: source / provider / model cards */}
+        <div className="flex items-center justify-center shrink-0 max-w-full">
+          <SourceChip icon={FileText} label="Runtimes" subtitle="Ollama · HomePilot" color="#68f4ff" dotColor="#22c55e" onClick={() => onNavigate('runtimes')} />
           <ConnectionDots active={isFlowing} />
-          <div className="w-48" />
+          <SourceChip
+            icon={Plug}
+            label="Sources"
+            subtitle={providerCount > 0 ? `${providerCount} connected` : 'Disabled'}
+            color="#8b5cf6"
+            dim={providerCount === 0}
+            dotColor={providerCount > 0 ? '#22c55e' : 'rgba(255,255,255,0.25)'}
+            onClick={() => onNavigate('sources')}
+          />
           <ConnectionDots active={isFlowing} />
-          <div className="flex items-center gap-4">
-            <SourceChip label="HomePilot" subtitle={sourceMode === 'hybrid' || sourceMode === 'homepilot' ? `${personaCount} persona models` : 'Disabled'} color="#20d7c5" dim={sourceMode === 'ollama' || sourceMode === 'none'} onClick={() => onNavigate('sources')} />
-            <SourceChip label="Ollama" subtitle={standardCount > 0 ? `${standardCount} standard models` : 'No models'} color="#68f4ff" dim={sourceMode === 'homepilot' || sourceMode === 'none'} onClick={() => onNavigate('models')} />
+          <SourceChip
+            icon={Layers}
+            label="Models"
+            subtitle={standardCount > 0 ? `${standardCount} standard model${standardCount !== 1 ? 's' : ''}` : 'No models'}
+            color="#68f4ff"
+            dim={standardCount === 0}
+            dotColor={standardCount > 0 ? '#22c55e' : 'rgba(255,255,255,0.25)'}
+            onClick={() => onNavigate('models')}
+          />
+        </div>
+
+        {/* Middle: orb + routing label + landing ring (flexes, never pushes
+            the top cards out of view) */}
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center">
+          <div className="scale-90 xl:scale-100 origin-center">
+            <TowerOrb isOnline={isOnline} defaultModel={health?.default_model} activeFlow={isFlowing} />
           </div>
-        </div>
 
-        <TowerOrb isOnline={isOnline} defaultModel={health?.default_model} activeFlow={isFlowing} />
+          <div className="relative w-px h-8 xl:h-14">
+            {isFlowing && (
+              <motion.div
+                className="absolute left-1/2 -translate-x-1/2 w-16 h-full pointer-events-none"
+                style={{ background: 'linear-gradient(180deg, rgba(0,229,255,0.09), transparent)', filter: 'blur(12px)' }}
+                animate={{ opacity: [0.45, 0.9, 0.45] }}
+                transition={{ duration: 1.8, repeat: Infinity }}
+              />
+            )}
+          </div>
 
-        <div className="relative w-px" style={{ height: 118 }}>
-          {isFlowing && (
-            <motion.div
-              className="absolute left-1/2 -translate-x-1/2 w-16 h-full pointer-events-none"
-              style={{ background: 'linear-gradient(180deg, rgba(0,229,255,0.09), transparent)', filter: 'blur(12px)' }}
-              animate={{ opacity: [0.45, 0.9, 0.45] }}
-              transition={{ duration: 1.8, repeat: Infinity }}
-            />
-          )}
-        </div>
+          <div className="text-center mb-3">
+            <div className="text-[12px] text-white/55 uppercase tracking-[0.3em] font-semibold">
+              {isFlowing ? 'Live flow' : 'Model routing'}
+            </div>
+            <div className="mt-1 text-[11px] text-white/30 uppercase tracking-[0.22em] font-medium">
+              {isFlowing
+                ? `${flow?.requests_8s ?? 0} request${(flow?.requests_8s ?? 0) !== 1 ? 's' : ''} in 8s`
+                : `${runtimeCount} runtime${runtimeCount !== 1 ? 's' : ''} connected`}
+            </div>
+          </div>
 
-        <div className="relative">
           <motion.div
-            className="w-52 h-10 rounded-[50%]"
+            className="w-52 h-9 rounded-[50%]"
             style={{
               border: '1px solid rgba(0,229,255,0.18)',
               background: 'radial-gradient(ellipse, rgba(0,229,255,0.08) 0%, transparent 70%)',
@@ -99,20 +125,17 @@ export function TowerCanvas({ onNavigate }: { onNavigate: (page: Page) => void }
             animate={isOnline ? { opacity: isFlowing ? [0.45, 0.95, 0.45] : [0.28, 0.5, 0.28] } : { opacity: 0.2 }}
             transition={{ duration: isFlowing ? 2.2 : 5, repeat: Infinity, ease: 'easeInOut' }}
           />
-          <motion.span className="absolute -right-16 top-1/2 -translate-y-1/2 text-sm text-white/25 font-medium tracking-widest" animate={{ opacity: [0.25, 0.45, 0.25] }} transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}>tower</motion.span>
         </div>
 
-        <div className="mt-3 text-[11px] text-white/22 uppercase tracking-[0.22em] font-medium">
-          {isFlowing ? `Live flow · ${flow?.requests_8s ?? 0} request${(flow?.requests_8s ?? 0) !== 1 ? 's' : ''} in 8s` : `Model routing · ${runtimeCount} runtime${runtimeCount !== 1 ? 's' : ''} connected`}
-        </div>
-
-        {/* Cloud Relay chip — entry point to Cloud page */}
-        <div className="mt-6">
+        {/* Bottom: cloud relay entry point */}
+        <div className="shrink-0 pb-1">
           <SourceChip
+            icon={CloudIcon}
             label="Cloud Relay"
             subtitle={cloudLabel}
             color={cloudConnected ? '#14b8a6' : '#8b5cf6'}
             dim={!cloudConnected}
+            dotColor={cloudConnected ? '#22c55e' : 'rgba(255,255,255,0.25)'}
             onClick={() => onNavigate('cloud')}
           />
         </div>
@@ -121,27 +144,34 @@ export function TowerCanvas({ onNavigate }: { onNavigate: (page: Page) => void }
   )
 }
 
-function SourceChip({ label, subtitle, color, dim = false, onClick }: { label: string; subtitle: string; color: string; dim?: boolean; onClick: () => void }) {
+
+function SourceChip({ icon: Icon, label, subtitle, color, dim = false, dotColor, onClick }: { icon: LucideIcon; label: string; subtitle: string; color: string; dim?: boolean; dotColor?: string; onClick: () => void }) {
   return (
     <motion.button
       type="button"
       onClick={onClick}
-      className="group flex items-center gap-3 px-4 py-3 rounded-2xl text-left"
+      className="group relative flex items-center gap-3 px-4 py-3 rounded-2xl text-left"
       style={{
         background: dim ? 'linear-gradient(135deg, rgba(12,16,45,0.52), rgba(8,10,30,0.42))' : 'linear-gradient(135deg, rgba(12,16,45,0.72), rgba(8,10,30,0.55))',
         border: `1px solid ${dim ? 'rgba(255,255,255,0.06)' : color + '44'}`,
         boxShadow: dim ? 'inset 0 1px 0 rgba(255,255,255,0.02)' : `0 0 30px ${color}12, inset 0 1px 0 rgba(255,255,255,0.03)`,
-        minWidth: 180,
+        minWidth: 200,
       }}
       whileHover={{ y: -2, scale: 1.01 }}
       whileTap={{ scale: 0.99 }}
     >
-      <div className="w-6 h-6 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${color}18`, border: `1px solid ${color}33` }}>
-        <div className="w-2.5 h-2.5 rounded-full" style={{ background: dim ? 'rgba(255,255,255,0.18)' : color, boxShadow: dim ? 'none' : `0 0 10px ${color}aa` }} />
+      {dotColor && (
+        <span
+          className="absolute top-2.5 right-3 w-2 h-2 rounded-full"
+          style={{ background: dotColor, boxShadow: dotColor.startsWith('#') ? `0 0 8px ${dotColor}aa` : 'none' }}
+        />
+      )}
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${color}16`, border: `1px solid ${color}30` }}>
+        <Icon size={16} style={{ color: dim ? 'rgba(255,255,255,0.3)' : color }} />
       </div>
       <div className="min-w-0">
-        <div className="text-[14px] font-semibold text-white/88 leading-tight">{label}</div>
-        <div className="text-[11px] text-white/35 truncate mt-0.5">{subtitle}</div>
+        <div className="text-[12px] font-bold uppercase tracking-[0.14em] leading-tight" style={{ color: dim ? 'rgba(255,255,255,0.45)' : color }}>{label}</div>
+        <div className="text-[12px] text-white/45 truncate mt-1">{subtitle}</div>
       </div>
     </motion.button>
   )
@@ -149,7 +179,7 @@ function SourceChip({ label, subtitle, color, dim = false, onClick }: { label: s
 
 function ConnectionDots({ active }: { active: boolean }) {
   return (
-    <div className="flex items-center gap-2 px-4">
+    <div className="hidden md:flex items-center gap-2 px-5">
       {[0,1,2].map((i) => (
         <motion.div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: active ? '#68f4ff' : 'rgba(255,255,255,0.18)', boxShadow: active ? '0 0 8px rgba(104,244,255,0.6)' : 'none' }} animate={active ? { opacity: [0.25, 1, 0.25] } : { opacity: 0.45 }} transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.18 }} />
       ))}

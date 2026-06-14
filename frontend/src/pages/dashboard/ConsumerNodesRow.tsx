@@ -1,5 +1,7 @@
 import { useMemo } from 'react'
 import { motion } from 'framer-motion'
+import { Info, Link2 } from 'lucide-react'
+import type { Page } from '../../App'
 import { useConsumerNodes, usePairedDevices } from '../../lib/hooks'
 import type { ConsumerNode, ConsumerNodeStatus } from '../../lib/api'
 
@@ -23,7 +25,7 @@ function colorForKind(kind: string): string {
   }
 }
 
-export function ConsumerNodesRow() {
+export function ConsumerNodesRow({ onNavigate }: { onNavigate?: (page: Page) => void }) {
   const { data: nodesData } = useConsumerNodes()
   const { data: devicesData } = usePairedDevices()
 
@@ -43,15 +45,31 @@ export function ConsumerNodesRow() {
 
   if (nodes.length === 0) {
     return (
-      <div className="max-w-[1440px] mx-auto">
-        <div className="flex items-center justify-center mb-3">
-          <div className="px-4 py-1.5 rounded-full text-[10px] uppercase tracking-[0.24em] text-white/35 border border-white/8 bg-white/[0.03]">
-            Consumer Nodes
-          </div>
+      <div className="max-w-[1440px] mx-auto flex flex-col items-center">
+        <div className="flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] uppercase tracking-[0.24em] text-white/40 border border-white/8 bg-white/[0.03]">
+          Consumer Nodes
+          <span className="px-2 py-0.5 rounded-full bg-white/8 text-white/55 tracking-normal font-semibold">0</span>
         </div>
-        <div className="text-center text-white/25 text-xs py-4">
-          No consumer nodes registered. Pair a device to get started.
+        <div className="flex items-center gap-1.5 text-white/35 text-[13px] mt-3">
+          <Info size={13} className="shrink-0" />
+          <span className="text-white/55 font-medium">No consumer nodes registered yet.</span>
+          <span>Pair a device to get started.</span>
         </div>
+        <motion.button
+          type="button"
+          onClick={() => onNavigate?.('pairing')}
+          className="mt-3 flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold"
+          style={{
+            border: '1px solid rgba(255,255,255,0.16)',
+            background: 'rgba(255,255,255,0.03)',
+            color: 'rgba(255,255,255,0.85)',
+          }}
+          whileHover={{ scale: 1.03, borderColor: 'rgba(0,229,255,0.4)' }}
+          whileTap={{ scale: 0.98 }}
+        >
+          <Link2 size={15} className="text-glow-cyan" />
+          Pair Device
+        </motion.button>
       </div>
     )
   }

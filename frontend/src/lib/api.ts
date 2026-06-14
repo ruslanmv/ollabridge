@@ -370,6 +370,168 @@ export const api = {
     request<HFRecommendationsResponse>(
       `/admin/providers/huggingface/recommendations?n=${n}`,
     ),
+
+  // ── External Sources Hub (/admin/sources/*) ────────────────────
+  listSources: () => request<SourcesListResponse>('/admin/sources'),
+  getSource: (name: string) => request<SourceObject>(`/admin/sources/${encodeURIComponent(name)}`),
+  upsertSource: (name: string, body: SourceUpsertBody) =>
+    request<SourceUpsertResponse>(`/admin/sources/${encodeURIComponent(name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  testSource: (name: string) =>
+    request<SourceTestResponse>(`/admin/sources/${encodeURIComponent(name)}/test`, {
+      method: 'POST',
+    }),
+  rotateSource: (name: string, api_key: string) =>
+    request<SourceUpsertResponse>(`/admin/sources/${encodeURIComponent(name)}/rotate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key }),
+    }),
+  deleteSource: (name: string) =>
+    request<SourceDeleteResponse>(`/admin/sources/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
+
+  // ── Models & Access (/admin/model-access/*) ─────────────────────
+  listModelAccess: () => request<ModelAccessListResponse>('/admin/model-access'),
+  setModelAccess: (sourceId: string, modelId: string, body: ModelAccessPatch) =>
+    request<ModelAccessRecord>(
+      // model ids may contain "/" (hf namespaces) — encode per segment so the
+      // backend's {model_id:path} converter reassembles them.
+      `/admin/model-access/${encodeURIComponent(sourceId)}/${modelId
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    ),
+  cloudModelManifest: () =>
+    request<CloudManifestResponse>('/admin/model-access/manifest/cloud'),
+}
+
+// ── External Sources Hub types ───────────────────────────────────
+
+export type SourceSharing = 'private' | 'account' | 'workspace' | 'organization'
+export type SourceStorageMode = 'local_only' | 'cloud_encrypted_vault' | 'organization_vault'
+export type SourceStatus =
+  | 'connected'
+  | 'missing_key'
+  | 'error'
+  | 'disabled'
+  | 'not_configured'
+
+/** A configured external source (metadata + redacted key hint, never the key). */
+export type SourceObject = {
+  name: string
+  kind: string
+  label: string
+  display_name: string
+  base_url: string
+  default_model: string
+  enabled: boolean
+  allow_routing: boolean
+  sharing: SourceSharing
+  storage_mode: SourceStorageMode
+  status: SourceStatus
+  key: string | null
+  key_configured: boolean
+  last_test_ok: boolean | null
+  last_test_at: string | null
+  rotated_at: string | null
+  created_at?: string | null
+}
+
+/** A catalog provider that has not been configured yet. */
+export type AvailableSource = {
+  name: string
+  label: string
+  base_url: string
+  env_var: string
+  notes: string
+  status: 'not_configured'
+}
+
+export type SourcesListResponse = {
+  configured: SourceObject[]
+  available: AvailableSource[]
+}
+
+export type SourceUpsertBody = {
+  api_key?: string
+  display_name?: string
+  base_url?: string
+  default_model?: string
+  enabled?: boolean
+  allow_routing?: boolean
+  sharing?: SourceSharing
+  storage_mode?: SourceStorageMode
+}
+
+export type SourceTestResult = { ok: boolean; detail: string }
+
+export type SourceUpsertResponse = {
+  source: SourceObject
+  test: SourceTestResult | null
+}
+
+export type SourceTestResponse = {
+  ok: boolean
+  detail: string
+  tested_at: string
+}
+
+export type SourceDeleteResponse = {
+  ok: boolean
+  removed_metadata: boolean
+  removed_key: boolean
+}
+
+// ── Models & Access types ────────────────────────────────────────
+
+/** Per-model access flags (metadata only — never secrets). */
+export type ModelAccessRecord = {
+  source_id: string
+  model_id: string
+  enabled: boolean
+  visible_local: boolean
+  visible_lan: boolean
+  visible_cloud: boolean
+  allowed_apps: string[]
+  allowed_workspace: boolean
+  allow_routing: boolean
+}
+
+export type ModelAccessSourceGroup = {
+  source_id: string
+  source_label: string
+  models: ModelAccessRecord[]
+}
+
+export type ModelAccessListResponse = { sources: ModelAccessSourceGroup[] }
+
+/** Patch for one model's access; omitted flags are unchanged. */
+export type ModelAccessPatch = Partial<
+  Omit<ModelAccessRecord, 'source_id' | 'model_id'>
+>
+
+export type CloudManifestEntry = {
+  model_id: string
+  source_id: string
+  source_label: string
+  allowed_apps: string[]
+  allow_routing: boolean
+  requires_device_online: boolean
+}
+
+export type CloudManifestResponse = {
+  models: CloudManifestEntry[]
+  count: number
 }
 
 // ── Providers Hub types ──────────────────────────────────────────

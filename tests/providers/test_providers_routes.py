@@ -52,11 +52,13 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setenv("API_KEYS", "test-key")
     monkeypatch.setenv("AUTH_MODE", "required")
 
-    import importlib
+    # Patch the live settings instance: modules like ollabridge.core.security
+    # hold a direct reference to it, so reloading the settings module would
+    # leave them pointing at a stale object (import-order dependent).
+    from ollabridge.core.settings import settings as live_settings
 
-    from ollabridge.core import settings as settings_mod
-
-    importlib.reload(settings_mod)
+    monkeypatch.setattr(live_settings, "API_KEYS", "test-key")
+    monkeypatch.setattr(live_settings, "AUTH_MODE", "required")
 
     # Build a real FastAPI app with just the providers router mounted, so we
     # don't drag in the whole gateway startup (DB, relay, cloud bridge, etc).
@@ -73,16 +75,19 @@ def app(tmp_path, monkeypatch):
         base_url="https://router.huggingface.co",
     )
     adapter = _FakeAdapter()
-    # ProviderRegistry.register is async — call via sync wrapper for the fixture.
+    # ProviderRegistry.register is async — drive it with a throwaway loop
+    # (asyncio.get_event_loop() no longer creates one on Python 3.10+).
     import asyncio
-    asyncio.get_event_loop().run_until_complete(registry.register(config, adapter))
-    registry.set_aliases({
-        "ollabridge:tools": [AliasCandidate(provider="huggingface-free", model="m/x:groq")],
-    })
-    # Force the state to healthy so the router considers it available.
-    asyncio.get_event_loop().run_until_complete(
-        registry.update_health("huggingface-free", HealthStatus.HEALTHY)
-    )
+
+    async def _seed_registry() -> None:
+        await registry.register(config, adapter)
+        registry.set_aliases({
+            "ollabridge:tools": [AliasCandidate(provider="huggingface-free", model="m/x:groq")],
+        })
+        # Force the state to healthy so the router considers it available.
+        await registry.update_health("huggingface-free", HealthStatus.HEALTHY)
+
+    asyncio.run(_seed_registry())
 
     prouter = ProviderRouter(registry)
     application.state.provider_registry = registry

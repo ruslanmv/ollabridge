@@ -38,17 +38,37 @@ class ProviderRouter:
         self.registry = registry
 
     def _is_available(self, config: ProviderConfig) -> bool:
-        """Check if a provider is enabled and not in a terminal health state."""
+        """Check if a provider can actually serve a request.
+
+        A provider is unavailable if disabled, in a terminal health state, or
+        — crucially — has no usable credential. Attempting a keyless external
+        provider only produces 401/403 noise and a wasted round-trip, so we
+        skip it here instead of failing over from it.
+        """
         if not config.enabled:
             return False
         state = self.registry.get_state(config.id)
         if not state:
             return False
-        if state.health in (HealthStatus.DOWN, HealthStatus.MAINTENANCE, HealthStatus.QUOTA_EXHAUSTED):
+        if state.health in (
+            HealthStatus.DOWN,
+            HealthStatus.MAINTENANCE,
+            HealthStatus.QUOTA_EXHAUSTED,
+        ):
+            return False
+        adapter = self.registry.get_adapter(config.id)
+        if adapter is not None and not getattr(adapter, "has_credential", True):
+            logger.debug(
+                "Skipping provider %s: no API key configured (set %s)",
+                config.id,
+                config.credential_env or "its API key",
+            )
             return False
         return True
 
-    def _rank_candidates(self, candidates: list[tuple[ProviderConfig, str]]) -> list[RouteResult]:
+    def _rank_candidates(
+        self, candidates: list[tuple[ProviderConfig, str]]
+    ) -> list[RouteResult]:
         """Score and rank a list of (config, model) candidates."""
         scored: list[RouteResult] = []
         for config, model in candidates:
@@ -56,13 +76,15 @@ class ProviderRouter:
             if not state:
                 continue
             score = compute_score(config, state)
-            scored.append(RouteResult(
-                provider_id=config.id,
-                provider_config=config,
-                model=model,
-                score=score,
-                reason=f"score={score:.3f} health={state.health.value} tier={config.tier.value}",
-            ))
+            scored.append(
+                RouteResult(
+                    provider_id=config.id,
+                    provider_config=config,
+                    model=model,
+                    score=score,
+                    reason=f"score={score:.3f} health={state.health.value} tier={config.tier.value}",
+                )
+            )
         scored.sort(key=lambda r: r.score, reverse=True)
         return scored
 
@@ -86,12 +108,46 @@ class ProviderRouter:
                     candidates.append((config, ac.model))
             return self._rank_candidates(candidates)
 
-        # 2. Not an alias — try all enabled providers with the concrete model
+        # 2. Not an alias. Only offer the concrete model to a provider that
+        #    plausibly serves it — i.e. the model id namespaces to the
+        #    provider (e.g. "openai/...", "google/...") or the provider id /
+        #    kind is named in the model string. We do NOT fan a bare model
+        #    name out to every provider: an Ollama-style local model such as
+        #    "granite3.2:latest" would otherwise be sent to Gemini/Groq/etc.,
+        #    producing 401/403/404 noise before the gateway falls back to the
+        #    local runtime. When nothing matches we return no candidates so
+        #    the gateway uses its own local/relay routing.
         candidates = []
         for config in self.registry.list_enabled():
-            if self._is_available(config):
+            if self._is_available(config) and self._provider_serves_model(
+                config, model_or_alias
+            ):
                 candidates.append((config, model_or_alias))
         return self._rank_candidates(candidates)
+
+    @staticmethod
+    def _provider_serves_model(config: ProviderConfig, model: str) -> bool:
+        """Heuristic: does this provider plausibly serve *model*?
+
+        True when the model id references the provider by kind/id, or carries
+        a vendor namespace prefix (``vendor/...``). Bare local-style names
+        like ``llama3:latest`` match nothing here and stay on the local path.
+        """
+        m = model.lower()
+        kind = (config.kind or "").lower()
+        pid = (config.id or "").lower().split("-")[0]
+        if kind and kind in m:
+            return True
+        if pid and pid in m:
+            return True
+        # Vendor-namespaced ids (openrouter/HF style: "google/gemma-3-27b-it")
+        if "/" in model and config.kind in (
+            "openrouter",
+            "huggingface",
+            "openai_compatible",
+        ):
+            return True
+        return False
 
     async def route_chat(
         self,
@@ -123,7 +179,9 @@ class ProviderRouter:
             try:
                 logger.info(
                     "Routing to %s (model=%s score=%.3f)",
-                    route.provider_id, route.model, route.score,
+                    route.provider_id,
+                    route.model,
+                    route.score,
                 )
                 result = await adapter.chat(route.model, messages, **kwargs)
                 latency_ms = (time.monotonic() - start) * 1000
@@ -132,12 +190,17 @@ class ProviderRouter:
                 usage = result.get("usage", {})
                 total_tokens = usage.get("total_tokens", 0)
                 await self.registry.record_request(
-                    route.provider_id, latency_ms=latency_ms, tokens=total_tokens, success=True
+                    route.provider_id,
+                    latency_ms=latency_ms,
+                    tokens=total_tokens,
+                    success=True,
                 )
 
                 logger.info(
                     "Provider %s responded in %.0fms (tokens=%d)",
-                    route.provider_id, latency_ms, total_tokens,
+                    route.provider_id,
+                    latency_ms,
+                    total_tokens,
                 )
                 return result
 
@@ -153,7 +216,9 @@ class ProviderRouter:
                 )
                 logger.warning(
                     "Provider %s quota exhausted (%.0fms): %s — failing over",
-                    route.provider_id, latency_ms, exc,
+                    route.provider_id,
+                    latency_ms,
+                    exc,
                 )
                 last_error = exc
 
@@ -167,7 +232,9 @@ class ProviderRouter:
                 )
                 logger.warning(
                     "Provider %s auth error (%.0fms): %s — skipping provider",
-                    route.provider_id, latency_ms, exc,
+                    route.provider_id,
+                    latency_ms,
+                    exc,
                 )
                 last_error = exc
 
@@ -180,7 +247,10 @@ class ProviderRouter:
                 )
                 logger.warning(
                     "Provider %s rejected request for model %s (%.0fms): %s",
-                    route.provider_id, route.model, latency_ms, exc,
+                    route.provider_id,
+                    route.model,
+                    latency_ms,
+                    exc,
                 )
                 last_error = exc
 
@@ -191,7 +261,9 @@ class ProviderRouter:
                 )
                 logger.warning(
                     "Provider %s failed (%.0fms): %s — trying next candidate",
-                    route.provider_id, latency_ms, exc,
+                    route.provider_id,
+                    latency_ms,
+                    exc,
                 )
                 last_error = exc
 

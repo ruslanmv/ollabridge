@@ -543,3 +543,46 @@ print(answer)
 ---
 
 **Next:** Check out [ARCHITECTURE.md](ARCHITECTURE.md) to understand how OllaBridge works under the hood.
+
+---
+
+## 🎨 Try the Interactive Demo Client
+
+Want to see OllaBridge in action? Check out our **2-click demo client** in the `example/` folder!
+
+### ⚡ Quick Start
+
+```bash
+# 1. Install and start OllaBridge
+cd example
+./install-ollabridge.sh  # Mac/Linux
+# or
+.\install-ollabridge.ps1  # Windows
+
+# 2. Run the demo client
+make run
+
+# 3. Open http://localhost:3000 in your browser
+```
+
+### ✨ Features
+
+- 🎯 **Beautiful UI** — Modern, responsive web interface
+- 🔌 **Real Integration** — Actual API calls to OllaBridge endpoints
+- 📊 **Live Metrics** — Request stats, latency, uptime tracking
+- 🔑 **Auth Demo** — See how API key authentication works
+- 📝 **Best Practices** — Production-ready code examples
+
+### 📚 Perfect for Learning
+
+The example client shows you:
+- How to connect to OllaBridge from a browser
+- How to handle CORS properly
+- How to implement authentication with API keys
+- How to load models dynamically
+- How to send chat requests and handle responses
+
+**[View Full Documentation →](example/README.md)**
+
+---
+

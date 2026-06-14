@@ -72,7 +72,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: Page) => void
         </div>
 
         <div className="shrink-0 px-6 pb-5">
-          <ConsumerNodesRow />
+          <ConsumerNodesRow onNavigate={onNavigate} />
         </div>
       </div>
 

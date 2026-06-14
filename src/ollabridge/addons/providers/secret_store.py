@@ -42,6 +42,14 @@ DEFAULT_STORE_PATH = Path("~/.ollabridge/secrets.enc").expanduser()
 _VERSION = 1
 
 
+def _default_store_path() -> Path:
+    """Default store location, honoring the OLLABRIDGE_HOME override."""
+    home = os.environ.get("OLLABRIDGE_HOME", "").strip()
+    if home:
+        return Path(home).expanduser() / "secrets.enc"
+    return DEFAULT_STORE_PATH
+
+
 def _derive_fernet_key(secret: str) -> bytes:
     """Derive a 32-byte Fernet key from an arbitrary secret using HKDF."""
     from cryptography.hazmat.primitives import hashes
@@ -67,7 +75,7 @@ class SecretStore:
         path: Path | str | None = None,
         secret: str | None = None,
     ) -> None:
-        self.path = Path(path).expanduser() if path else DEFAULT_STORE_PATH
+        self.path = Path(path).expanduser() if path else _default_store_path()
         self._secret = secret if secret is not None else os.environ.get("OLLA_SECRET", "")
         self._fernet = self._init_fernet()
         self._data: dict[str, str] = {}

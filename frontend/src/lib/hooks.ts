@@ -1,7 +1,8 @@
 /** TanStack Query hooks for OllaBridge data. */
 
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
+import type { ModelAccessPatch, SourceUpsertBody } from './api'
 
 export function useHealth() {
   return useQuery({
@@ -147,6 +148,98 @@ export function useHFRecommendations(n = 3) {
     queryKey: ['hfRecommendations', n],
     queryFn: () => api.hfRecommendations(n),
     refetchInterval: 30_000,
+    retry: false,
+  })
+}
+
+// ── External Sources Hub ──────────────────────────────────────
+
+const SOURCES_KEY = ['sources'] as const
+
+export function useSources() {
+  return useQuery({
+    queryKey: SOURCES_KEY,
+    queryFn: api.listSources,
+    refetchInterval: 15_000,
+    retry: false,
+  })
+}
+
+export function useUpsertSource() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, body }: { name: string; body: SourceUpsertBody }) =>
+      api.upsertSource(name, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: SOURCES_KEY }),
+  })
+}
+
+export function useTestSource() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => api.testSource(name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: SOURCES_KEY }),
+  })
+}
+
+export function useRotateSource() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, api_key }: { name: string; api_key: string }) =>
+      api.rotateSource(name, api_key),
+    onSuccess: () => qc.invalidateQueries({ queryKey: SOURCES_KEY }),
+  })
+}
+
+export function useDeleteSource() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => api.deleteSource(name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: SOURCES_KEY })
+      qc.invalidateQueries({ queryKey: MODEL_ACCESS_KEY })
+    },
+  })
+}
+
+// ── Models & Access ───────────────────────────────────────────
+
+const MODEL_ACCESS_KEY = ['modelAccess'] as const
+const CLOUD_MANIFEST_KEY = ['cloudModelManifest'] as const
+
+export function useModelAccess() {
+  return useQuery({
+    queryKey: MODEL_ACCESS_KEY,
+    queryFn: api.listModelAccess,
+    refetchInterval: 15_000,
+    retry: false,
+  })
+}
+
+export function useSetModelAccess() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      sourceId,
+      modelId,
+      body,
+    }: {
+      sourceId: string
+      modelId: string
+      body: ModelAccessPatch
+    }) => api.setModelAccess(sourceId, modelId, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: MODEL_ACCESS_KEY })
+      qc.invalidateQueries({ queryKey: CLOUD_MANIFEST_KEY })
+    },
+  })
+}
+
+export function useCloudModelManifest() {
+  return useQuery({
+    queryKey: CLOUD_MANIFEST_KEY,
+    queryFn: api.cloudModelManifest,
+    refetchInterval: 15_000,
     retry: false,
   })
 }
