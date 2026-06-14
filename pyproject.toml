@@ -1,6 +1,6 @@
 [project]
 name = "ollabridge"
-version = "0.1.2"
+version = "0.1.3"
 description = "Turn your PC into a private, OpenAI-compatible LLM provider in ~60 seconds"
 readme = "README.md"
 requires-python = ">=3.10"
