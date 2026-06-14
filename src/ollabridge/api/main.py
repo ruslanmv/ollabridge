@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 from collections import deque
@@ -11,6 +12,7 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from pydantic import BaseModel
@@ -24,7 +26,6 @@ from ollabridge.db.models import RequestLog
 from ollabridge.api.state import build_state
 from ollabridge.api.relay import RelayHub, build_relay_router
 from ollabridge.core.registry import RuntimeNodeState
-
 
 log = logging.getLogger("ollabridge")
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT])
@@ -194,7 +195,9 @@ def _compute_flow_metrics(app: FastAPI) -> dict[str, Any]:
     requests_8s = len(recent_8)
     requests_1m = len(recent_60)
     prompt_1m = int(sum(int(e.get("prompt_tokens_est", 0) or 0) for e in recent_60))
-    completion_1m = int(sum(int(e.get("completion_tokens_est", 0) or 0) for e in recent_60))
+    completion_1m = int(
+        sum(int(e.get("completion_tokens_est", 0) or 0) for e in recent_60)
+    )
     total_1m = prompt_1m + completion_1m
     avg_latency_1m = (
         int(sum(int(e.get("latency_ms", 0) or 0) for e in recent_60) / requests_1m)
@@ -224,7 +227,9 @@ async def _reconfigure_nodes(application: FastAPI, cfg: dict[str, Any]) -> None:
                 node_id=settings.LOCAL_NODE_ID,
                 connector="local_ollama",
                 endpoint=ollama_url,
-                tags=[t.strip() for t in settings.LOCAL_NODE_TAGS.split(",") if t.strip()],
+                tags=[
+                    t.strip() for t in settings.LOCAL_NODE_TAGS.split(",") if t.strip()
+                ],
                 models=[],
                 capacity=1,
                 meta={"via": "local"},
@@ -251,8 +256,14 @@ async def _reconfigure_nodes(application: FastAPI, cfg: dict[str, Any]) -> None:
 
         hp_models: list[str] = []
         try:
-            hp_models = await hp_connector.list_persona_models(base=hp_base, api_key=hp_key)
-            log.info("HomePilot re-registered with %d models: %s", len(hp_models), hp_models[:5])
+            hp_models = await hp_connector.list_persona_models(
+                base=hp_base, api_key=hp_key
+            )
+            log.info(
+                "HomePilot re-registered with %d models: %s",
+                len(hp_models),
+                hp_models[:5],
+            )
         except Exception as e:
             log.warning("HomePilot model discovery failed: %s", e)
 
@@ -285,6 +296,54 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Request tracing: every request gets a request_id (honoring an incoming
+    # X-Request-ID) and the id is echoed back so clients can correlate.
+    # Trace records hold routing metadata only — never prompt content.
+    from ollabridge.tracing.store import new_request_id
+
+    @app.middleware("http")
+    async def _request_id_middleware(request: Request, call_next):
+        rid = (request.headers.get("x-request-id") or "").strip() or new_request_id()
+        request.state.request_id = rid
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
+        return response
+
+    # Request size limit: reject oversized bodies up front (default 10 MiB,
+    # override with MAX_REQUEST_BYTES; 0 disables the check).
+    max_body = int(os.environ.get("MAX_REQUEST_BYTES", str(10 * 1024 * 1024)))
+
+    @app.middleware("http")
+    async def _request_size_limit(request: Request, call_next):
+        if max_body > 0:
+            length = request.headers.get("content-length")
+            if length and length.isdigit() and int(length) > max_body:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": f"request body exceeds {max_body} bytes"},
+                )
+        return await call_next(request)
+
+    def _record_trace(request: Request, **fields: Any) -> None:
+        """Best-effort metadata-only trace; failures never affect the request."""
+        try:
+            from ollabridge.tracing import TraceRecord, get_trace_store
+
+            rid = getattr(request.state, "request_id", "") or new_request_id()
+            get_trace_store().record(
+                TraceRecord(
+                    request_id=rid,
+                    path=str(request.url.path),
+                    client_type=request.headers.get("x-client-type") or None,
+                    cloud_relay=request.headers.get("x-ollabridge-relay") == "1",
+                    **fields,
+                )
+            )
+        except Exception:  # pragma: no cover - tracing must never break serving
+            log.debug("trace recording failed", exc_info=True)
+
+    app.state.record_trace = _record_trace
 
     @app.on_event("startup")
     def _startup() -> None:
@@ -344,7 +403,10 @@ def create_app() -> FastAPI:
                 snapshot.load()
                 aliases_path = (
                     Path(__file__).resolve().parent.parent
-                    / "addons" / "providers" / "catalog" / "model_aliases.yaml"
+                    / "addons"
+                    / "providers"
+                    / "catalog"
+                    / "model_aliases.yaml"
                 )
                 hf_client = HuggingFaceCatalogClient(token=saved_token or None)
 
@@ -363,8 +425,10 @@ def create_app() -> FastAPI:
                 log.info(
                     "Provider addon initialized: %d providers, %d aliases, "
                     "%d HF catalog rows (encrypted=%s)",
-                    registry.provider_count, len(registry.aliases),
-                    snapshot.entry_count, store.is_encrypted,
+                    registry.provider_count,
+                    len(registry.aliases),
+                    snapshot.entry_count,
+                    store.is_encrypted,
                 )
             except Exception as exc:
                 log.warning("Provider addon init failed (non-fatal): %s", exc)
@@ -378,6 +442,7 @@ def create_app() -> FastAPI:
 
         # Initialize cloud bridge manager and auto-connect if credentials exist
         from ollabridge.cloud.bridge_manager import CloudBridgeManager
+
         bridge_mgr = CloudBridgeManager(
             ollama_base_url=settings.OLLAMA_BASE_URL,
             homepilot_base_url=settings.HOMEPILOT_BASE_URL,
@@ -391,11 +456,19 @@ def create_app() -> FastAPI:
         async def _init_local_catalog() -> None:
             try:
                 from ollabridge.addons.local_catalog.client import LocalRuntimeClient
-                from ollabridge.addons.local_catalog.health import LocalModelHealthChecker
+                from ollabridge.addons.local_catalog.health import (
+                    LocalModelHealthChecker,
+                )
                 from ollabridge.addons.local_catalog.pulls import LocalPullManager
-                from ollabridge.addons.local_catalog.repository import LocalCatalogRepository
-                from ollabridge.addons.local_catalog.scheduler import LocalCatalogScheduler
-                from ollabridge.addons.local_catalog.sync_service import LocalCatalogSyncService
+                from ollabridge.addons.local_catalog.repository import (
+                    LocalCatalogRepository,
+                )
+                from ollabridge.addons.local_catalog.scheduler import (
+                    LocalCatalogScheduler,
+                )
+                from ollabridge.addons.local_catalog.sync_service import (
+                    LocalCatalogSyncService,
+                )
 
                 repo = LocalCatalogRepository()
                 repo.load()
@@ -422,7 +495,8 @@ def create_app() -> FastAPI:
 
                 log.info(
                     "local catalog initialised: node=%s models_loaded=%d",
-                    node_id, len(repo.list_models(node_id)),
+                    node_id,
+                    len(repo.list_models(node_id)),
                 )
             except Exception as exc:
                 log.warning("local catalog init failed (non-fatal): %s", exc)
@@ -435,7 +509,11 @@ def create_app() -> FastAPI:
         asyncio.get_event_loop().create_task(_init_local_catalog())
 
     if settings.RELAY_ENABLED:
-        app.include_router(build_relay_router(registry=app.state.relay_hub.registry, hub=app.state.relay_hub))
+        app.include_router(
+            build_relay_router(
+                registry=app.state.relay_hub.registry, hub=app.state.relay_hub
+            )
+        )
 
     from ollabridge.api.pair import router as pair_router
     from ollabridge.api.consumer_nodes import router as consumer_nodes_router
@@ -447,31 +525,48 @@ def create_app() -> FastAPI:
 
     # World-State & Motion relay routes (additive — VR spatial awareness)
     from ollabridge.api.world_state import router as world_state_router
+
     app.include_router(world_state_router)
 
     # Trace relay routes (additive — embodiment trace → spatial memory)
     from ollabridge.api.trace_relay_routes import router as trace_relay_router
+
     app.include_router(trace_relay_router)
 
     # Cloud relay bridge (connect local GPU to OllaBridge Cloud)
     from ollabridge.api.cloud_routes import router as cloud_router
+
     app.include_router(cloud_router)
 
     # Local model catalog (discovery, scoring, pull, test)
     from ollabridge.addons.local_catalog.routes import router as local_catalog_router
+
     app.include_router(local_catalog_router)
 
     # Providers admin API (HF connect/refresh, catalog browsing, alias map,
     # provider enable/disable, end-to-end model test)
     from ollabridge.api.providers_routes import router as providers_admin_router
+
     app.include_router(providers_admin_router)
+
+    # External Sources API — generic add/test/rotate/remove for any supported
+    # provider (OpenAI, Anthropic, Gemini, HF, …). Backs the Sources tab.
+    from ollabridge.api.sources_routes import router as sources_router
+
+    app.include_router(sources_router)
+
+    # Per-model Access API — which models are visible where (this PC / cloud /
+    # per-app) and the routing opt-in. Backs the "Models & Access" tab.
+    from ollabridge.api.model_access_routes import router as model_access_router
+
+    app.include_router(model_access_router)
 
     # OpenAI-compatible image + video generation
     from ollabridge.api.media_routes import router as media_routes
+
     app.include_router(media_routes)
 
     if (settings.AUTH_MODE or "").lower().strip() == "pairing":
-        import os
         from ollabridge.core.pairing import PairingManager, PairingCode
 
         mgr = PairingManager()
@@ -522,11 +617,17 @@ def create_app() -> FastAPI:
         model = req.model or rts.get("default_model", settings.DEFAULT_MODEL)
         t0 = time.time()
         prompt_tokens_est = sum(_estimate_tokens(m.content) for m in req.messages)
+        trace_provider: str | None = None
+        trace_device: str | None = None
+        trace_fallback = False
 
         try:
-            payload_messages = [{"role": m.role, "content": m.content} for m in req.messages]
+            payload_messages = [
+                {"role": m.role, "content": m.content} for m in req.messages
+            ]
             decision = await app.state.obridge.router.choose_node(model=model)
             node = decision.node
+            trace_device = node.node_id
 
             if node.connector == "relay_link":
                 frame = await app.state.relay_hub.request(
@@ -573,10 +674,14 @@ def create_app() -> FastAPI:
                     sessions = app.state.obridge.sessions
                     bridge_session = sessions.get_session(device_id, model)
                     if bridge_session:
-                        hp_payload["conversation_id"] = bridge_session.homepilot_conversation_id
+                        hp_payload["conversation_id"] = (
+                            bridge_session.homepilot_conversation_id
+                        )
                         sessions.touch_session(device_id, model)
 
-                data = await hp_connector.chat(base=node.endpoint or "", payload=hp_payload)
+                data = await hp_connector.chat(
+                    base=node.endpoint or "", payload=hp_payload
+                )
 
                 # Forward structured errors from HomePilot (e.g. persona unpublished)
                 if data.get("error"):
@@ -610,20 +715,35 @@ def create_app() -> FastAPI:
                         candidates = provider_router.resolve(model)
                         if candidates:
                             result_data = await provider_router.route_chat(
-                                model, payload_messages,
+                                model,
+                                payload_messages,
                                 temperature=req.temperature,
                                 max_tokens=req.max_tokens,
                             )
                             choices = result_data.get("choices", [])
                             if choices:
-                                content = choices[0].get("message", {}).get("content", "")
+                                content = (
+                                    choices[0].get("message", {}).get("content", "")
+                                )
                                 addon_handled = True
                     except Exception as addon_exc:
-                        log.debug("Addon providers exhausted for model=%s, falling back to Ollama: %s", model, addon_exc)
+                        log.debug(
+                            "Addon providers exhausted for model=%s, falling back to Ollama: %s",
+                            model,
+                            addon_exc,
+                        )
 
+                if addon_handled:
+                    trace_provider = "provider-addon"
                 if not addon_handled:
+                    trace_fallback = bool(provider_router)
+                    trace_provider = "ollama-local"
                     from ollabridge.providers.ollama_client import chat as ollama_chat
+
                     content = await ollama_chat(model=model, messages=payload_messages)
+
+            if node.connector == "homepilot":
+                trace_provider = "homepilot"
 
             latency = int((time.time() - t0) * 1000)
 
@@ -649,6 +769,22 @@ def create_app() -> FastAPI:
                 completion_tokens_est=_estimate_tokens(content),
             )
 
+            _record_trace(
+                request,
+                requested_model=req.model or None,
+                resolved_model=model,
+                provider=trace_provider,
+                device=trace_device,
+                fallback_used=trace_fallback,
+                tokens_in=prompt_tokens_est,
+                tokens_out=_estimate_tokens(content),
+                latency_ms=latency,
+                estimated_cost_usd=(
+                    0.0 if trace_provider in (None, "ollama-local") else None
+                ),
+                ok=True,
+            )
+
             # --- Phase 1A: Normalize response text ---
             # Strip delivery artifacts (JSON wrappers, [show:] tags) that
             # non-web clients cannot render.
@@ -667,10 +803,9 @@ def create_app() -> FastAPI:
             }
 
             # Attach persona context when client opts in via header
-            include_ctx = (
-                request.headers.get("x-include-persona-context", "").lower()
-                in ("true", "1", "yes")
-            )
+            include_ctx = request.headers.get(
+                "x-include-persona-context", ""
+            ).lower() in ("true", "1", "yes")
             if include_ctx and node.connector == "homepilot":
                 bridge = _get_memory_bridge(app)
                 ctx = await bridge.fetch_context(
@@ -687,6 +822,7 @@ def create_app() -> FastAPI:
             upstream_attachments = (raw_data.get("raw") or {}).get("x_attachments", [])
             if upstream_attachments:
                 from ollabridge.connectors.media_proxy import rewrite_attachment_urls
+
                 result["x_attachments"] = rewrite_attachment_urls(upstream_attachments)
 
             # Forward x_directives if present
@@ -719,7 +855,24 @@ def create_app() -> FastAPI:
                 prompt_tokens_est=prompt_tokens_est,
                 completion_tokens_est=0,
             )
-            raise HTTPException(500, str(e))
+
+            _record_trace(
+                request,
+                requested_model=req.model or None,
+                resolved_model=model,
+                provider=trace_provider,
+                device=trace_device,
+                fallback_used=trace_fallback,
+                tokens_in=prompt_tokens_est,
+                latency_ms=latency,
+                ok=False,
+                error_category=type(e).__name__,
+            )
+
+            # Redact any credential-shaped content before it reaches the client.
+            from ollabridge.core.redact import redact_text
+
+            raise HTTPException(500, redact_text(str(e)))
 
     # ------------------------------------------------------------------
     # Persona context endpoint — read-only bridge to HomePilot memory
@@ -763,7 +916,9 @@ def create_app() -> FastAPI:
         request: Request,
         _key: str = Depends(require_api_key),
     ) -> dict[str, Any]:
-        model = req.model or rts.get("default_embed_model", settings.DEFAULT_EMBED_MODEL)
+        model = req.model or rts.get(
+            "default_embed_model", settings.DEFAULT_EMBED_MODEL
+        )
         t0 = time.time()
         prompt_tokens_est = _estimate_tokens(req.input)
 
@@ -789,7 +944,9 @@ def create_app() -> FastAPI:
                 vec = data.get("embedding", [])
 
             else:
-                from ollabridge.providers.ollama_client import embeddings as ollama_embed
+                from ollabridge.providers.ollama_client import (
+                    embeddings as ollama_embed,
+                )
 
                 vec = await ollama_embed(model=model, text=req.input)
 
@@ -814,6 +971,16 @@ def create_app() -> FastAPI:
                 latency_ms=latency,
                 prompt_tokens_est=prompt_tokens_est,
                 completion_tokens_est=0,
+            )
+
+            _record_trace(
+                request,
+                requested_model=req.model or None,
+                resolved_model=model,
+                device=node.node_id,
+                tokens_in=prompt_tokens_est,
+                latency_ms=latency,
+                ok=True,
             )
 
             return {
@@ -845,14 +1012,29 @@ def create_app() -> FastAPI:
                 prompt_tokens_est=prompt_tokens_est,
                 completion_tokens_est=0,
             )
-            raise HTTPException(500, str(e))
+
+            _record_trace(
+                request,
+                requested_model=req.model or None,
+                resolved_model=model,
+                tokens_in=prompt_tokens_est,
+                latency_ms=latency,
+                ok=False,
+                error_category=type(e).__name__,
+            )
+
+            from ollabridge.core.redact import redact_text
+
+            raise HTTPException(500, redact_text(str(e)))
 
     @app.get("/admin/recent")
     async def admin_recent(_key: str = Depends(require_api_key)) -> dict[str, Any]:
         from sqlmodel import select
 
         with session() as s:
-            rows = s.exec(select(RequestLog).order_by(RequestLog.ts.desc()).limit(200)).all()
+            rows = s.exec(
+                select(RequestLog).order_by(RequestLog.ts.desc()).limit(200)
+            ).all()
             return {"recent": [r.model_dump() for r in rows]}
 
     @app.get("/admin/runtimes")
@@ -877,7 +1059,9 @@ def create_app() -> FastAPI:
 
         keys = [k.strip() for k in settings.API_KEYS.split(",") if k.strip()]
         api_key = keys[0] if keys else ""
-        api_key_masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else api_key
+        api_key_masked = (
+            api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else api_key
+        )
 
         model_names: list[str] = []
         try:
@@ -891,10 +1075,16 @@ def create_app() -> FastAPI:
                         hp_key = ""
                         if isinstance(node.meta, dict):
                             hp_key = str(node.meta.get("api_key") or "")
-                        data = await hp_connector.models(base=node.endpoint or "", api_key=hp_key)
-                        model_names.extend(m.get("id", "") for m in data.get("data", []))
+                        data = await hp_connector.models(
+                            base=node.endpoint or "", api_key=hp_key
+                        )
+                        model_names.extend(
+                            m.get("id", "") for m in data.get("data", [])
+                        )
                 elif node.connector == "local_ollama":
-                    from ollabridge.providers.ollama_client import list_models as ollama_list
+                    from ollabridge.providers.ollama_client import (
+                        list_models as ollama_list,
+                    )
 
                     model_names.extend(await ollama_list())
         except Exception:
@@ -910,7 +1100,9 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/admin/settings")
-    async def admin_get_settings(_key: str = Depends(require_api_key)) -> dict[str, Any]:
+    async def admin_get_settings(
+        _key: str = Depends(require_api_key),
+    ) -> dict[str, Any]:
         cfg = rts.get_all()
         if cfg.get("homepilot_api_key"):
             cfg["homepilot_api_key_set"] = True
@@ -920,7 +1112,9 @@ def create_app() -> FastAPI:
         return cfg
 
     @app.put("/admin/settings")
-    async def admin_put_settings(request: Request, _key: str = Depends(require_api_key)) -> dict[str, Any]:
+    async def admin_put_settings(
+        request: Request, _key: str = Depends(require_api_key)
+    ) -> dict[str, Any]:
         try:
             payload = await request.json()
         except Exception:
@@ -930,11 +1124,15 @@ def create_app() -> FastAPI:
             payload = payload["patch"]
 
         if not isinstance(payload, dict):
-            raise HTTPException(status_code=422, detail="Settings patch must be a JSON object")
+            raise HTTPException(
+                status_code=422, detail="Settings patch must be a JSON object"
+            )
 
         updates = {k: v for k, v in payload.items() if k in ALLOWED_SETTINGS_KEYS}
         if not updates:
-            raise HTTPException(status_code=422, detail="No valid settings fields provided")
+            raise HTTPException(
+                status_code=422, detail="No valid settings fields provided"
+            )
 
         if "homepilot_api_key" in payload:
             updates["homepilot_api_key"] = payload.get("homepilot_api_key", "")
@@ -968,7 +1166,11 @@ def create_app() -> FastAPI:
                     r = await client.get(url)
                     r.raise_for_status()
                     data = r.json()
-                    models = [m.get("name") for m in (data.get("models") or []) if m.get("name")]
+                    models = [
+                        m.get("name")
+                        for m in (data.get("models") or [])
+                        if m.get("name")
+                    ]
                     return {
                         "ok": True,
                         "source": source,
@@ -1043,11 +1245,15 @@ def create_app() -> FastAPI:
                 }
 
     @app.get("/admin/flow-metrics")
-    async def admin_flow_metrics(_key: str = Depends(require_api_key)) -> dict[str, Any]:
+    async def admin_flow_metrics(
+        _key: str = Depends(require_api_key),
+    ) -> dict[str, Any]:
         return _compute_flow_metrics(app)
 
     @app.get("/v1/models")
-    async def list_models(response: Response, _key: str = Depends(require_api_key)) -> dict[str, Any]:
+    async def list_models(
+        response: Response, _key: str = Depends(require_api_key)
+    ) -> dict[str, Any]:
         all_models: list[dict[str, Any]] = []
         nodes = await app.state.obridge.registry.list()
 
@@ -1061,24 +1267,32 @@ def create_app() -> FastAPI:
                         hp_key = ""
                         if isinstance(node.meta, dict):
                             hp_key = str(node.meta.get("api_key") or "")
-                        data = await hp_connector.models(base=node.endpoint or "", api_key=hp_key)
+                        data = await hp_connector.models(
+                            base=node.endpoint or "", api_key=hp_key
+                        )
                         for m in data.get("data", []):
                             if isinstance(m, dict):
                                 m["owned_by"] = m.get("owned_by", "homepilot")
                                 all_models.append(m)
 
                 elif node.connector == "relay_link":
-                    frame = await app.state.relay_hub.request(node.node_id, "models", {})
+                    frame = await app.state.relay_hub.request(
+                        node.node_id, "models", {}
+                    )
                     for m in (frame.get("data") or {}).get("data", []):
                         all_models.append(m)
 
                 elif node.connector == "direct_endpoint":
-                    data = await app.state.obridge.direct.models(base=node.endpoint or "")
+                    data = await app.state.obridge.direct.models(
+                        base=node.endpoint or ""
+                    )
                     for m in data.get("data", []):
                         all_models.append(m)
 
                 else:
-                    from ollabridge.providers.ollama_client import list_models as ollama_list
+                    from ollabridge.providers.ollama_client import (
+                        list_models as ollama_list,
+                    )
 
                     models = await ollama_list()
                     for m_name in models:
@@ -1093,15 +1307,50 @@ def create_app() -> FastAPI:
         return {"object": "list", "data": all_models}
 
     ui_dir = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist"
-    if ui_dir.is_dir():
-        from fastapi.responses import FileResponse
+    ui_available = ui_dir.is_dir() and (ui_dir / "index.html").is_file()
 
-        @app.get("/ui/{full_path:path}")
+    from fastapi.responses import FileResponse, RedirectResponse, Response
+
+    # Root: send visitors straight to the dashboard so clicking the bare URL
+    # (http://localhost:11435) just works instead of returning 404. When the
+    # UI has not been built, return a small JSON pointer rather than a 404.
+    @app.get("/", include_in_schema=False)
+    async def root():
+        if ui_available:
+            return RedirectResponse(url="/ui/")
+        return JSONResponse(
+            {
+                "name": settings.APP_NAME,
+                "status": "ok",
+                "api": "/v1",
+                "health": "/health",
+                "docs": "/docs",
+                "ui": "not built — run `make ui-build` to enable the dashboard",
+            }
+        )
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        ico = ui_dir / "favicon.ico"
+        if ui_available and ico.is_file():
+            return FileResponse(ico)
+        return Response(status_code=204)
+
+    if ui_available:
+        # index.html must never be cached: it references hashed asset files
+        # (index-<hash>.js). If the browser serves a stale index.html it points
+        # at an old bundle and the user sees the previous UI even after a
+        # rebuild. The hashed assets themselves are safe to cache forever.
+        _NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+        _IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+        @app.get("/ui/{full_path:path}", include_in_schema=False)
         async def ui_spa(full_path: str):
             file = ui_dir / full_path
-            if file.is_file():
-                return FileResponse(file)
-            return FileResponse(ui_dir / "index.html")
+            if file.is_file() and file.name != "index.html":
+                headers = _IMMUTABLE if "/assets/" in f"/{full_path}" else None
+                return FileResponse(file, headers=headers)
+            return FileResponse(ui_dir / "index.html", headers=_NO_CACHE)
 
     return app
 

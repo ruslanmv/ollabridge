@@ -372,7 +372,12 @@ class CloudBridgeManager:
         from ollabridge.core.settings import settings
 
         gateway_url = f"http://127.0.0.1:{settings.PORT}"
-        headers: dict[str, str] = {"Content-Type": "application/json"}
+        # X-OllaBridge-Relay marks the request as cloud-relayed so the
+        # gateway's trace records show cloud_relay=true.
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "X-OllaBridge-Relay": "1",
+        }
 
         # Pass through client type header if present
         client_type = payload.pop("client_type", None)

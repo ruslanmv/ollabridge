@@ -14,10 +14,25 @@ from typing import Any
 class BaseProviderAdapter(abc.ABC):
     """Abstract base for all provider adapters."""
 
-    def __init__(self, base_url: str, api_key: str | None = None, timeout: float = 120.0):
+    # Most providers are external HTTP APIs that require an API key. Adapters
+    # that work without one (e.g. a local relay) override this to False. The
+    # router uses ``has_credential`` to skip providers that cannot possibly
+    # authenticate, instead of attempting them and logging 401/403 noise.
+    requires_credential: bool = True
+
+    def __init__(
+        self, base_url: str, api_key: str | None = None, timeout: float = 120.0
+    ):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+
+    @property
+    def has_credential(self) -> bool:
+        """True when this adapter can authenticate (or needs no credential)."""
+        if not self.requires_credential:
+            return True
+        return bool(self.api_key and str(self.api_key).strip())
 
     @abc.abstractmethod
     async def chat(self, model: str, messages: list[dict], **kwargs: Any) -> dict:

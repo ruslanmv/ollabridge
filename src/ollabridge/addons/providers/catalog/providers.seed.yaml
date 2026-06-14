@@ -94,7 +94,10 @@ providers:
   - id: ollama-node-01
     name: OllamaBridge Node 01
     kind: ollama_bridge
-    enabled: true
+    # Disabled: the addon adapter is not wired to the relay. Real relay
+    # routing is handled by the gateway's RelayHub. Leaving this enabled
+    # made it intercept traffic and return a stub. See ollama_bridge.py.
+    enabled: false
     tier: main
     category: local
     priority: 110
@@ -107,7 +110,7 @@ providers:
   - id: ollama-node-02
     name: OllamaBridge Node 02
     kind: ollama_bridge
-    enabled: true
+    enabled: false
     tier: main
     category: local
     priority: 110

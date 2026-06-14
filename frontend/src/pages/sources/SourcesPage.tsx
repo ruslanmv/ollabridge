@@ -4,9 +4,7 @@ import { AlertTriangle, CheckCircle2, Home, RefreshCw, Save, Server } from 'luci
 import { motion } from 'framer-motion'
 import {
   api,
-  deriveSourceMode,
   type GatewaySettings,
-  type SourceMode,
   type SourceHealthRequest,
 } from '../../lib/api'
 import { useModels, useSettings } from '../../lib/hooks'
@@ -128,60 +126,12 @@ function ModelPill({ label }: { label: string }) {
   )
 }
 
-function ModeButton({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean
-  label: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-3 py-2 rounded-xl text-sm border transition-colors ${
-        active
-          ? 'text-cyan-300 bg-cyan-500/10 border-cyan-400/20'
-          : 'text-white/55 bg-white/[0.03] border-white/10 hover:bg-white/[0.05]'
-      }`}
-    >
-      {label}
-    </button>
-  )
-}
-
-function inferMode(settings: GatewaySettings): SourceMode {
-  return deriveSourceMode(settings)
-}
-
-function modeToPatch(mode: SourceMode): Partial<GatewaySettings> {
-  if (mode === 'hybrid') {
-    return {
-      local_runtime_enabled: true,
-      homepilot_enabled: true,
-    }
-  }
-  if (mode === 'homepilot') {
-    return {
-      local_runtime_enabled: false,
-      homepilot_enabled: true,
-    }
-  }
-  return {
-    local_runtime_enabled: true,
-    homepilot_enabled: false,
-  }
-}
-
 export function SourcesPage({ onNavigate }: SourcesPageProps) {
   const queryClient = useQueryClient()
   const { data: settings, isLoading: settingsLoading } = useSettings()
   const { data: modelsData, isLoading: modelsLoading } = useModels()
 
   const [form, setForm] = useState<GatewaySettings | null>(null)
-  const [mode, setMode] = useState<SourceMode>('ollama')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -199,7 +149,6 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
       ...settings,
       homepilot_api_key: '',
     })
-    setMode(inferMode(settings))
   }, [settings])
 
   const ollamaModels = useMemo(() => {
@@ -221,8 +170,10 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
     setError(null)
 
     try {
+      // The Enable toggles ARE the source of truth — there is no "mode".
       const patch: Partial<GatewaySettings> = {
-        ...modeToPatch(mode),
+        local_runtime_enabled: form.local_runtime_enabled,
+        homepilot_enabled: form.homepilot_enabled,
         ollama_base_url: form.ollama_base_url,
         default_model: form.default_model,
         homepilot_base_url: form.homepilot_base_url,
@@ -240,7 +191,7 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
         queryClient.invalidateQueries({ queryKey: ['health'] }),
       ])
 
-      setMessage('Sources saved successfully')
+      setMessage('Runtimes saved successfully')
 
       if (onNavigate) {
         // kept optional for future UX flows; no automatic navigation for now
@@ -298,9 +249,10 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-white/90">Sources</h1>
+            <h1 className="text-xl font-bold text-white/90">Local Runtimes</h1>
             <p className="text-sm text-white/40 mt-1">
-              Connect the intelligence providers that supply models to OllaBridge.
+              Execution backends on this device — Ollama models and HomePilot personas. To
+              connect external accounts or share models, use Sources.
             </p>
           </div>
           <button
@@ -314,15 +266,6 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
             <RefreshCw size={14} />
             Refresh
           </button>
-        </div>
-
-        <div className="glass-card p-5">
-          <div className="text-sm text-white/75 font-medium mb-3">Source mode</div>
-          <div className="flex flex-wrap gap-2">
-            <ModeButton active={mode === 'ollama'} label="Ollama only" onClick={() => setMode('ollama')} />
-            <ModeButton active={mode === 'homepilot'} label="HomePilot only" onClick={() => setMode('homepilot')} />
-            <ModeButton active={mode === 'hybrid'} label="Hybrid" onClick={() => setMode('hybrid')} />
-          </div>
         </div>
 
         {(message || error) && (
@@ -554,7 +497,7 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
             className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium text-cyan-300 bg-cyan-500/10 border border-cyan-400/20 hover:bg-cyan-500/15 disabled:opacity-50"
           >
             <Save size={15} />
-            {saving ? 'Saving…' : 'Save Sources'}
+            {saving ? 'Saving…' : 'Save Runtimes'}
           </button>
         </div>
       </div>

@@ -5,10 +5,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import os
+
 from ollabridge.core.settings import settings
 
 
+# Backwards-compatible constant; prefer _default_path(), which honors the
+# OLLABRIDGE_HOME override at call time.
 DEFAULT_CLOUD_DEVICE_PATH: Path = settings.DATA_DIR / "cloud_device.json"
+
+
+def _default_path() -> Path:
+    home = os.environ.get("OLLABRIDGE_HOME", "").strip()
+    if home:
+        return Path(home).expanduser() / "cloud_device.json"
+    return DEFAULT_CLOUD_DEVICE_PATH
 
 
 @dataclass(frozen=True)
@@ -19,7 +30,7 @@ class CloudDeviceCredentials:
 
 
 def load_cloud_device_credentials(path: Path | None = None) -> Optional[CloudDeviceCredentials]:
-    p = path or DEFAULT_CLOUD_DEVICE_PATH
+    p = path or _default_path()
     if not p.exists():
         return None
     try:
@@ -35,7 +46,7 @@ def load_cloud_device_credentials(path: Path | None = None) -> Optional[CloudDev
 
 
 def save_cloud_device_credentials(creds: CloudDeviceCredentials, path: Path | None = None) -> Path:
-    p = path or DEFAULT_CLOUD_DEVICE_PATH
+    p = path or _default_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(
         json.dumps(

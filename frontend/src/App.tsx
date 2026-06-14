@@ -8,13 +8,13 @@ import { SettingsPage } from './pages/settings/SettingsPage'
 import { SourcesPage } from './pages/sources/SourcesPage'
 import { NodesPage } from './pages/nodes/NodesPage'
 import { CloudPage } from './pages/cloud/CloudPage'
-import { ProvidersPage } from './pages/providers/ProvidersPage'
+import { SourcesHubPage } from './pages/sources/SourcesHubPage'
 
 export type Page =
   | 'dashboard'
   | 'sources'
   | 'models'
-  | 'providers'
+  | 'runtimes'
   | 'nodes'
   | 'pairing'
   | 'cloud'
@@ -30,9 +30,9 @@ export default function App() {
         <TopHeader currentPage={page} />
         <main className="flex-1 min-h-0 overflow-hidden relative">
           {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
-          {page === 'sources' && <SourcesPage onNavigate={setPage} />}
+          {page === 'sources' && <SourcesHubPage />}
           {page === 'models' && <ModelsPage onNavigate={setPage} />}
-          {page === 'providers' && <ProvidersPage />}
+          {page === 'runtimes' && <SourcesPage onNavigate={setPage} />}
           {page === 'nodes' && <NodesPage />}
           {page === 'pairing' && <PairingPage />}
           {page === 'cloud' && <CloudPage />}

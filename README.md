@@ -4,14 +4,19 @@
 
 # OllaBridge ⚡️
 
-**Your single gateway to ALL your LLMs — local, remote, anywhere.**
+**Bring your own LLMs, devices, GPUs, and provider accounts.
+Use them securely from anywhere through one OpenAI-compatible API.**
 
 [![PyPI version](https://badge.fury.io/py/ollabridge.svg)](https://badge.fury.io/py/ollabridge)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-[Quick Start](#-60-second-start) • [Why OllaBridge](#-why-ollabridge) • [Distributed Compute](#-add-any-gpu-in-60-seconds) • [Examples](#-use-it-anywhere) • [Demo Client](#-try-the-interactive-demo-client) • [MCP Mode](#-ai-agents-love-ollabridge)
+[Quick Start](#-60-second-start) • [The Dashboard](#%EF%B8%8F-the-dashboard) • [Why OllaBridge](#-why-teams-choose-ollabridge) • [Local vs Cloud vs Enterprise](#-local-vs-cloud-vs-enterprise) • [Docs](#-documentation)
+
+<img src="docs/assets/screenshots/dashboard.png" alt="OllaBridge Dashboard — live routing control tower" width="100%"/>
+
+*The OllaBridge control tower: your models, devices, providers, and cloud relay — live, in one place.*
 
 </div>
 
@@ -21,11 +26,11 @@
 
 > **One gateway. All your LLMs. Everywhere.**
 
-OllaBridge is your **single, OpenAI-compatible API** for every LLM you run — on your laptop, workstation, free GPU servers, cloud instances, anywhere.
+OllaBridge turns your PC into a **private, OpenAI-compatible LLM provider in ~60 seconds** — and grows with you into a hybrid control plane for every model you can reach: local Ollama, remote GPUs, your team's workstations, and your own OpenAI/Anthropic/Gemini accounts.
 
-**The Problem:** You have models running everywhere (laptop, cloud GPU, friend's gaming PC), and every app needs different configs.
+**The problem:** your models live everywhere (laptop, cloud GPU, gaming PC, hosted APIs), and every app needs a different endpoint, key, and config.
 
-**OllaBridge Solution:** Apps connect to ONE place. OllaBridge routes to the right compute automatically.
+**The OllaBridge answer:** apps connect to **one URL with one key**. OllaBridge routes each request to the right compute — and can always tell you exactly where it went.
 
 ```mermaid
 graph TB
@@ -46,993 +51,96 @@ graph TB
     style E fill:#f59e0b,stroke:#d97706,stroke-width:2px,color:#fff
 ```
 
-**Key Innovation:** Compute nodes **dial out** to your gateway. No port forwarding, no VPN, no config hell.
-
----
-
-## 🚀 Why OllaBridge?
-
-### 🎯 **Single Source of Truth**
-- **One URL for everything** — Your apps never change code
-- **Zero config** — Add new GPUs without touching your app
-- **Smart routing** — OllaBridge picks the best node automatically
-- **OpenAI compatible** — Works with any SDK, framework, or tool
-
-### 🛡️ **Enterprise-Grade Security**
-- **API key authentication** — Protect your LLMs
-- **Rate limiting** — Control usage per key
-- **Request logging** — Full audit trail
-- **Encrypted connections** — TLS for remote nodes
-
-### 🌍 **Works Everywhere**
-- **Free GPU clouds** — Colab, Kaggle, Lightning AI (no port forwarding needed!)
-- **Ephemeral instances** — Nodes dial out, IPs don't matter
-- **Behind firewalls** — Your laptop can join from coffee shop WiFi
-- **Mixed environments** — Combine local + cloud seamlessly
-
-### 🤖 **AI Agent Ready**
-- **MCP server** — Agents can control your infrastructure
-- **Tool exposure** — Manage nodes, routes, health via tools
-- **Self-healing** — Auto-install, auto-configure, auto-recover
-
-### **Providers Hub — Hugging Face Inference**
-OllaBridge ships a capability-routed Providers Hub that discovers, scores and persists the live Hugging Face Inference Providers catalog (DeepSeek, Llama, Qwen, vision-language and image/video models served across Together, Groq, Novita, Fireworks and others), then exposes them through stable intent aliases such as `ollabridge:auto`, `ollabridge:fast`, `ollabridge:reasoning`, `ollabridge:vision`, `ollabridge:tools`, `ollabridge:json`, plus convenience `hf:best | hf:fast | hf:cheap | hf:deepseek | hf:vision` — the underlying model rotates as the catalog refreshes, so applications written today against `model="ollabridge:auto"` keep using the strongest available route as new models are released. Tokens are stored Fernet-encrypted at rest under `~/.ollabridge/secrets.enc`, free-credit usage is enforced with hard-stop on HTTP 402/429, and the full admin surface lives under `/admin/providers`.
+**Key innovation:** compute nodes **dial out** to your gateway over outbound WebSockets. No port forwarding, no VPN, no config hell — your gaming PC at home can serve your laptop at a coffee shop.
 
 ---
 
 ## ⚡ 60-Second Start
 
-### Step 1: Install
-
 ```bash
 pip install ollabridge
-```
-
-### Step 2: Start Your Gateway
-
-```bash
 ollabridge start
 ```
 
-**That's it!** You'll see:
+That's it — Ollama is installed if needed, a model is pulled, an API key is generated, and your OpenAI-compatible endpoint is live at `http://localhost:11435/v1`.
 
-```
-Ollama installed (if needed)
-Model downloaded (if needed)
-Gateway online at http://localhost:11435
+Building from source? Two commands give you the full product, backend **and** dashboard:
 
-╭─────────────────── 🚀 Gateway Ready ────────────────────╮
-│                                                          │
-│ OllaBridge is Online                                  │
-│                                                          │
-│ Model:        deepseek-r1                                │
-│ Local API:    http://localhost:11435/v1                 │
-│ Key:          sk-ollabridge-xY9kL2mN8pQ4rT6vW1zA        │
-│                                                          │
-│ Node join token:  eyJ0eXAi...                           │
-│ Example node command:                                    │
-│   ollabridge-node join --control http://localhost:11435 │
-│                        --token eyJ0eXAi...              │
-│                                                          │
-╰──────────────────────────────────────────────────────────╯
+```bash
+make install      # backend + frontend into .venv (never touches system Python)
+make run          # gateway + dashboard at http://localhost:11435/ui
 ```
 
-### Step 3: Use It!
+Then point any OpenAI SDK at it:
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:11435/v1",
-    api_key="sk-ollabridge-xY9kL2mN8pQ4rT6vW1zA"
+    api_key="sk-ollabridge-...",   # printed at startup
 )
 
-response = client.chat.completions.create(
-    model="deepseek-r1",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-
-print(response.choices[0].message.content)
+print(client.chat.completions.create(
+    model="llama3.1",
+    messages=[{"role": "user", "content": "Hello!"}],
+).choices[0].message.content)
 ```
 
-**Done!** You're running private LLMs with the OpenAI API.
+Works out of the box with the OpenAI SDK, LangChain, Node.js, cURL — anything that speaks the OpenAI API. More in **[docs/EXAMPLES.md](docs/EXAMPLES.md)**.
 
 ---
 
-## 🌍 Add Any GPU in 60 Seconds
+## 🖥️ The Dashboard
 
-Have a free GPU on Colab? A remote workstation? Add it instantly:
+A real-time command center for your entire LLM infrastructure — models, sources, devices, and the cloud relay, all visualized live at **`http://localhost:11435/ui`**.
 
-### On Your Remote GPU/Machine:
+### 🎛️ Share exactly what you choose — per model
 
-```bash
-# Install
-pip install ollabridge
+Every model gets its own independent switches: **This PC · Cloud · per-app allow-lists · Routing**. Nothing leaves your machine until you flip a switch, and the *Published to OllaBridge Cloud* panel always shows precisely what your paired apps can see — no surprises, no hidden catalog.
 
-# Join your gateway (copy the command from gateway startup)
-ollabridge-node join \
-  --control http://YOUR_GATEWAY_IP:11435 \
-  --token eyJ0eXAi...
-```
+<img src="docs/assets/screenshots/models-access.png" alt="Models &amp; Access — per-model sharing controls: This PC, LAN, Cloud, allowed apps, routing" width="100%"/>
 
-**That's it!** The remote GPU:
-- Auto-installs Ollama if needed
-- Auto-downloads models if needed
-- **Dials out** to your gateway (no port forwarding!)
-- Shows up as available compute
+<div align="center">
 
-### Your Apps See It Automatically
+*One model published to the cloud and scoped to a single app — the others stay private to this PC. Safe by default, opt-in by design.*
 
-```python
-# Same code, now uses both local + remote GPU!
-client = OpenAI(base_url="http://localhost:11435/v1", ...)
-response = client.chat.completions.create(...)  # Auto-routed
-```
+</div>
 
-**OllaBridge routes requests** across all your nodes automatically.
+### 🔌 Every AI account in one hub
 
----
+Connect **OpenAI, Anthropic, Google Gemini, IBM watsonx.ai, Azure OpenAI, AWS Bedrock, Groq, Mistral** and more — 14 providers plus any OpenAI-compatible endpoint — with one uniform **add → test → rotate → remove** flow. Keys are encrypted at rest, stored on *your* machine, and never echoed back. New sources start local-only, private, and routing-off.
 
-## 🎯 Real-World Scenarios
+<img src="docs/assets/screenshots/sources-hub.png" alt="External Sources hub — 14 providers including IBM watsonx.ai, uniform add/test/rotate/remove, keys encrypted and local" width="100%"/>
 
-### Scenario 1: "I have a gaming PC at home"
+<div align="center">
 
-```bash
-# On your gaming PC:
-ollabridge-node join --control https://your-gateway.com --token ...
+*Sources are peers, not modes — local Ollama and enterprise APIs side by side, each with its own keys, models, and sharing scope.*
 
-# Now your laptop can use your gaming PC's GPU
-# Even if you're at a coffee shop!
-```
+</div>
 
-### Scenario 2: "I want to use free Colab GPUs"
+### ☁️ Pair once, reach your models anywhere
 
-```python
-# In Colab notebook:
-!pip install ollabridge
-!ollabridge-node join --control https://your-gateway.com --token ...
-
-# Now your production app can use free Colab compute
-# Colab session ends? Start a new one. Zero config changes.
-```
-
-### Scenario 3: "I have multiple cloud GPUs"
-
-```bash
-# Each GPU instance:
-ollabridge-node join --control https://gateway.company.com --token ...
-
-# Your team shares one API URL
-# OllaBridge load-balances across all GPUs
-```
-
----
-
-## 💻 Use It Anywhere
-
-### Python (OpenAI SDK)
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:11435/v1",
-    api_key="your-key-here"
-)
-
-# Chat
-response = client.chat.completions.create(
-    model="deepseek-r1",
-    messages=[{"role": "user", "content": "Explain quantum computing"}]
-)
-
-# Embeddings
-embeddings = client.embeddings.create(
-    model="nomic-embed-text",
-    input="Hello, world!"
-)
-```
-
-### Node.js / TypeScript
-
-```typescript
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  baseURL: "http://localhost:11435/v1",
-  apiKey: process.env.OLLABRIDGE_KEY
-});
-
-const completion = await client.chat.completions.create({
-  model: "deepseek-r1",
-  messages: [{ role: "user", content: "Hello!" }]
-});
-```
-
-### LangChain
-
-```python
-from langchain_openai import ChatOpenAI
-
-llm = ChatOpenAI(
-    base_url="http://localhost:11435/v1",
-    api_key="your-key-here",
-    model="deepseek-r1"
-)
-
-response = llm.invoke("What is the meaning of life?")
-```
-
-### cURL
-
-```bash
-curl -X POST http://localhost:11435/v1/chat/completions \
-  -H "Authorization: Bearer your-key-here" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "deepseek-r1",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
-**Works with ANY OpenAI-compatible tool or library.**
-
----
-
-## 🎨 Try the Interactive Demo Client
-
-Want to see OllaBridge in action? Check out our **2-click demo client** in the `example/` folder!
-
-### ⚡ Quick Start
-
-```bash
-# 1. Install and start OllaBridge
-cd example
-./install-ollabridge.sh  # Mac/Linux
-# or
-.\install-ollabridge.ps1  # Windows
-
-# 2. Run the demo client
-make run
-
-# 3. Open http://localhost:3000 in your browser
-```
-
-### ✨ Features
-
-- 🎯 **Beautiful UI** — Modern, responsive web interface
-- 🔌 **Real Integration** — Actual API calls to OllaBridge endpoints
-- 📊 **Live Metrics** — Request stats, latency, uptime tracking
-- 🔑 **Auth Demo** — See how API key authentication works
-- 📝 **Best Practices** — Production-ready code examples
-
-### 📚 Perfect for Learning
-
-The example client shows you:
-- How to connect to OllaBridge from a browser
-- How to handle CORS properly
-- How to implement authentication with API keys
-- How to load models dynamically
-- How to send chat requests and handle responses
-
-**[View Full Documentation →](example/README.md)**
-
----
-
-## 🤖 AI Agents Love OllaBridge
-
-OllaBridge has a **Model Context Protocol (MCP) server** built-in.
-
-Agents can:
-- Create enrollment tokens
-- List connected compute nodes
-- Check gateway health
-- Manage your LLM infrastructure via tools
-
-### Start MCP Server
-
-```bash
-ollabridge-mcp
-```
-
-### Example: Agent Workflow
-
-```python
-# Agent can call these tools:
-await session.call_tool("ollabridge.enroll.create", {})
-# → Returns enrollment token
-
-await session.call_tool("ollabridge.runtimes.list", {})
-# → Shows all connected nodes
-
-await session.call_tool("ollabridge.gateway.health", {})
-# → Checks gateway status
-```
-
-**Use Case:** "Hey Claude, add my workstation's GPU to our LLM gateway"
-
-→ Agent creates token, gives you the command, you run it. Done.
-
----
-
-## 🔐 Security & Configuration
-
-### Authentication
-
-OllaBridge auto-generates a secure API key on first run (saved in `.env`):
-
-```env
-API_KEYS=sk-ollabridge-xY9kL2mN8pQ4rT6vW1zA
-```
-
-Use it in your apps:
-
-```python
-# Option 1: Bearer token
-headers = {"Authorization": "Bearer sk-ollabridge-..."}
-
-# Option 2: Custom header
-headers = {"X-API-Key": "sk-ollabridge-..."}
-```
-
-### Configuration (`.env`)
-
-```env
-# API Keys (comma-separated for multiple)
-API_KEYS=sk-ollabridge-abc123,sk-ollabridge-def456
-
-# Server
-HOST=0.0.0.0
-PORT=11435
-
-# Default models
-DEFAULT_MODEL=deepseek-r1
-DEFAULT_EMBED_MODEL=nomic-embed-text
-
-# Rate limiting
-RATE_LIMIT=60/minute
-
-# Security
-ENROLLMENT_SECRET=your-secret-here
-ENROLLMENT_TTL_SECONDS=3600
-
-# Database (optional)
-DATABASE_URL=postgresql://user:pass@localhost/ollabridge
-```
-
-### Enrollment Tokens
-
-Create short-lived tokens for nodes to join:
-
-```bash
-ollabridge enroll-create --ttl 3600
-```
-
-Tokens expire automatically for security.
-
----
-
-## 📡 API Reference
-
-### Core Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Gateway health + node count |
-| `/v1/chat/completions` | POST | OpenAI-compatible chat |
-| `/v1/embeddings` | POST | Generate embeddings |
-| `/v1/models` | GET | List available models (aggregated from nodes) |
-
-### Admin Endpoints (require API key)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/admin/recent` | GET | Recent request logs |
-| `/admin/runtimes` | GET | List connected nodes |
-| `/admin/enroll` | POST | Create enrollment token |
-
-### Example: Check Connected Nodes
-
-```bash
-curl -H "X-API-Key: your-key" http://localhost:11435/admin/runtimes
-```
-
-**Response:**
-```json
-{
-  "runtimes": [
-    {
-      "node_id": "local",
-      "connector": "local_ollama",
-      "healthy": true,
-      "tags": ["local"],
-      "models": ["deepseek-r1", "llama3.1"]
-    },
-    {
-      "node_id": "colab-gpu-1",
-      "connector": "relay_link",
-      "healthy": true,
-      "tags": ["gpu", "free"],
-      "models": ["mixtral", "codellama"]
-    }
-  ]
-}
-```
-
----
-
-## 🏗️ Architecture Deep Dive
-
-### How It Works
-
-1. **Control Plane (Gateway)**: Your apps connect here
-2. **Nodes**: Any machine with GPUs/CPUs running models
-3. **Relay Link**: Nodes dial OUT to gateway (WebSocket)
-4. **Router**: Picks the best node for each request
-
-### Why "Dial Out" Matters
-
-**Traditional (broken):**
-```
-App → Gateway → Try to reach GPU
-                  Blocked by firewall
-                  NAT issues
-                  No public IP
-```
-
-**OllaBridge (works everywhere):**
-```
-App → Gateway ← GPU dials in
-               Works from anywhere
-               No port forwarding
-               Ephemeral IPs OK
-```
-
-### Connector Types
-
-- **RelayLink**: Node dials out via WebSocket (default, works everywhere)
-- **DirectEndpoint**: HTTP to stable node (best performance)
-- **LocalOllama**: Built-in local runtime (zero config)
-
-OllaBridge picks the right one automatically.
-
----
-
-## 📈 Scaling
-
-### Add More Workers
-
-```bash
-ollabridge start --workers 4
-```
-
-### Use PostgreSQL
-
-```bash
-pip install psycopg2-binary
-export DATABASE_URL=postgresql://user:pass@localhost/ollabridge
-ollabridge start --workers 8
-```
-
-### Add More Nodes
-
-```bash
-# Just keep adding nodes!
-ollabridge-node join --control ... --token ...
-```
-
-OllaBridge automatically load-balances across all healthy nodes.
-
----
-
-## 🌍 Public Access (Optional)
-
-### Quick Demo (Ngrok)
-
-```bash
-ollabridge start --share
-```
-
-### Production (Cloudflare Tunnel)
-
-```bash
-# Terminal 1: Start gateway
-ollabridge start
-
-# Terminal 2: Expose it
-cloudflared tunnel --url http://localhost:11435
-```
-
-Now your gateway has a public `https://` URL!
-
-**Security:** Always use API keys for public gateways.
-
----
-
-## 🎓 Beginner's Guide
-
-### "I've never used LLMs before"
-
-1. Install: `pip install ollabridge`
-2. Start: `ollabridge start`
-3. Copy the API key from the output
-4. Use this code:
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:11435/v1",
-    api_key="PASTE_KEY_HERE"
-)
-
-response = client.chat.completions.create(
-    model="deepseek-r1",
-    messages=[{"role": "user", "content": "Explain Python in simple terms"}]
-)
-
-print(response.choices[0].message.content)
-```
-
-**That's it!** You're running AI models on your computer.
-
-### "I want to add my gaming PC's GPU"
-
-1. On your main computer (gateway):
-   ```bash
-   ollabridge start
-   # Copy the "Node join token" and gateway URL
-   ```
-
-2. On your gaming PC:
-   ```bash
-   pip install ollabridge
-   ollabridge-node join --control http://GATEWAY_IP:11435 --token TOKEN_HERE
-   ```
-
-3. Done! Your apps can now use your gaming PC's power.
-
-### "I want to use free Colab GPUs"
-
-1. Start your gateway at home:
-   ```bash
-   ollabridge start --share
-   # Note the public URL (https://xxx.ngrok.io)
-   ```
-
-2. In Colab notebook:
-   ```python
-   !pip install ollabridge
-   !ollabridge-node join --control https://xxx.ngrok.io --token YOUR_TOKEN
-   ```
-
-3. Now your apps use FREE Colab GPUs!
-
-**Pro tip:** When Colab disconnects, just restart and run step 2 again. Zero config changes needed.
-
----
-
-## 🛠️ CLI Commands Reference
-
-OllaBridge includes powerful CLI commands for diagnostics, testing, and management.
-
-### Diagnostic Commands
-
-#### `ollabridge doctor`
-Diagnose your OllaBridge setup (Ollama, gateway, auth, CORS):
-
-```bash
-ollabridge doctor
-```
-
-**Output:**
-```
-                     OllaBridge Doctor
-┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Check               ┃ Result                          ┃
-┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ Ollama /api/tags    │ OK                           │
-│ OllaBridge /health  │ OK                           │
-│ API_KEYS configured │ yes                          │
-│ CORS_ORIGINS        │ http://localhost:5173,...       │
-│ Auth usage          │ Use Authorization: Bearer <key> │
-└─────────────────────┴─────────────────────────────────┘
-```
-
-**Use case:** Troubleshooting connection issues, verifying setup before deployment.
-
-#### `ollabridge models`
-List available models (requires API key):
-
-```bash
-ollabridge models --api-key sk-ollabridge-xY9kL2mN8pQ4rT6vW1zA
-```
-
-**Output:**
-```
-deepseek-r1
-llama3.1
-mixtral
-```
-
-**Use case:** Verify which models are available across all nodes.
-
-#### `ollabridge test-chat`
-Send a test chat completion (requires API key):
-
-```bash
-# Simple test
-ollabridge test-chat "Hello, how are you?" --api-key sk-ollabridge-...
-
-# Specify model
-ollabridge test-chat "Explain quantum computing" \
-  --model deepseek-r1 \
-  --api-key sk-ollabridge-...
-```
-
-**Output:**
-```
-╭─────────── Assistant ───────────╮
-│ Hello! I'm doing well, thank    │
-│ you for asking. How can I help  │
-│ you today?                       │
-╰──────────────────────────────────╯
-```
-
-**Use case:** Verify end-to-end connectivity, test API keys, validate model responses.
-
-### Gateway Management
-
-#### `ollabridge start`
-Start the gateway (standard mode):
-
-```bash
-ollabridge start
-```
-
-#### `ollabridge start --lan`
-Start with LAN URLs displayed (for classroom/shared networks):
-
-```bash
-ollabridge start --lan
-```
-
-**Output includes:**
-```
-🌐 LAN Access
-LAN API base:    http://192.168.1.50:11435/v1
-LAN Health:      http://192.168.1.50:11435/health
-
-Example (with API key):
-curl -H 'Authorization: Bearer <API_KEY>' http://192.168.1.50:11435/v1/models
-```
-
-**Use case:** Sharing your gateway with other devices on your network (Quest headsets, phones, other laptops).
-
-
-#### `ollabridge start --share`
-Expose a public URL (via ngrok):
-
-```bash
-ollabridge start --share
-```
-
-**Use case:** Remote access, connecting nodes from anywhere.
-
-#### `ollabridge enroll-create`
-Create enrollment tokens for nodes:
-
-```bash
-ollabridge enroll-create --ttl 3600
-```
-
-### Quick Tasks
-
-| Task | Command |
-|------|---------|
-| **List models (API)** | `ollabridge models --api-key <key>` |
-| **Test connectivity** | `ollabridge test-chat "test" --api-key <key>` |
-| **Check health** | `curl http://localhost:11435/health` |
-| **Diagnose setup** | `ollabridge doctor` |
-| **See nodes** | `curl -H "X-API-Key: <key>" http://localhost:11435/admin/runtimes` |
-| **View logs** | `curl -H "X-API-Key: <key>" http://localhost:11435/admin/recent` |
-| **Create token** | `ollabridge enroll-create` |
-
-
-### For Developers
-
-OllaBridge requires an API key to authenticate requests. If no `.env` file is provided, or the `.env` file does not contain `API_KEYS`, OllaBridge will automatically generate a **temporary, per-run secret API key** (`sk-ollabridge-...`), print it to the screen, and use it only for the current run so you can start developing immediately. **This key is not written to disk by default**, which prevents accidental persistence of credentials and improves security. If you explicitly want OllaBridge to persist the generated API key, you must opt in by starting the gateway with:
-
-```bash
-ollabridge start --write-env
-```
-
-In this case, OllaBridge will write the generated key to `.env`. For production deployments, it is strongly recommended to set `API_KEYS` using **environment variables or a secure secret manager**, rather than relying on a `.env` file. This design provides safe defaults while avoiding unintentionally storing sensitive information.
-
-
----
-
-## ☁️ Optional: OllaBridge Cloud
-
-OllaBridge Local can **optionally** connect to **[OllaBridge Cloud](https://ruslanmv-ollabridge.hf.space)** for multi-user, multi-device deployments.
-
-<p align="center">
-  <img src="assets/diagrams/architecture.svg" alt="OllaBridge end-to-end architecture: local gateway, Providers Hub, Hugging Face Inference Providers, and OllaBridge Cloud" width="100%" />
-</p>
-
-### Cloud Features
-
-- 🔐 **TV-style device pairing** with ABCD-1234 codes
-- 👥 **Multi-user support** with email/password or Google OAuth
-- 🌍 **No port forwarding needed** (devices dial out via WebSocket)
-- 📱 **Multi-device per user** (PC + Quest + phone, etc.)
-- 🔄 **Streaming support** for real-time responses
-- 🏢 **Enterprise dashboard** with sidebar layout, device management, server monitoring
-- 🤝 **HomePilot personas** routed through the cloud relay
-- 🔗 **Federation** for peer mesh across multiple cloud instances
-
-**Cloud Relay UI**: The OllaBridge dashboard includes a **Cloud** tab — click "Link to Cloud", enter the pairing code on the [Cloud dashboard](https://ruslanmv-ollabridge.hf.space/link), and your PC's GPU is instantly available to Quest VR headsets through an encrypted WebSocket tunnel.
-
-### Pairing Your Device with Cloud
-
-#### Option A: From Dashboard (Recommended)
-
-1. Open OllaBridge dashboard → Click **Cloud** in sidebar
-2. Click **"Link to Cloud"** (defaults to `https://ruslanmv-ollabridge.hf.space`)
-3. A pairing code appears (e.g., `ABCD-1234`)
-4. Open `https://ruslanmv-ollabridge.hf.space/link` → enter the code → confirm
-
-#### Option B: From CLI
-
-```bash
-# 1. Pair this device with OllaBridge Cloud
-ollabridge-node cloud-pair --cloud https://ruslanmv-ollabridge.hf.space
-
-# Shows pairing code - approve at /link on the Cloud dashboard
-
-# 2. Connect to Cloud (uses saved credentials)
-ollabridge-node cloud-connect
-```
-
-**How it works:**
-1. `cloud-pair` gets a pairing code from Cloud (`/device/start`)
-2. You approve the code at `/link` on the Cloud web UI
-3. Device credentials saved to `~/.ollabridge/cloud_device.json`
-4. WebSocket tunnel opens to `/relay/connect` — models registered automatically
-5. Cloud routes client requests to your device through the tunnel
-
-### Local Mode (Default) vs Cloud Mode
-
-| Feature | Local Mode | Cloud Mode |
-|---------|------------|------------|
-| **Setup** | `ollabridge-node join --control <gateway> --token <token>` | Dashboard Cloud tab or `cloud-pair` CLI |
-| **Authentication** | Enrollment token | TV-style device pairing + user accounts |
-| **Users** | Single self-hosted | Multi-user with Google OAuth |
-| **Devices** | Manual node management | Per-user device ownership with dashboard |
-| **Dashboard** | Local React UI | Enterprise sidebar with device monitoring |
-| **Port forwarding** | Not needed (outbound) | Not needed (WebSocket relay) |
-
-**Both modes work together!** Run local gateway + nodes for self-hosting, and optionally pair devices with Cloud for multi-user scenarios.
-
-> **Full Cloud documentation:** [docs/CLOUD.md](docs/CLOUD.md)
-
----
-
-## 🏠 HomePilot Integration
-
-OllaBridge includes a built-in **HomePilot connector** that exposes [HomePilot](https://github.com/ruslanmv/HomePilot) personas as standard OpenAI models. Any app that speaks OpenAI — including [3D Avatar Chatbot](https://github.com/ruslanmv/3D-Avatar-Chatbot) — can chat with persistent AI personas that have personality, long-term memory, and MCP tool access.
-
-### Enable HomePilot
-
-```env
-# .env
-HOMEPILOT_ENABLED=true
-HOMEPILOT_BASE_URL=http://localhost:8000
-HOMEPILOT_API_KEY=your-api-key
-```
-
-### How It Works
-
-```mermaid
-graph LR
-    A[Your App] -->|OpenAI SDK| B[OllaBridge]
-    B -->|"model=deepseek-r1"| C[Local Ollama]
-    B -->|"model=persona:proj-123"| D[HomePilot]
-    B -->|"model=personality:therapist"| D
-
-    style B fill:#6366f1,stroke:#4f46e5,stroke-width:3px,color:#fff
-    style D fill:#10b981,stroke:#059669,stroke-width:2px,color:#fff
-```
-
-**Smart routing**: Models starting with `persona:` or `personality:` are automatically sent to HomePilot. Everything else goes to Ollama or other connected nodes.
-
-### Chat with a Persona
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:11435/v1",
-    api_key="sk-ollabridge-YOUR-KEY"
-)
-
-# Chat with a HomePilot persona — same OpenAI API
-response = client.chat.completions.create(
-    model="persona:my-therapist",
-    messages=[{"role": "user", "content": "I've been feeling stressed."}]
-)
-
-print(response.choices[0].message.content)
-```
-
-### Discover Available Personas
-
-```bash
-# List all models (Ollama + HomePilot personas)
-curl -H "Authorization: Bearer sk-ollabridge-..." \
-  http://localhost:11435/v1/models
-```
-
-Returns both local Ollama models and HomePilot personas in a single list:
-
-```json
-{
-  "data": [
-    {"id": "deepseek-r1", "owned_by": "ollama"},
-    {"id": "personality:therapist", "owned_by": "homepilot"},
-    {"id": "persona:proj-abc123", "owned_by": "homepilot"}
-  ]
-}
-```
-
-### What Personas Bring
-
-Each HomePilot persona includes capabilities beyond a plain LLM:
-
-| Feature | Description |
+| Cloud Relay | Device Pairing |
 |---|---|
-| **Personality** | Rich system prompt with psychology, voice style, behavior |
-| **Long-Term Memory** | Per-persona persistent memory across sessions |
-| **MCP Tools** | Gmail, Calendar, GitHub, Slack, web search, and more |
-| **Knowledge Base** | RAG over uploaded documents |
-| **Image Generation** | ComfyUI workflows (FLUX, SDXL) |
+| <img src="docs/assets/screenshots/cloud.png" alt="Cloud Relay page — live connection, shared models, device identity"/> | <img src="docs/assets/screenshots/pairing.png" alt="Pairing page — link devices with short codes"/> |
 
-All transparent to the client — you get a standard OpenAI-format response.
+| Model Inventory | Local Runtimes |
+|---|---|
+| <img src="docs/assets/screenshots/models.png" alt="Models page — local model catalog with capability detection"/> | <img src="docs/assets/screenshots/runtimes.png" alt="Local Runtimes — Ollama and HomePilot execution backends with per-runtime enable toggles"/> |
 
-### 3D Avatar Chatbot + HomePilot
+<details>
+<summary>More screens: Providers Hub, Settings &amp; classic Sources</summary>
 
-The [3D Avatar Chatbot](https://github.com/ruslanmv/3D-Avatar-Chatbot) has a built-in OllaBridge provider. Select it in Settings, fetch models, and your 3D avatar speaks with HomePilot persona personality and memory:
+| Providers Hub | Settings |
+|---|---|
+| <img src="docs/assets/screenshots/providers.png" alt="Providers Hub — BYOK provider routing with encrypted key storage"/> | <img src="docs/assets/screenshots/settings.png" alt="Settings page"/> |
 
-```
-3D Avatar Chatbot → OllaBridge Gateway → HomePilot Persona → LLM + Memory + Tools
-```
+| Sources (classic) | |
+|---|---|
+| <img src="docs/assets/screenshots/sources.png" alt="Sources page (classic)"/> | |
 
-### Full Architecture
-
-```
-┌──────────────────────────────────────────┐
-│           OllaBridge Gateway             │
-│                                          │
-│  Registry                                │
-│  ├── local_ollama   → Ollama (:11434)    │
-│  ├── relay_link     → Remote GPUs        │
-│  └── homepilot      → HomePilot (:8000)  │
-│                                          │
-│  Router                                  │
-│  ├── "persona:*"    → homepilot nodes    │
-│  ├── "personality:*"→ homepilot nodes    │
-│  └── other models   → best available     │
-└──────────────────────────────────────────┘
-```
-
-For detailed persona system documentation, see [HomePilot's OLLABRIDGE.md](https://github.com/ruslanmv/HomePilot/blob/main/docs/OLLABRIDGE.md).
-
----
-
-## Multi-Provider Routing
-
-OllaBridge can route requests beyond local Ollama — to **free**, **cheap**, and **paid** cloud LLM APIs with score-based selection and automatic failover.
-
-### How It Works
-
-When no local node or relay has the requested model, OllaBridge tries the multi-provider addon:
-
-```
-Request → Router → Local Ollama / Relay / HomePilot
-                 → Provider Addon (if model matches alias or provider)
-                     ├── Score candidates by health, latency, tier, quota
-                     ├── Try best provider
-                     └── Failover to next on error
-```
-
-### Supported Providers
-
-| Provider | Category | Notes |
-|----------|----------|-------|
-| **Google Gemini** | free | Best free overall — large context |
-| **Groq** | free | Fastest inference latency |
-| **OpenRouter** | free-flex | Aggregator with many free models |
-| **Hugging Face** | free-lab | Experimental / OSS inference |
-| **DeepSeek** | cheap | Strong reasoning, low cost |
-| **Any OpenAI-compatible** | varies | Generic adapter |
-
-### Model Aliases
-
-Use logical names instead of concrete model IDs:
-
-```python
-client = OpenAI(base_url="http://localhost:11435/v1", api_key="your-key")
-
-# Alias resolves to best free provider automatically
-response = client.chat.completions.create(
-    model="free-best",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-```
-
-Built-in aliases: `free-best`, `free-fast`, `free-flex`, `cheap-reasoning`, `local-private`
-
-### Configuration
-
-Get your free API keys (click, sign up, copy):
-
-| Provider | Get Free Key | Env Variable |
-|----------|-------------|--------------|
-| **Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` |
-| **Groq** | [console.groq.com/keys](https://console.groq.com/keys) | `GROQ_API_KEY` |
-| **OpenRouter** | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) | `OPENROUTER_API_KEY` |
-| **Hugging Face** | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) | `HUGGINGFACE_API_KEY` |
-| **DeepSeek** | [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) | `DEEPSEEK_API_KEY` |
-
-Quick setup:
-
-```bash
-cp .env.providers.example .env.providers
-# Paste your keys in .env.providers
-source .env.providers
-```
-
-Add or remove providers by editing:
-
-```
-src/ollabridge/addons/providers/catalog/providers.seed.yaml
-```
-
-### Smoke Testing
-
-```bash
-python scripts/test_providers.py
-```
-
-Reports health status and latency for each provider.
-
-### Architecture
-
-```
-src/ollabridge/addons/providers/
-├── adapters/       # Per-provider API translators (Gemini, Groq, etc.)
-├── catalog/        # YAML configs (providers, aliases, test matrix)
-├── services/       # Loader & seeder
-├── router.py       # Score-based routing with failover
-├── scoring.py      # Weighted scoring (health/latency/tier/quota/priority)
-├── registry.py     # In-memory provider registry
-├── health.py       # Health checking
-└── quotas.py       # Monthly budget tracking
-```
-
-The addon is fully additive — the existing HomePilot/relay/Ollama paths are unchanged. Compatible with the same catalog format used by OllaBridge Cloud.
-
----
-
-## 🖥️ Dashboard UI
-
-OllaBridge ships with a built-in **Broadcast Tower Dashboard** — a real-time command center that visualizes your entire LLM routing infrastructure at a glance.
-
-<p align="center">
-  <img src="assets/dashboard-tower.svg" alt="OllaBridge Dashboard – Broadcast Tower" width="720" />
-</p>
-
-### Quick Start
+</details>
 
 ```bash
 # Install frontend dependencies
@@ -1045,91 +153,180 @@ make ui-dev
 make ui-build
 ```
 
-Once built, access the dashboard at **`http://localhost:11435/ui`** when OllaBridge is running.
+Once built, the dashboard is served at **`http://localhost:11435/ui`** whenever the gateway runs. React 19 + TypeScript + Vite, TanStack Query live polling, Framer Motion animation.
 
-### What You See
+<p align="center">
+  <img src="assets/dashboard-tower.svg" alt="OllaBridge Dashboard – Broadcast Tower" width="720" />
+</p>
 
-| Element | Description |
-|---------|-------------|
-| **Central Orb** | The LLM Core — pulses when online, shows active model name |
-| **Source Chips** | Upstream inputs (Source Inputs) and connected LLM models |
-| **Signal Beams** | Animated SVG paths showing data flowing from tower to consumers |
-| **Consumer Nodes** | Runtime endpoints — each card shows node status in real time |
-| **Status HUD** | Top-right overlay with live health, mode, model count, runtime count |
+---
 
-### Tech Stack
+## 🚀 Why Teams Choose OllaBridge
 
-- **React 19** + TypeScript + Vite 8
-- **TanStack Query** for real-time API polling (auto-refresh every 10–30s)
-- **Framer Motion** for orb pulse, beam particles, and hover animations
-- **Tailwind CSS v4** with glassmorphism design tokens (navy/cyan/violet palette)
+| | |
+|---|---|
+| 🔒 **Local-first by default** | No cloud login, no telemetry, no prompt logging. Prompts, responses, and keys stay on your machine unless *you* decide otherwise. |
+| 🎛️ **Per-model sharing controls** | Decide model by model what's visible where — this PC, the cloud, a specific app. Publishing is explicit, scoped, and always inspectable. |
+| 🎯 **One source of truth** | Every app, every device, one OpenAI-compatible URL. Models can move between machines — your code never changes. |
+| 🌍 **Any GPU, anywhere** | Nodes dial out — add a gaming PC, a Colab notebook, or a fleet of cloud GPUs in one command each. See [docs/SCALING.md](docs/SCALING.md). |
+| 🔑 **Secure BYOK provider hub** | Bring your own OpenAI, Anthropic, Gemini, Groq, Bedrock, Mistral keys and more — encrypted at rest, redacted everywhere, routed across your authorized devices and workspaces. See [docs/PROVIDER_KEYS.md](docs/PROVIDER_KEYS.md). |
+| ☁️ **Optional cloud relay** | `ollabridge login` pairs your device with OllaBridge Cloud so your models are reachable from anywhere — metadata-only sync, verifiable end to end. |
+| 🧭 **Enterprise-grade trust** | `ollabridge doctor` verifies every link in the chain. Request tracing, policy routing, RBAC interfaces, audit posture — built in, documented, tested. See [docs/ENTERPRISE.md](docs/ENTERPRISE.md). |
+
+---
+
+## 🧭 Local vs Cloud vs Enterprise
+
+OllaBridge is **local-first**. Cloud is optional. Enterprise builds on both.
+
+| Mode | What runs | What leaves your machine | How to enable |
+|---|---|---|---|
+| **Local** (default) | OpenAI-compatible gateway on `localhost:11435` | Nothing. No cloud login, no telemetry, no prompt logging. | `ollabridge start` |
+| **Cloud** (optional) | Local gateway + outbound relay to OllaBridge Cloud | Metadata only by default: device status, model names, routing profiles, health metrics. Never prompts, responses, or provider keys. | `ollabridge login` |
+| **Enterprise** | Cloud orgs, fleet enrollment, shared policies | Same metadata rules, org-scoped; bootstrap tokens for fleet provisioning | See [docs/ENTERPRISE.md](docs/ENTERPRISE.md) |
+
+```bash
+ollabridge start          # local only — no cloud required
+ollabridge login          # optional: pair with OllaBridge Cloud
+ollabridge sync status    # see exactly what syncs (and what never does)
+ollabridge sync disable   # turn all cloud sync off
+ollabridge logout         # unpair and delete credentials
+```
+
+**The privacy contract** ([docs/PRIVACY.md](docs/PRIVACY.md), [docs/CLOUD_SYNC.md](docs/CLOUD_SYNC.md)): prompt content, conversation history, provider API keys, RAG documents, and persona memory are **never** synced unless you explicitly enable each one — and they are all off by default.
+
+---
+
+## 🩺 Trust, Verified — `ollabridge doctor`
+
+You should never have to *hope* your AI infrastructure works. Verify it:
+
+```bash
+ollabridge doctor             # all checks, human-readable or --json
+ollabridge doctor relay       # WSS connect, register, ping/pong, reconnect
+ollabridge doctor e2e         # full request path with latency breakdown
+ollabridge doctor security    # secrets at rest, permissions, auth, CORS
+```
+
+```
+Relay:
+  ✅ WSS connection established — wss://app.ollabridge.com/relay/connect
+  ✅ Device registered — hello accepted
+  ✅ Model list sent — 1 models
+  ✅ Ping/pong — app-level heartbeat OK
+  ✅ Reconnect test — second connection accepted
+```
+
+Every request carries a `request_id` (`X-Request-ID`), and the trace store records **routing metadata only — never prompt content**:
+
+```bash
+ollabridge traces list        # which model answered, was cloud used, latency
+ollabridge route explain coding   # which backend WOULD serve this alias, and why
+```
+
+Policy aliases (`local-private`, `fast`, `cheap`, `best`, `coding`, …) are explicit and explainable — `local-private` is fail-closed: local devices only, no external providers, no relay, no prompt logging. Details: [docs/RELAY_VERIFICATION.md](docs/RELAY_VERIFICATION.md).
+
+---
+
+## 🔑 BYOK Providers
+
+Secure BYOK routing across your authorized devices and workspaces — keys encrypted at rest (`OLLA_SECRET`), never printed, never synced by default:
+
+```bash
+ollabridge providers add anthropic     # choose: local-only / cloud vault / org vault
+ollabridge providers test anthropic    # validates the key — no tokens spent
+ollabridge providers rotate anthropic  # replace key, stamp rotation time
+ollabridge providers list              # keys always redacted
+```
+
+Supported: **OpenAI, Anthropic, Gemini, Azure OpenAI, AWS Bedrock, Groq, OpenRouter, Hugging Face, DeepSeek, Mistral, Together, Fireworks**, plus any generic OpenAI-compatible endpoint. Free-tier alias routing (`free-best`, `free-fast`) via the [Providers Hub](docs/PROVIDERS_HUB.md).
+
+---
+
+## 🏗️ Architecture
+
+<p align="center">
+  <img src="assets/diagrams/architecture.svg" alt="OllaBridge end-to-end architecture: local gateway, Providers Hub, Hugging Face Inference Providers, and OllaBridge Cloud" width="100%" />
+</p>
+
+- **Gateway (control plane)** — FastAPI server exposing `/v1/*`, the dashboard, and admin APIs
+- **Nodes (compute plane)** — Ollama/HomePilot/provider adapters that dial out over WebSockets
+- **Cloud relay (optional)** — outbound-only WSS bridge so your devices are reachable from anywhere, tenant-isolated per account
+
+Deep dives: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) • [docs/SCALING.md](docs/SCALING.md) • [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)
+
+---
+
+## 🤖 AI-Agent Native
+
+OllaBridge ships an **MCP server** so AI agents can manage your infrastructure — create enrollment tokens, list runtimes, check health — through the Model Context Protocol:
+
+```bash
+ollabridge-mcp        # stdio MCP server for Claude Desktop, IDEs, agents
+```
+
+See [docs/MCP.md](docs/MCP.md).
+
+---
+
+## 📚 Documentation
+
+| Getting started | Operations | Security & Enterprise |
+|---|---|---|
+| [Quickstart](docs/QUICKSTART.md) | [CLI Reference](docs/CLI.md) | [Security Policy](docs/SECURITY.md) |
+| [Tutorial](docs/TUTORIAL.md) | [API Reference](docs/API.md) | [Privacy](docs/PRIVACY.md) |
+| [Examples (SDKs, LangChain, cURL)](docs/EXAMPLES.md) | [Configuration & Auth](docs/CONFIGURATION.md) | [Threat Model](docs/THREAT_MODEL.md) |
+| [Install Guide](INSTALL.md) | [Scaling & Public Access](docs/SCALING.md) | [Deployment Hardening](docs/DEPLOYMENT_HARDENING.md) |
+| | [Relay Verification](docs/RELAY_VERIFICATION.md) | [Enterprise Architecture & RBAC](docs/ENTERPRISE.md) |
+| | [Cloud Sync](docs/CLOUD_SYNC.md) | [Provider Keys (BYOK)](docs/PROVIDER_KEYS.md) |
+| | [Providers Hub](docs/PROVIDERS_HUB.md) | [Enterprise Readiness Audit](docs/AUDIT_ENTERPRISE_READINESS.md) |
+| | [HomePilot Integration](docs/HOMEPILOT.md) | [Enterprise Roadmap](docs/ROADMAP_ENTERPRISE.md) |
+| | [MCP / AI Agents](docs/MCP.md) | |
+| | [Local Model Catalog](docs/LOCAL_CATALOG.md) | |
 
 ---
 
 ## 🗺️ Roadmap
 
-- [x] Control Plane + Node architecture
-- [x] Outbound-only node enrollment (no port forwarding)
-- [x] MCP server for AI agent control
-- [x] Multi-node load balancing
-- [x] Diagnostic CLI commands (doctor, models, test-chat)
-- [x] Enhanced CORS handling for browser clients
-- [x] LAN mode for classroom/shared network deployments
-- [x] Cloud compatibility (optional device pairing)
-- [x] Streaming support for chat completions (Cloud mode)
-- [x] HomePilot persona integration (smart persona routing)
-- [x] Multi-provider routing (free/cheap/paid LLM APIs with score-based selection)
-- [ ] 🚧 Tag-based routing (send "coding" requests to GPU nodes)
-- [ ] 🚧 Model-specific routing rules
-- [x] Web UI dashboard (Broadcast Tower visualization)
-- [ ] 🚧 Prometheus metrics
-- [ ] 🚧 Support for more runtimes (vLLM, llama.cpp, LM Studio)
+- [x] Control plane + dial-out node architecture (no port forwarding)
+- [x] Web dashboard (Broadcast Tower visualization)
+- [x] Optional cloud pairing + relay with end-to-end verification (`doctor relay`, `doctor e2e`)
+- [x] Explicit, metadata-only cloud sync with privacy-first defaults
+- [x] BYOK provider hub with encrypted key storage, rotation, and redaction
+- [x] Policy routing with explainable aliases (`route explain`)
+- [x] Request tracing without prompt content
+- [x] Multi-provider free-tier routing (score-based selection)
+- [x] HomePilot persona integration • MCP server for AI agents
+- [ ] 🚧 Cloud encrypted vault & organization vault APIs
+- [ ] 🚧 Relay streaming (`delta`/`done` frames end to end)
+- [ ] 🚧 Prometheus metrics • more runtimes (vLLM, llama.cpp, LM Studio)
+
+Full phased plan with shipped/planned status: [docs/ROADMAP_ENTERPRISE.md](docs/ROADMAP_ENTERPRISE.md)
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions! Areas we'd love help:
-
-- 🔌 More runtime adapters (vLLM, llama.cpp, etc.)
-- 🎨 Web UI for management
-- 📊 Better monitoring/metrics
-- 🔒 Security enhancements
-- 📖 Documentation improvements
-
-**How to contribute:**
+We welcome contributions! Areas we'd love help with: runtime adapters (vLLM, llama.cpp), monitoring/metrics, security reviews, docs.
 
 1. Fork the repo
 2. Create a branch (`git checkout -b feature/amazing`)
-3. Make your changes
-4. Add tests
-5. Submit a PR
+3. Make your changes and add tests (`make install-dev && make test`)
+4. Submit a PR
 
 ---
 
 ## 📄 License
 
-Apache License 2.0 - see [LICENSE](LICENSE)
-
----
+Apache License 2.0 — see [LICENSE](LICENSE)
 
 ## 🙏 Built With
 
-- [FastAPI](https://fastapi.tiangolo.com/) — Modern async web framework
-- [Ollama](https://ollama.ai/) — Run LLMs locally
-- [WebSockets](https://websockets.readthedocs.io/) — Real-time node connections
-- [SQLModel](https://sqlmodel.tiangolo.com/) — Database with Python types
-
----
+[FastAPI](https://fastapi.tiangolo.com/) • [Ollama](https://ollama.ai/) • [WebSockets](https://websockets.readthedocs.io/) • [SQLModel](https://sqlmodel.tiangolo.com/) • [React](https://react.dev/) + [Vite](https://vitejs.dev/)
 
 ## 💬 Support
 
-- 📖 [Documentation](docs/)
-- 🐛 [Report Bug](https://github.com/ruslanmv/ollabridge/issues)
-- 💡 [Request Feature](https://github.com/ruslanmv/ollabridge/issues)
-- 💬 [Discussions](https://github.com/ruslanmv/ollabridge/discussions)
-
----
+📖 [Documentation](docs/) • 🐛 [Report a Bug](https://github.com/ruslanmv/ollabridge/issues) • 💡 [Request a Feature](https://github.com/ruslanmv/ollabridge/issues) • 💬 [Discussions](https://github.com/ruslanmv/ollabridge/discussions)
 
 ## 🌟 Star History
 
@@ -1145,7 +342,7 @@ If OllaBridge helped you, give it a star! ⭐
   </a>
 </p>
 
-OllaBridge is the recommended gateway for [HomePilot](https://github.com/ruslanmv/HomePilot) personas. Route `persona:*` and `personality:*` models to HomePilot while serving local LLMs via Ollama — all through a single OpenAI-compatible endpoint.
+OllaBridge is the recommended gateway for [HomePilot](https://github.com/ruslanmv/HomePilot) personas. Route `persona:*` and `personality:*` models to HomePilot while serving local LLMs via Ollama — all through a single OpenAI-compatible endpoint. Setup: [docs/HOMEPILOT.md](docs/HOMEPILOT.md).
 
 <p align="center">
   <img src="assets/ollabridge-architecture.svg" alt="OllaBridge Architecture" width="800" />
