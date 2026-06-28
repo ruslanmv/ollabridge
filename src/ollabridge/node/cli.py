@@ -10,7 +10,13 @@ from rich.status import Status
 
 from ollabridge.cloud.api_client import CloudApiClient
 from ollabridge.cloud.device_config import CloudDeviceCredentials, load_cloud_device_credentials, save_cloud_device_credentials
-from ollabridge.node.agent import CloudDeviceConfig, NodeConfig, default_node_id, run_cloud_device, run_node
+from ollabridge.node.agent import (
+    CloudDeviceConfig,
+    NodeConfig,
+    default_node_id,
+    run_cloud_device_forever,
+    run_node,
+)
 from ollabridge.utils.installer import (
     ensure_model,
     ensure_ollama_server_running,
@@ -173,7 +179,12 @@ def cloud_connect(
         )
     )
 
-    asyncio.run(run_cloud_device(cfg))
+    # Auto-reconnect with backoff so a sleeping PC / flaky link / Cloud restart
+    # self-heals instead of leaving the node offline. Ctrl-C still exits cleanly.
+    try:
+        asyncio.run(run_cloud_device_forever(cfg))
+    except KeyboardInterrupt:
+        console.print("\n[dim]Disconnected from OllaBridge Cloud.[/dim]")
 
 
 if __name__ == "__main__":
