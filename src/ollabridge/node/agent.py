@@ -2,16 +2,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import platform as py_platform
+import random
 import socket
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Optional
 
 import websockets
 
+logger = logging.getLogger(__name__)
+
+from ollabridge.node import capability_report, gen_config
+from ollabridge.node.job_runner import is_generation_op, run_generation
 from ollabridge.node.runtime import LocalRuntime
+from ollabridge.node.runtime_detect import detect_runtimes
 
 
 @dataclass(frozen=True)
@@ -124,15 +132,30 @@ async def run_cloud_device(config: CloudDeviceConfig) -> None:
     headers = {"Authorization": f"Bearer {config.device_token}"}
 
     async with websockets.connect(ws_url, extra_headers=headers, max_size=2**25) as ws:
+        capabilities = ["chat", "embeddings", "models"]
         hello = {
             "type": "hello",
             "device_id": config.device_id,
             "client_version": "ollabridge-local-cloud-compat/0.1.0",
             "platform": _platform_short(),
             "models": models,
-            "capabilities": ["chat", "embeddings", "models"],
+            "capabilities": capabilities,
             "protocol_version": "0.1.0",
         }
+
+        # Wave A / Batch 2 (LN-1): advertise structured compute capabilities so
+        # the Cloud can route image/video jobs here. Best-effort and additive —
+        # if generation is disabled or ComfyUI is down, the node block carries
+        # chat-only models and ``capabilities`` stays exactly as it was today.
+        try:
+            runtimes = await detect_runtimes()
+            hello["node"] = capability_report.build_node_block(
+                models, runtimes, _platform_short()
+            )
+            hello["capabilities"] = capabilities + capability_report.extra_capabilities(runtimes)
+        except Exception:
+            pass  # never block the connection on capability detection
+
         await ws.send(json.dumps(hello))
 
         stop = asyncio.Event()
@@ -216,6 +239,32 @@ async def run_cloud_device(config: CloudDeviceConfig) -> None:
                         await ws.send(json.dumps({"type": "done", "id": req_id}))
                         continue
 
+                    # Wave A / Batch 4 (LN-2): image/video generation ops. Only
+                    # served when generation is explicitly enabled on this node;
+                    # otherwise we return a clean error (the Cloud only routes
+                    # here when this node advertised the capability, so this is a
+                    # belt-and-braces guard).
+                    if is_generation_op(op):
+                        if not gen_config.gen_enabled():
+                            await ws.send(json.dumps({
+                                "type": "res", "id": req_id, "ok": False,
+                                "error": "generation is disabled on this node",
+                            }))
+                            continue
+
+                        async def _send_progress(pct: int, message: str, _rid=req_id) -> None:
+                            try:
+                                await ws.send(json.dumps({
+                                    "type": "progress", "id": _rid,
+                                    "progress": pct, "message": message,
+                                }))
+                            except Exception:
+                                pass
+
+                        data = await run_generation(op, payload, on_progress=_send_progress)
+                        await ws.send(json.dumps({"type": "res", "id": req_id, "ok": True, "data": data}))
+                        continue
+
                     # Unknown op
                     await ws.send(json.dumps({"type": "res", "id": req_id, "ok": False, "error": f"unknown op: {op}"}))
 
@@ -229,3 +278,40 @@ async def run_cloud_device(config: CloudDeviceConfig) -> None:
                 hb_task.cancel()
             except Exception:
                 pass
+
+
+async def run_cloud_device_forever(
+    config: CloudDeviceConfig,
+    *,
+    base_backoff: float = 2.0,
+    max_backoff: float = 60.0,
+) -> None:
+    """
+    Keep a Cloud device connection up across drops, with exponential backoff
+    and jitter (production hardening). A PC sleeping, a flaky link, or the Cloud
+    restarting should self-heal rather than leave the node offline.
+
+    Stops cleanly on cancellation (Ctrl-C / shutdown). Backoff resets after a
+    connection stays up for a while, so transient blips don't ratchet the delay.
+    """
+    backoff = base_backoff
+    while True:
+        started = time.monotonic()
+        try:
+            await run_cloud_device(config)
+        except asyncio.CancelledError:
+            raise  # intentional shutdown — do not reconnect
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("OllaBridge Cloud connection dropped: %s", exc)
+        else:
+            logger.info("OllaBridge Cloud connection closed; reconnecting")
+
+        # Reset backoff if the last session was stable for a while.
+        if time.monotonic() - started > 30:
+            backoff = base_backoff
+
+        wait = min(backoff, max_backoff)
+        wait += random.uniform(0, wait * 0.1)  # jitter to avoid thundering herd
+        logger.info("Reconnecting to OllaBridge Cloud in %.1fs", wait)
+        await asyncio.sleep(wait)
+        backoff = min(max(backoff, base_backoff) * 2, max_backoff)
