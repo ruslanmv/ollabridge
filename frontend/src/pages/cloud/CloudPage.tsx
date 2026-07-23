@@ -319,9 +319,26 @@ function ConnectionStatusCard({ status }: { status: CloudStatus }) {
 
 // ── Pairing Flow ────────────────────────────────────────────────────
 
+// The cloud returns a `verification_url` for the pairing confirmation link.
+// The apex `ollabridge.com` is the Vercel marketing site and has no `/link`
+// route (it 404s), so rewrite a bare apex host to the API host that actually
+// serves the pairing page. Additive + defensive: any other host is left as-is,
+// and a malformed URL falls through unchanged.
+function normalizeVerificationUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    if (u.hostname === 'ollabridge.com' || u.hostname === 'www.ollabridge.com') {
+      u.hostname = 'api.ollabridge.com'
+    }
+    return u.toString()
+  } catch {
+    return url
+  }
+}
+
 function PairingSection({ status }: { status: CloudStatus }) {
   const queryClient = useQueryClient()
-  const [cloudUrl, setCloudUrl] = useState('https://ruslanmv-ollabridge.hf.space')
+  const [cloudUrl, setCloudUrl] = useState('https://api.ollabridge.com')
   const [pairingCode, setPairingCode] = useState('')
   const [expiresAt, setExpiresAt] = useState(0)
   const [verificationUrl, setVerificationUrl] = useState('')
@@ -356,7 +373,7 @@ function PairingSection({ status }: { status: CloudStatus }) {
     onSuccess: (data) => {
       setPairingCode(data.user_code)
       setExpiresAt(Date.now() / 1000 + data.expires_in)
-      setVerificationUrl(data.verification_url)
+      setVerificationUrl(normalizeVerificationUrl(data.verification_url))
       queryClient.invalidateQueries({ queryKey: ['cloudStatus'] })
     },
   })
