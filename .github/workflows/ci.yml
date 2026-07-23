@@ -159,7 +159,16 @@ jobs:
           name: dist-packages
           path: dist/
 
-      - name: ✅ Verify build
+      - name: ✅ Verify the built wheel is importable
+        # The test jobs install with `-e` (editable), which points straight at
+        # src/ and therefore CANNOT catch a broken wheel-packaging config — that
+        # is how 0.1.0 shipped an empty wheel. Install the actual built wheel
+        # (non-editable) into a clean venv and prove the package imports.
         run: |
           ls -lh dist/
-          echo "✓ Build complete"
+          python -m venv /tmp/whl-smoke
+          /tmp/whl-smoke/bin/pip install --upgrade pip
+          /tmp/whl-smoke/bin/pip install "$(ls dist/*.whl)"
+          /tmp/whl-smoke/bin/python -c "import ollabridge, ollabridge.cli.main; print('import OK:', ollabridge.__file__)"
+          /tmp/whl-smoke/bin/ollabridge --help > /dev/null
+          echo "✓ Build complete and wheel verified importable"

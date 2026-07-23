@@ -29,6 +29,19 @@ jobs:
       - name: Build wheel and sdist
         run: python -m build
 
+      # Guard against shipping an empty / mispackaged wheel (this is what broke
+      # 0.1.0: metadata + console script, but no importable `ollabridge`
+      # package). Install the freshly built wheel — NOT editable, NOT from PyPI
+      # — into a clean venv and prove the package imports and the CLI loads.
+      - name: Smoke-test the built wheel
+        run: |
+          python -m venv /tmp/whl-smoke
+          /tmp/whl-smoke/bin/pip install --upgrade pip
+          /tmp/whl-smoke/bin/pip install "$(ls dist/*.whl)"
+          /tmp/whl-smoke/bin/python -c "import ollabridge, ollabridge.cli.main; print('import OK:', ollabridge.__file__)"
+          /tmp/whl-smoke/bin/ollabridge --help > /dev/null
+          echo "✓ wheel is importable and the CLI loads"
+
       - name: Upload artifacts to the GitHub release
         uses: softprops/action-gh-release@v2
         with:
