@@ -14,8 +14,11 @@ mode". They are now distinct (see docs/UX_SOURCES_MODEL.md):
                      (``allow_routing`` here + the policy engine).
 
 Access records live in ``~/.ollabridge/model_access.yaml`` (metadata only —
-never a secret). Safe defaults: a model is visible to **this PC only**;
-LAN, cloud, app access, and routing are all **off** until the user opts in.
+never a secret). Safe defaults: a local Ollama model is visible to **this PC** and
+**OllaBridge Cloud** so paired devices immediately see the models already
+running on this machine. LAN, app allow-lists, and routing are still off until
+the user opts in, and users can disable cloud sharing per model or per local
+runtime.
 
 LAN and workspace visibility are accepted and persisted but not yet
 *enforced* by a serving path — they are forward-looking flags. Cloud
@@ -78,13 +81,27 @@ def load_all(path: Path | None = None) -> dict[str, ModelAccess]:
     return {r.access_key: r for r in records}
 
 
+def _default_access(source_id: str, model_id: str) -> ModelAccess:
+    """Access defaults for a newly discovered model.
+
+    Local Ollama models are shared with the cloud by default so a fresh local
+    install publishes the same model list shown in Local Runtimes. Other source
+    types remain cloud-private until they are explicitly enabled.
+    """
+    return ModelAccess(
+        source_id=source_id,
+        model_id=model_id,
+        visible_cloud=(source_id == "ollama"),
+    )
+
+
 def get(source_id: str, model_id: str, path: Path | None = None) -> ModelAccess:
-    """Access for one model — safe defaults (local-only) when unset."""
+    """Access for one model, including source-specific safe defaults."""
     records = load_all(path)
     existing = records.get(_key(source_id, model_id))
     if existing is not None:
         return existing
-    return ModelAccess(source_id=source_id, model_id=model_id)
+    return _default_access(source_id, model_id)
 
 
 def _save(records: dict[str, ModelAccess], path: Path | None = None) -> Path:
@@ -94,7 +111,7 @@ def _save(records: dict[str, ModelAccess], path: Path | None = None) -> Path:
     payload = AccessFile(access=ordered).model_dump()
     header = (
         "# OllaBridge per-model access (metadata only — never secrets).\n"
-        "# Safe defaults: visible to this PC only; LAN/cloud/app/routing off.\n"
+        "# Defaults: local Ollama visible to this PC/cloud; LAN/app/routing off.\n"
         "# See docs/UX_SOURCES_MODEL.md.\n"
     )
     p.write_text(header + yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
@@ -117,9 +134,7 @@ def set_access(
 ) -> ModelAccess:
     """Update access flags for one model; unspecified flags are unchanged."""
     records = load_all(path)
-    rec = records.get(_key(source_id, model_id)) or ModelAccess(
-        source_id=source_id, model_id=model_id
-    )
+    rec = records.get(_key(source_id, model_id)) or _default_access(source_id, model_id)
     if enabled is not None:
         rec.enabled = enabled
     if visible_local is not None:
@@ -161,8 +176,8 @@ def cloud_manifest(
     records = load_all(path)
     out: list[dict] = []
     for source_id, source_label, model_id in models:
-        rec = records.get(_key(source_id, model_id))
-        if rec is None or not (rec.enabled and rec.visible_cloud):
+        rec = records.get(_key(source_id, model_id)) or _default_access(source_id, model_id)
+        if not (rec.enabled and rec.visible_cloud):
             continue
         out.append(
             {

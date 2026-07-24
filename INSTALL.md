@@ -142,6 +142,110 @@ uv --version
 
 ---
 
+## Troubleshooting broken `pip install ollabridge` environments
+
+The OllaBridge wheel exposes these console commands:
+
+```toml
+ollabridge = "ollabridge.cli.main:app"
+ollabridge-node = "ollabridge.node.cli:app"
+ollabridge-mcp = "ollabridge.mcp.server:main"
+```
+
+If a console command exists but Python cannot import `ollabridge`, or if `pip`
+fails while uninstalling a dependency executable, the Python environment is
+inconsistent. Reinstall in a fresh virtual environment first; it avoids mixing
+system and per-user packages.
+
+### Windows: missing `websockets.exe` during install
+
+A failure like this means the global `websockets` metadata still records a
+script that has already disappeared:
+
+```text
+[WinError 2] The system cannot find the file specified:
+'C:\Python311\Scripts\websockets.exe' -> 'C:\Python311\Scripts\websockets.exe.deleteme'
+```
+
+Use a project virtual environment instead of repairing `C:\Python311`:
+
+```bat
+cd C:\workspace\ollabridge
+py -3.11 -m venv .venv-win
+.venv-win\Scripts\activate
+python -m pip install --upgrade pip
+python -m pip install --no-cache-dir ollabridge
+python -c "import ollabridge; print(ollabridge.__file__)"
+ollabridge --help
+```
+
+For source development from this checkout, install the repository itself:
+
+```bat
+python -m pip install --no-cache-dir -e .
+```
+
+Only repair the global installation if you really need it. Close Python/IDE
+processes, open PowerShell as Administrator, then remove the broken package and
+script metadata before reinstalling:
+
+```powershell
+py -3.11 -m pip uninstall -y websockets
+Remove-Item -Recurse -Force C:\Python311\Lib\site-packages\websockets -ErrorAction SilentlyContinue
+Get-ChildItem C:\Python311\Lib\site-packages -Directory -Filter "websockets-*.dist-info" | Remove-Item -Recurse -Force
+Remove-Item C:\Python311\Scripts\websockets.exe* -Force -ErrorAction SilentlyContinue
+py -3.11 -m pip install --no-cache-dir --force-reinstall ollabridge
+py -3.11 -m pip check
+```
+
+### WSL/Linux: command exists but package import fails
+
+A traceback like this means `~/.local/bin/ollabridge` was left behind or was
+installed by a different Python interpreter than the one now on `PATH`:
+
+```text
+ModuleNotFoundError: No module named 'ollabridge'
+```
+
+Keep Linux environments separate from Windows environments and create the venv
+on the Linux filesystem:
+
+```bash
+mkdir -p ~/.venvs
+python3.11 -m venv ~/.venvs/ollabridge
+source ~/.venvs/ollabridge/bin/activate
+python -m pip install --upgrade pip
+python -m pip install --no-cache-dir ollabridge
+python -c "import sys, ollabridge; print(sys.executable); print(ollabridge.__file__)"
+ollabridge --help
+```
+
+When testing this repository from WSL:
+
+```bash
+source ~/.venvs/ollabridge/bin/activate
+cd /mnt/c/workspace/ollabridge
+python -m pip install --no-cache-dir -e .
+```
+
+Do not reuse a Windows `.venv` from WSL; console scripts and compiled wheels are
+platform-specific.
+
+To clean a broken user install instead of using a venv:
+
+```bash
+python3.11 -m pip uninstall -y ollabridge
+rm -f ~/.local/bin/ollabridge ~/.local/bin/ollabridge-node ~/.local/bin/ollabridge-mcp
+rm -rf ~/.local/lib/python3.11/site-packages/ollabridge
+rm -rf ~/.local/lib/python3.11/site-packages/ollabridge-*.dist-info
+python3.11 -m pip install --user --no-cache-dir --force-reinstall ollabridge
+hash -r
+python3.11 -c "import ollabridge; print(ollabridge.__file__)"
+~/.local/bin/ollabridge --help
+```
+
+---
+
 ## 🔧 Configuration
 
 ### Create `.env` file

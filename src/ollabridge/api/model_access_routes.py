@@ -13,9 +13,13 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+import logging
+
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+
+log = logging.getLogger("ollabridge.model_access")
 
 from ollabridge.core.security import require_api_key
 from ollabridge.core.settings import settings
@@ -78,9 +82,16 @@ async def set_access(
     source_id: str,
     model_id: str,
     body: AccessPatch,
+    request: Request,
     _key: str = Depends(require_api_key),
 ) -> dict[str, Any]:
-    """Update one model's access flags. Unspecified flags are unchanged."""
+    """Update one model's access flags. Unspecified flags are unchanged.
+
+    When a change could affect what the cloud publishes (enabled /
+    visible_cloud / allowed_apps / allow_routing), ask the cloud bridge to
+    re-publish its approved manifest immediately so the OllaBridge Cloud
+    model selector reflects the change within seconds.
+    """
     rec = ma.set_access(
         source_id,
         model_id,
@@ -92,6 +103,24 @@ async def set_access(
         allowed_workspace=body.allowed_workspace,
         allow_routing=body.allow_routing,
     )
+
+    cloud_relevant = any(
+        v is not None
+        for v in (
+            body.enabled,
+            body.visible_cloud,
+            body.allowed_apps,
+            body.allow_routing,
+        )
+    )
+    if cloud_relevant:
+        bridge = getattr(request.app.state, "cloud_bridge", None)
+        if bridge is not None and hasattr(bridge, "refresh_models_now"):
+            try:
+                await bridge.refresh_models_now()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("cloud manifest refresh after access change failed: %s", exc)
+
     return rec.model_dump()
 
 

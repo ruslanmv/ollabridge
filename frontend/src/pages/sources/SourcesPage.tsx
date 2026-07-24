@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, Home, RefreshCw, Save, Server } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Cloud, Home, RefreshCw, Save, Server } from 'lucide-react'
 import { motion } from 'framer-motion'
 import {
   api,
   type GatewaySettings,
   type SourceHealthRequest,
 } from '../../lib/api'
-import { useModels, useSettings } from '../../lib/hooks'
+import { useModelAccess, useModels, useSetModelAccess, useSettings } from '../../lib/hooks'
 import type { Page } from '../../App'
 
 type SourceHealthResult = {
@@ -97,15 +97,18 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
 function Toggle({
   enabled,
   onToggle,
+  disabled = false,
 }: {
   enabled: boolean
   onToggle: () => void
+  disabled?: boolean
 }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className={`relative w-14 h-8 rounded-full transition-colors ${
+      disabled={disabled}
+      className={`relative w-14 h-8 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
         enabled ? 'bg-cyan-500/25' : 'bg-white/10'
       } border border-white/10`}
     >
@@ -130,6 +133,8 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
   const queryClient = useQueryClient()
   const { data: settings, isLoading: settingsLoading } = useSettings()
   const { data: modelsData, isLoading: modelsLoading } = useModels()
+  const modelAccess = useModelAccess()
+  const setModelAccess = useSetModelAccess()
 
   const [form, setForm] = useState<GatewaySettings | null>(null)
   const [saving, setSaving] = useState(false)
@@ -163,6 +168,48 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
     )
   }, [modelsData])
 
+  const ollamaAccessModels = useMemo(() => {
+    return modelAccess.data?.sources.find((src) => src.source_id === 'ollama')?.models ?? []
+  }, [modelAccess.data])
+
+  const sharedOllamaCount = useMemo(() => {
+    return ollamaAccessModels.filter((m) => m.enabled && m.visible_cloud).length
+  }, [ollamaAccessModels])
+
+  const allOllamaShared = ollamaAccessModels.length > 0 && sharedOllamaCount === ollamaAccessModels.length
+
+  async function toggleOllamaSharing() {
+    if (ollamaAccessModels.length === 0) return
+
+    const nextVisible = !allOllamaShared
+    setMessage(null)
+    setError(null)
+
+    try {
+      await Promise.all(
+        ollamaAccessModels.map((model) =>
+          setModelAccess.mutateAsync({
+            sourceId: model.source_id,
+            modelId: model.model_id,
+            body: { visible_cloud: nextVisible },
+          }),
+        ),
+      )
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['modelAccess'] }),
+        queryClient.invalidateQueries({ queryKey: ['cloudModelManifest'] }),
+        queryClient.invalidateQueries({ queryKey: ['cloudStatus'] }),
+      ])
+      setMessage(
+        nextVisible
+          ? 'All discovered Ollama models are now shared with OllaBridge Cloud'
+          : 'Ollama model sharing is disabled for this device',
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update Ollama model sharing')
+    }
+  }
+
   async function saveSettings() {
     if (!form) return
     setSaving(true)
@@ -189,6 +236,9 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
         queryClient.invalidateQueries({ queryKey: ['models'] }),
         queryClient.invalidateQueries({ queryKey: ['runtimes'] }),
         queryClient.invalidateQueries({ queryKey: ['health'] }),
+        queryClient.invalidateQueries({ queryKey: ['modelAccess'] }),
+        queryClient.invalidateQueries({ queryKey: ['cloudModelManifest'] }),
+        queryClient.invalidateQueries({ queryKey: ['cloudStatus'] }),
       ])
 
       setMessage('Runtimes saved successfully')
@@ -252,7 +302,8 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
             <h1 className="text-xl font-bold text-white/90">Local Runtimes</h1>
             <p className="text-sm text-white/40 mt-1">
               Execution backends on this device — Ollama models and HomePilot personas. To
-              connect external accounts or share models, use Sources.
+              connect external accounts, use Sources. Local Ollama models are shared with Cloud
+              by default and can be disabled here.
             </p>
           </div>
           <button
@@ -260,6 +311,9 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
             onClick={() => {
               queryClient.invalidateQueries({ queryKey: ['settings'] })
               queryClient.invalidateQueries({ queryKey: ['models'] })
+              queryClient.invalidateQueries({ queryKey: ['modelAccess'] })
+              queryClient.invalidateQueries({ queryKey: ['cloudModelManifest'] })
+              queryClient.invalidateQueries({ queryKey: ['cloudStatus'] })
             }}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-white/70 bg-white/[0.04] border border-white/10 hover:bg-white/[0.06]"
           >
@@ -303,6 +357,41 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
                   })
                 }
               />
+            </Field>
+
+
+            <Field
+              label="Share Ollama models"
+              description="Publish every discovered Ollama model to OllaBridge Cloud; turn off to share none"
+            >
+              <div className="flex items-center justify-end gap-3">
+                <div className="text-right">
+                  <div className="inline-flex items-center gap-1.5 text-xs text-white/55">
+                    {allOllamaShared ? (
+                      <CheckCircle2 size={13} className="text-emerald-300" />
+                    ) : (
+                      <Cloud size={13} className="text-white/35" />
+                    )}
+                    <span>
+                      {modelAccess.isLoading
+                        ? 'Checking sharing…'
+                        : `${sharedOllamaCount}/${ollamaAccessModels.length} shared`}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-white/30 mt-0.5">
+                    Per-model control remains available in Sources → Models & Access
+                  </div>
+                </div>
+                <Toggle
+                  enabled={allOllamaShared}
+                  onToggle={toggleOllamaSharing}
+                  disabled={
+                    setModelAccess.isPending ||
+                    modelAccess.isLoading ||
+                    ollamaAccessModels.length === 0
+                  }
+                />
+              </div>
             </Field>
 
             <Field
