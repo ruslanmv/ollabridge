@@ -1,6 +1,6 @@
 """Per-model access: the layer that separates a configured source from where
-each model is visible. Safe defaults (local-only); cloud manifest filters by
-visible_cloud + per-app allow-lists.
+each model is visible. Local Ollama defaults to cloud-shared; other
+sources remain private unless visible_cloud is enabled.
 """
 
 from __future__ import annotations
@@ -16,13 +16,19 @@ from ollabridge import model_access as ma
 from ollabridge.core.settings import settings
 
 
-def test_default_access_is_local_only(ollabridge_home):
+def test_default_ollama_access_is_local_and_cloud(ollabridge_home):
     rec = ma.get("ollama", "qwen2.5:0.5b")
     assert rec.visible_local is True
-    assert rec.visible_cloud is False
+    assert rec.visible_cloud is True
     assert rec.visible_lan is False
     assert rec.allowed_apps == []
     assert rec.allow_routing is False
+
+
+def test_default_external_source_access_is_cloud_private(ollabridge_home):
+    rec = ma.get("watsonx", "granite")
+    assert rec.visible_local is True
+    assert rec.visible_cloud is False
 
 
 def test_set_and_persist_access(ollabridge_home):
@@ -63,7 +69,7 @@ def test_cloud_manifest_filters_by_visible_cloud(ollabridge_home):
     ]
     manifest = ma.cloud_manifest(inventory)
     ids = [m["model_id"] for m in manifest]
-    assert ids == ["shared"]  # only the cloud-visible one
+    assert ids == ["shared", "neverset"]  # unset Ollama models share by default
     assert manifest[0]["allowed_apps"] == ["yourfriend.online"]
     assert manifest[0]["requires_device_online"] is True
 
@@ -111,7 +117,7 @@ def test_api_lists_inventory_with_access(client, ollabridge_home):
     assert sources[0]["source_id"] == "ollama"
     models = {m["model_id"]: m for m in sources[0]["models"]}
     assert models["qwen2.5:0.5b"]["visible_local"] is True
-    assert models["qwen2.5:0.5b"]["visible_cloud"] is False
+    assert models["qwen2.5:0.5b"]["visible_cloud"] is True
 
 
 def test_api_set_then_manifest(client, ollabridge_home):
@@ -123,9 +129,10 @@ def test_api_set_then_manifest(client, ollabridge_home):
         )
         assert r.status_code == 200 and r.json()["visible_cloud"] is True
         m = client.get("/admin/model-access/manifest/cloud", headers=AUTH).json()
-    assert m["count"] == 1
-    assert m["models"][0]["model_id"] == "qwen2.5:0.5b"
-    assert m["models"][0]["allowed_apps"] == ["yourfriend.online"]
+    assert m["count"] == 2
+    models = {item["model_id"]: item for item in m["models"]}
+    assert models["qwen2.5:0.5b"]["allowed_apps"] == ["yourfriend.online"]
+    assert models["llama3.1:8b"]["allowed_apps"] == []
 
 
 def test_api_requires_auth(client):

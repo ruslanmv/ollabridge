@@ -296,37 +296,54 @@ class CloudBridgeManager:
 
     # ── Internal Bridge Loop ─────────────────────────────────────────
 
-    async def _discover_models(self) -> list[str]:
-        """Discover models from the local OllaBridge gateway's own /v1/models."""
+    async def _fetch_cloud_manifest(self) -> list[dict[str, Any]]:
+        """Return the admin-approved cloud manifest (enabled AND visible_cloud).
+
+        This is the *only* source of truth for what this device advertises to
+        OllaBridge Cloud. It calls the local gateway's filtered manifest
+        endpoint, which applies the local access model (``enabled``,
+        ``visible_cloud``, ``allowed_apps``, ``allow_routing``).
+
+        FAIL CLOSED: if the manifest cannot be built (gateway starting, error,
+        etc.) we return an empty list rather than falling back to sharing
+        every Ollama model. Sharing all local models to the cloud by accident
+        is a privacy leak, so the safe failure is to publish nothing.
+        """
         from ollabridge.core.settings import settings
 
         gateway_url = f"http://127.0.0.1:{settings.PORT}"
         headers: dict[str, str] = {}
-        keys = settings.API_KEYS.split(",")
-        if keys and keys[0].strip():
-            headers["X-API-Key"] = keys[0].strip()
+        keys = [k.strip() for k in settings.API_KEYS.split(",") if k.strip()]
+        if keys:
+            headers["X-API-Key"] = keys[0]
 
-        models: list[str] = []
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(f"{gateway_url}/v1/models", headers=headers)
-                if resp.status_code == 200:
-                    for m in resp.json().get("data", []):
-                        models.append(m["id"])
+                resp = await client.get(
+                    f"{gateway_url}/admin/model-access/manifest/cloud",
+                    headers=headers,
+                )
+                resp.raise_for_status()
+            manifest = resp.json().get("models", [])
+            # Only keep well-formed entries with a model id.
+            return [item for item in manifest if item.get("model_id")]
         except Exception as exc:
-            log.warning("Model discovery via local gateway failed: %s", exc)
+            log.error(
+                "Unable to build approved cloud model manifest (publishing "
+                "nothing — failing closed): %s",
+                exc,
+            )
+            return []
 
-            # Fallback: try Ollama directly
-            try:
-                async with httpx.AsyncClient(timeout=8.0) as client:
-                    resp = await client.get(f"{self._ollama_url}/api/tags")
-                    if resp.status_code == 200:
-                        for m in resp.json().get("models", []):
-                            models.append(m["name"])
-            except Exception:
-                pass
+    async def _discover_models(self) -> list[str]:
+        """Model ids to advertise to the cloud: admin-approved manifest only.
 
-        return models
+        Never falls back to the full Ollama model list — see
+        :meth:`_fetch_cloud_manifest`. Only models an administrator has
+        explicitly marked ``visible_cloud`` are published.
+        """
+        manifest = await self._fetch_cloud_manifest()
+        return [item["model_id"] for item in manifest]
 
     async def _handle_request(self, ws: Any, msg: dict) -> None:
         """Handle a single chat request from OllaBridge Cloud."""
@@ -500,13 +517,18 @@ class CloudBridgeManager:
                     self.status.connected_since = time.time()
                     self.status.last_error = ""
 
-                    # Discover and register models
-                    models = await self._discover_models()
+                    # Discover and register models (approved manifest only)
+                    manifest = await self._fetch_cloud_manifest()
+                    models = [item["model_id"] for item in manifest]
                     self.status.models_shared = models
 
                     hello = {
                         "type": "hello",
                         "models": models,
+                        # Structured manifest so the cloud can enforce the
+                        # richer local policy (allowed_apps / allow_routing)
+                        # rather than re-deriving it from the flat name list.
+                        "published_models": manifest,
                         "capabilities": ["chat", "models", "media_fetch"],
                         "client_version": "ollabridge-gateway-1.0",
                         "platform": sys.platform,
@@ -514,6 +536,7 @@ class CloudBridgeManager:
                     catalog_manifest = self._build_catalog_manifest()
                     if catalog_manifest is not None:
                         hello["local_catalog"] = catalog_manifest
+                    self._ws = ws
                     await ws.send(json.dumps(hello))
                     log.info(
                         "Registered %d models with cloud: %s",
@@ -569,21 +592,47 @@ class CloudBridgeManager:
         self.status.state = BridgeState.DISCONNECTED
         self.status.connected_since = None
 
+    async def _send_model_update(self, ws: Any) -> list[str]:
+        """Push the current approved manifest to the cloud over *ws*."""
+        manifest = await self._fetch_cloud_manifest()
+        models = [item["model_id"] for item in manifest]
+        self.status.models_shared = models
+        hello = {
+            "type": "hello",
+            "models": models,
+            "published_models": manifest,
+            "capabilities": ["chat", "models", "media_fetch"],
+            "client_version": "ollabridge-gateway-1.0",
+            "platform": sys.platform,
+        }
+        await ws.send(json.dumps(hello))
+        return models
+
+    async def refresh_models_now(self) -> list[str]:
+        """Re-publish the approved manifest immediately.
+
+        Call this right after an administrator changes ``visible_cloud`` (or
+        any access flag) so the cloud selector updates within seconds instead
+        of waiting up to five minutes for the periodic refresh. No-op when the
+        bridge is not currently connected.
+        """
+        ws = self._ws
+        if ws is None or self.status.state != BridgeState.CONNECTED:
+            return self.status.models_shared
+        try:
+            models = await self._send_model_update(ws)
+            log.info("Re-published approved models to cloud: %s", models[:8])
+            return models
+        except Exception as exc:
+            log.warning("refresh_models_now failed: %s", exc)
+            return self.status.models_shared
+
     async def _model_refresh_loop(self, ws: Any, interval: int = 300) -> None:
-        """Periodically re-discover models and update cloud."""
+        """Periodically re-publish the approved manifest to the cloud."""
         while True:
             await asyncio.sleep(interval)
             try:
-                models = await self._discover_models()
-                self.status.models_shared = models
-                hello = {
-                    "type": "hello",
-                    "models": models,
-                    "capabilities": ["chat", "models", "media_fetch"],
-                    "client_version": "ollabridge-gateway-1.0",
-                    "platform": sys.platform,
-                }
-                await ws.send(json.dumps(hello))
+                models = await self._send_model_update(ws)
                 log.info("Refreshed models with cloud: %s", models[:8])
             except Exception:
                 break
