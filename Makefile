@@ -24,7 +24,17 @@
 #      targets and point users at Git Bash/WSL for the rest.
 ifeq ($(OS),Windows_NT)
   VENV_PYTHON := .venv/Scripts/python.exe
-  SYS_PYTHON := python
+  # Prefer the official Windows Python launcher (py.exe) to build the venv.
+  # A bare `python` on PATH is frequently the Git-Bash/MSYS python, whose
+  # base prefix is a POSIX path (/usr/bin); creating a venv with it yields a
+  # broken .venv\Scripts\python.exe that dies with:
+  #     No Python at '"/usr/bin\python.exe'
+  # `py -3` always resolves a genuine Windows Python installation.
+  ifneq ($(strip $(shell where py 2>nul)),)
+    SYS_PYTHON := py -3
+  else
+    SYS_PYTHON := python
+  endif
   SH_ON_PATH := $(strip $(shell where sh 2>nul))
   ifneq ($(SH_ON_PATH),)
     SHELL := sh
@@ -193,7 +203,9 @@ VENV_PY_CMD := .venv\Scripts\python.exe
 .PHONY: install
 install: ## Install OllaBridge (ultra-fast with uv)
 	@echo Installing OllaBridge...
-	@if not defined VIRTUAL_ENV if not exist $(VENV_PY_CMD) (echo Creating virtual environment .venv... && python -m venv .venv)
+	@if not defined VIRTUAL_ENV if exist $(VENV_PY_CMD) ($(VENV_PY_CMD) -c "import sys" >nul 2>&1 || (echo Existing .venv is broken - recreating with $(SYS_PYTHON)... && rmdir /s /q .venv))
+	@if not defined VIRTUAL_ENV if not exist $(VENV_PY_CMD) (echo Creating virtual environment .venv with $(SYS_PYTHON)... && $(SYS_PYTHON) -m venv .venv)
+	@if not defined VIRTUAL_ENV ($(VENV_PY_CMD) -c "import sys" >nul 2>&1 || (echo. && echo ERROR: Could not build a working virtual environment. && echo The Python used resolves to a non-Windows ^(Git Bash / MSYS^) Python, which produces a broken .venv. && echo Install Python from https://www.python.org/downloads/windows/ ^(tick "Add python.exe to PATH"^), open a NEW terminal, delete the .venv folder, then run: make install && exit /b 1))
 	@if defined VIRTUAL_ENV (python -m pip install -e .) else ($(VENV_PY_CMD) -m pip install -e .)
 	@if exist frontend\package.json (where pnpm >nul 2>&1 || where npm >nul 2>&1 || echo Frontend skipped: Node.js not found - install it from https://nodejs.org, then run: make ui-install)
 	@if exist frontend\package.json (where pnpm >nul 2>&1 && (cd frontend && pnpm install) || (where npm >nul 2>&1 && ((cd frontend && npm install --no-audit --no-fund) || echo Frontend dependency install FAILED - see the npm errors above, then run: make ui-install)))
@@ -204,7 +216,9 @@ install: ## Install OllaBridge (ultra-fast with uv)
 .PHONY: install-dev
 install-dev: ## Install with development dependencies (testing, linting)
 	@echo Installing OllaBridge with dev dependencies...
-	@if not defined VIRTUAL_ENV if not exist $(VENV_PY_CMD) (echo Creating virtual environment .venv... && python -m venv .venv)
+	@if not defined VIRTUAL_ENV if exist $(VENV_PY_CMD) ($(VENV_PY_CMD) -c "import sys" >nul 2>&1 || (echo Existing .venv is broken - recreating with $(SYS_PYTHON)... && rmdir /s /q .venv))
+	@if not defined VIRTUAL_ENV if not exist $(VENV_PY_CMD) (echo Creating virtual environment .venv with $(SYS_PYTHON)... && $(SYS_PYTHON) -m venv .venv)
+	@if not defined VIRTUAL_ENV ($(VENV_PY_CMD) -c "import sys" >nul 2>&1 || (echo. && echo ERROR: Could not build a working virtual environment. && echo The Python used resolves to a non-Windows ^(Git Bash / MSYS^) Python, which produces a broken .venv. && echo Install Python from https://www.python.org/downloads/windows/ ^(tick "Add python.exe to PATH"^), open a NEW terminal, delete the .venv folder, then run: make install-dev && exit /b 1))
 	@if defined VIRTUAL_ENV (python -m pip install -e ".[dev]") else ($(VENV_PY_CMD) -m pip install -e ".[dev]")
 	@echo Installation complete.
 	@if not defined VIRTUAL_ENV echo Activate it with: .venv\Scripts\activate

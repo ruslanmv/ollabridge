@@ -44,6 +44,35 @@ log = logging.getLogger("ollabridge.cloud")
 PING_INTERVAL = 25
 RECONNECT_DELAYS = [2, 4, 8, 16, 30]
 
+# WebSocket close codes the cloud relay uses to reject a device token
+# (see ollabridge_cloud/api/relay.py). Receiving one of these means the token
+# is permanently invalid — retrying with it is futile.
+AUTH_REJECTION_CODES = frozenset({4401, 4403})
+
+
+def _is_auth_rejection(exc: BaseException) -> bool:
+    """True when *exc* is a WebSocket close indicating the token was rejected.
+
+    Handles the several shapes the ``websockets`` library uses across
+    versions: a ``rcvd``/``sent`` Close object with ``.code`` (newer), a bare
+    ``.code`` attribute (older), or — as a last resort — the code appearing in
+    the exception text (e.g. "received 4401 (private use) Invalid token").
+    """
+    codes: set[int] = set()
+    for attr in ("rcvd", "sent"):
+        frame = getattr(exc, attr, None)
+        code = getattr(frame, "code", None)
+        if isinstance(code, int):
+            codes.add(code)
+    direct = getattr(exc, "code", None)
+    if isinstance(direct, int):
+        codes.add(direct)
+    if codes & AUTH_REJECTION_CODES:
+        return True
+    # Fallback: match the close code in the message when attributes are absent.
+    text = str(exc)
+    return any(str(code) in text for code in AUTH_REJECTION_CODES)
+
 
 class BridgeState(str, Enum):
     DISCONNECTED = "disconnected"
@@ -569,6 +598,24 @@ class CloudBridgeManager:
             except asyncio.CancelledError:
                 break
             except Exception as exc:
+                # A 4401/4403 close means the cloud rejected our device token:
+                # the device was unlinked or its access was revoked in
+                # OllaBridge Cloud (or the token is stale). Retrying can never
+                # succeed with the same token, so stop the reconnect loop and
+                # surface an actionable status instead of spamming the log.
+                if _is_auth_rejection(exc):
+                    log.error(
+                        "Cloud rejected the device token — this device was "
+                        "unlinked or its access revoked in OllaBridge Cloud. "
+                        "Stopping reconnect; re-pair to reconnect.",
+                    )
+                    self.status.state = BridgeState.ERROR
+                    self.status.last_error = (
+                        "Device unlinked from OllaBridge Cloud (access revoked). "
+                        "Re-pair from the dashboard to reconnect."
+                    )
+                    self._ws = None
+                    break
                 log.warning("Cloud bridge error: %s", exc)
                 self.status.last_error = str(exc)
 
