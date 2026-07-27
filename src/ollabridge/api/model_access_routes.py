@@ -50,16 +50,50 @@ def _local_ollama_models() -> list[str]:
     return []
 
 
-def _inventory() -> list[tuple[str, str, str]]:
-    """(source_id, source_label, model_id) across local Ollama + configured sources.
+def _homepilot_models() -> list[str]:
+    """HomePilot persona/personality model ids, when the HomePilot source is
+    enabled. Sync + best-effort, mirroring ``_local_ollama_models`` so the
+    manifest pipeline can see personas (previously only Ollama was enumerated,
+    so personas were never offered to the cloud manifest at all)."""
+    from ollabridge.core import runtime_settings as rts
 
-    Concrete model lists are only available for local Ollama today; external
-    sources expose their models after a catalog sync (out of scope here), so
-    they appear as a source row the UI can drill into.
+    if not rts.get("homepilot_enabled", getattr(settings, "HOMEPILOT_ENABLED", False)):
+        return []
+    base = (rts.get("homepilot_base_url", settings.HOMEPILOT_BASE_URL) or "").rstrip("/")
+    if not base:
+        return []
+    api_key = rts.get("homepilot_api_key", settings.HOMEPILOT_API_KEY) or ""
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+        headers["X-API-Key"] = api_key
+    try:
+        r = httpx.get(f"{base}/v1/models", headers=headers, timeout=3)
+        if r.status_code == 200:
+            data = r.json()
+            return [
+                str(m.get("id"))
+                for m in data.get("data", [])
+                if isinstance(m, dict) and m.get("id")
+            ]
+    except Exception:
+        pass
+    return []
+
+
+def _inventory() -> list[tuple[str, str, str]]:
+    """(source_id, source_label, model_id) across local Ollama + HomePilot.
+
+    Concrete model lists are available for local Ollama and, when enabled, the
+    HomePilot persona source. Other external sources expose their models after a
+    catalog sync (out of scope here), so they appear as a source row the UI can
+    drill into.
     """
     inv: list[tuple[str, str, str]] = []
     for mid in _local_ollama_models():
         inv.append(("ollama", "Ollama on this PC", mid))
+    for mid in _homepilot_models():
+        inv.append(("homepilot", "HomePilot personas", mid))
     return inv
 
 

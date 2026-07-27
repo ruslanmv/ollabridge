@@ -25,6 +25,22 @@ _DEFAULTS: dict[str, Any] = {
     "homepilot_node_tags": settings.HOMEPILOT_NODE_TAGS,
 }
 
+# Canonical auth modes, ordered from most restrictive to most permissive. Each
+# is a cumulative superset of the previous (see core.security.require_api_key):
+#   required    – API keys only
+#   local-trust – API keys + loopback bypass
+#   pairing     – API keys + loopback bypass + paired-device tokens
+_AUTH_MODES = ("required", "local-trust", "pairing")
+
+# Auth mode is deliberately NOT part of _DEFAULTS: the launcher (CLI) sets the
+# live ``settings.AUTH_MODE`` at runtime, so baking it into the persisted store
+# would freeze it to the import-time value and shadow the launcher's choice
+# (this broke local-trust: every admin call 401'd). The UI override lives under
+# a dedicated key that ONLY set_auth_mode() writes, so an unrelated settings
+# save can never touch it, and effective_auth_mode() falls back to the live
+# setting whenever no explicit override is present.
+_AUTH_OVERRIDE_KEY = "auth_mode_override"
+
 _cache: dict[str, Any] | None = None
 
 
@@ -67,3 +83,37 @@ def update(patch: dict[str, Any]) -> dict[str, Any]:
     current.update(patch)
     _save(current)
     return dict(current)
+
+
+def effective_auth_mode() -> str:
+    """The active auth mode: an explicit UI override if the user set one, else
+    the LIVE ``settings.AUTH_MODE`` (what the launcher/env selected).
+
+    Always one of ``required`` | ``local-trust`` | ``pairing``; an unknown value
+    falls back to ``required`` so a bad write can never disable authentication
+    silently. Reads only the dedicated override key, so a legacy store that
+    happens to contain a stray ``auth_mode`` field is ignored.
+    """
+    override = _load().get(_AUTH_OVERRIDE_KEY)
+    raw = override if override else (settings.AUTH_MODE or "required")
+    mode = str(raw).lower().strip()
+    return mode if mode in _AUTH_MODES else "required"
+
+
+def set_auth_mode(mode: str) -> str:
+    """Persist an explicit UI auth-mode override. Returns the normalized mode.
+
+    Raises ``ValueError`` for an unknown mode so callers can 422. Passing an
+    empty string clears the override, restoring the live ``settings.AUTH_MODE``.
+    """
+    m = (mode or "").lower().strip()
+    if m == "":
+        current = _load()
+        if _AUTH_OVERRIDE_KEY in current:
+            current.pop(_AUTH_OVERRIDE_KEY, None)
+            _save(current)
+        return effective_auth_mode()
+    if m not in _AUTH_MODES:
+        raise ValueError(f"invalid auth mode: {mode!r}")
+    update({_AUTH_OVERRIDE_KEY: m})
+    return m

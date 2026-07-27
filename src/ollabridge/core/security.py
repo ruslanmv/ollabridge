@@ -22,6 +22,19 @@ def _keys() -> set[str]:
     return {k.strip() for k in (settings.API_KEYS or "").split(",") if k.strip()}
 
 
+def _effective_auth_mode() -> str:
+    """Resolve the active auth mode from the runtime store (UI override),
+    falling back to the ``AUTH_MODE`` env default. Reading it per-request is
+    what lets the UI switch modes live without a restart. Import is lazy and
+    guarded so security never hard-depends on the store being importable."""
+    try:
+        from ollabridge.core import runtime_settings as rts
+
+        return rts.effective_auth_mode()
+    except Exception:
+        return (settings.AUTH_MODE or "required").lower().strip()
+
+
 def generate_pairing_code() -> str:
     """Generate a short human-readable pairing code like '421-087'."""
     left = random.randint(100, 999)
@@ -56,7 +69,7 @@ def require_api_key(
       local-trust – skip auth for loopback clients; require key for remote
       pairing     – accept paired-device tokens OR static keys
     """
-    mode = (settings.AUTH_MODE or "required").lower().strip()
+    mode = _effective_auth_mode()
 
     # ── local-trust: loopback clients bypass auth ──────────────────────
     if mode == "local-trust" and _is_loopback(request):

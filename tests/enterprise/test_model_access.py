@@ -25,6 +25,17 @@ def test_default_ollama_access_is_local_and_cloud(ollabridge_home):
     assert rec.allow_routing is False
 
 
+def test_default_homepilot_persona_access_is_cloud_visible(ollabridge_home):
+    # HomePilot persona/personality models must reach the cloud by default so
+    # they show up in external apps (e.g. yourfriend.online) once the HomePilot
+    # source is enabled — previously they defaulted cloud-private and stayed
+    # invisible while Ollama models were shared.
+    for model_id in ("persona:girlfriend--d1ee423b", "personality:assistant"):
+        rec = ma.get("homepilot", model_id)
+        assert rec.visible_local is True
+        assert rec.visible_cloud is True
+
+
 def test_default_external_source_access_is_cloud_private(ollabridge_home):
     rec = ma.get("watsonx", "granite")
     assert rec.visible_local is True

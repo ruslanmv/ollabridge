@@ -566,7 +566,10 @@ def create_app() -> FastAPI:
 
     app.include_router(media_routes)
 
-    if (settings.AUTH_MODE or "").lower().strip() == "pairing":
+    # Create the PairingManager at startup when pairing is the effective mode —
+    # from the env default OR a persisted UI override — so paired tokens
+    # validate immediately after a restart.
+    if rts.effective_auth_mode() == "pairing":
         from ollabridge.core.pairing import PairingManager, PairingCode
 
         mgr = PairingManager()
@@ -602,7 +605,7 @@ def create_app() -> FastAPI:
             "status": "ok" if ok else "degraded",
             "mode": settings.MODE,
             "default_model": cfg.get("default_model", settings.DEFAULT_MODEL),
-            "auth_mode": settings.AUTH_MODE,
+            "auth_mode": rts.effective_auth_mode(),
             "detail": detail,
             "homepilot_enabled": cfg.get("homepilot_enabled", False),
             "local_runtime_enabled": cfg.get("local_runtime_enabled", True),
@@ -1095,7 +1098,7 @@ def create_app() -> FastAPI:
             "api_key": api_key,
             "api_key_masked": api_key_masked,
             "default_model": cfg.get("default_model", settings.DEFAULT_MODEL),
-            "auth_mode": settings.AUTH_MODE,
+            "auth_mode": rts.effective_auth_mode(),
             "models": model_names[:20],
         }
 
@@ -1145,6 +1148,70 @@ def create_app() -> FastAPI:
         new_cfg = rts.update(updates)
         await _reconfigure_nodes(app, new_cfg)
         return {"ok": True, "settings": new_cfg}
+
+    @app.put("/admin/auth-mode")
+    async def admin_set_auth_mode(
+        request: Request, _key: str = Depends(require_api_key)
+    ) -> dict[str, Any]:
+        """Switch the authentication mode live — no restart required.
+
+        Accepts either an explicit ``{"mode": "required|local-trust|pairing"}``
+        or the UI's composable toggles ``{"local_trust": bool, "pairing": bool}``
+        layered on the always-on API-key baseline. The choice is persisted in the
+        runtime store and read per-request by ``require_api_key``.
+        """
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Expected JSON body")
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=422, detail="Body must be a JSON object")
+
+        mode = str(payload.get("mode") or payload.get("auth_mode") or "").lower().strip()
+        if not mode:
+            # Compose from toggles. Pairing is a superset that already trusts
+            # loopback, so it wins when both are on.
+            pairing_on = bool(payload.get("pairing"))
+            local_trust_on = bool(payload.get("local_trust"))
+            mode = "pairing" if pairing_on else ("local-trust" if local_trust_on else "required")
+        if mode not in {"required", "local-trust", "pairing"}:
+            raise HTTPException(
+                status_code=422,
+                detail="mode must be one of: required, local-trust, pairing",
+            )
+
+        # Lockout guard: the bundled UI authenticates via loopback trust and
+        # sends no API key. If this request itself was authorised by local-trust
+        # (``__local_trust__``) and the new mode is ``required``, applying it
+        # would 401 the very next admin call and lock the user out of the UI.
+        if _key == "__local_trust__" and mode == "required":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Disabling Local Trust from a keyless local session would lock "
+                    "this UI out. Configure an API key in your client first, or keep "
+                    "Local Trust or Device Pairing enabled."
+                ),
+            )
+
+        rts.set_auth_mode(mode)
+
+        # When enabling pairing, make sure a PairingManager exists so paired
+        # tokens validate immediately (it reloads persisted devices from disk).
+        if mode == "pairing" and getattr(app.state, "pairing_manager", None) is None:
+            from ollabridge.core.pairing import PairingManager
+
+            mgr = PairingManager()
+            app.state.pairing_manager = mgr
+            set_pairing_manager(mgr)
+
+        log.info("Auth mode changed to '%s' via admin API (no restart)", mode)
+        return {
+            "ok": True,
+            "auth_mode": mode,
+            "local_trust": mode in ("local-trust", "pairing"),
+            "pairing": mode == "pairing",
+        }
 
     @app.post("/admin/source-health")
     async def admin_source_health(

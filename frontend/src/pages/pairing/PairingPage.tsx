@@ -122,30 +122,39 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
 
 // ── Auth Mode Status ────────────────────────────────────────────────────
 
-function AuthModeStatus({ authMode }: { authMode: string }) {
-  const modes = [
-    {
-      value: 'required',
-      label: 'API Key Required',
-      desc: 'Static API keys authenticate all requests',
-      color: '#f59e0b',
-      icon: Key,
+function AuthModeStatus({
+  authMode,
+  localTrust,
+  pairing,
+}: {
+  authMode: string
+  localTrust: boolean
+  pairing: boolean
+}) {
+  const queryClient = useQueryClient()
+  const [error, setError] = useState<string | null>(null)
+
+  const mutation = useMutation({
+    mutationFn: (body: Parameters<typeof api.setAuthMode>[0]) => api.setAuthMode(body),
+    onMutate: () => setError(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pairInfo'] })
+      queryClient.invalidateQueries({ queryKey: ['health'] })
     },
-    {
-      value: 'local-trust',
-      label: 'Local Trust',
-      desc: 'Skip auth for localhost connections',
-      color: '#14b8a6',
-      icon: Shield,
+    onError: (e: unknown) => {
+      // The backend 409s to stop a keyless local session from locking itself
+      // out by disabling Local Trust. Surface that message verbatim.
+      const msg = e instanceof Error ? e.message : String(e)
+      setError(msg.replace(/^PUT [^:]+:\s*\d+\s*—\s*/, ''))
     },
-    {
-      value: 'pairing',
-      label: 'Device Pairing',
-      desc: 'Pair devices with short-lived codes for bearer tokens',
-      color: '#8b5cf6',
-      icon: Link2,
-    },
-  ]
+  })
+
+  // Compose the next mode from the desired toggle states, then apply it. Pairing
+  // is a superset that already trusts loopback, so it wins when both are on.
+  const apply = (next: { localTrust: boolean; pairing: boolean }) =>
+    mutation.mutate({ local_trust: next.localTrust, pairing: next.pairing })
+
+  const busy = mutation.isPending
 
   return (
     <div className="space-y-3">
@@ -153,51 +162,115 @@ function AuthModeStatus({ authMode }: { authMode: string }) {
         Authentication Mode
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {modes.map((mode) => {
-          const active = authMode === mode.value
-          const ModeIcon = mode.icon
-          return (
-            <div
-              key={mode.value}
-              className="px-4 py-3 rounded-xl transition-colors"
-              style={{
-                background: active
-                  ? `linear-gradient(135deg, ${mode.color}12, ${mode.color}06)`
-                  : 'rgba(255,255,255,0.02)',
-                border: active
-                  ? `1px solid ${mode.color}40`
-                  : '1px solid rgba(255,255,255,0.06)',
-              }}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <ModeIcon size={14} style={{ color: active ? mode.color : 'rgba(255,255,255,0.3)' }} />
-                <span
-                  className="text-sm font-medium"
-                  style={{ color: active ? mode.color : 'rgba(255,255,255,0.4)' }}
-                >
-                  {mode.label}
-                </span>
-                {active && (
-                  <span
-                    className="ml-auto px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
-                    style={{
-                      background: `${mode.color}20`,
-                      color: mode.color,
-                    }}
-                  >
-                    Active
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-white/30">{mode.desc}</p>
-            </div>
-          )
-        })}
+        {/* Baseline — always on, not switchable (you can't leave a network
+            service with no auth at all). */}
+        <AuthCard
+          icon={Key}
+          color="#f59e0b"
+          label="API Key Required"
+          desc="Static API keys authenticate all requests"
+          active
+          locked
+          badge="Baseline"
+        />
+        {/* Local Trust — instant-apply toggle. */}
+        <AuthCard
+          icon={Shield}
+          color="#14b8a6"
+          label="Local Trust"
+          desc="Skip auth for localhost connections"
+          active={localTrust}
+          disabled={busy}
+          onToggle={() => apply({ localTrust: !localTrust, pairing })}
+        />
+        {/* Device Pairing — instant-apply toggle. */}
+        <AuthCard
+          icon={Link2}
+          color="#8b5cf6"
+          label="Device Pairing"
+          desc="Pair devices with short-lived codes for bearer tokens"
+          active={pairing}
+          disabled={busy}
+          onToggle={() => apply({ localTrust: localTrust || !pairing, pairing: !pairing })}
+        />
       </div>
+
+      {error && (
+        <div className="px-3 py-2 rounded-lg text-[11px]" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#fca5a5' }}>
+          {error}
+        </div>
+      )}
+
       <p className="text-[11px] text-white/25">
-        Auth mode is set via AUTH_MODE environment variable (restart required to change).
+        Effective mode: <span className="text-white/40 font-medium">{authMode}</span>. Changes apply
+        instantly — no restart required. The API-key baseline always stays on; add Local Trust for
+        localhost convenience and Device Pairing to onboard remote devices.
       </p>
     </div>
+  )
+}
+
+// A single auth-mode card: a locked baseline pill, or a clickable toggle.
+function AuthCard({
+  icon: ModeIcon,
+  color,
+  label,
+  desc,
+  active,
+  locked = false,
+  disabled = false,
+  badge,
+  onToggle,
+}: {
+  icon: typeof Key
+  color: string
+  label: string
+  desc: string
+  active: boolean
+  locked?: boolean
+  disabled?: boolean
+  badge?: string
+  onToggle?: () => void
+}) {
+  const interactive = !locked && !!onToggle
+  return (
+    <button
+      type="button"
+      onClick={interactive ? onToggle : undefined}
+      disabled={locked || disabled}
+      aria-pressed={interactive ? active : undefined}
+      className="px-4 py-3 rounded-xl transition-colors text-left w-full disabled:opacity-100"
+      style={{
+        cursor: interactive ? 'pointer' : 'default',
+        background: active
+          ? `linear-gradient(135deg, ${color}12, ${color}06)`
+          : 'rgba(255,255,255,0.02)',
+        border: active ? `1px solid ${color}40` : '1px solid rgba(255,255,255,0.06)',
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <ModeIcon size={14} style={{ color: active ? color : 'rgba(255,255,255,0.3)' }} />
+        <span
+          className="text-sm font-medium"
+          style={{ color: active ? color : 'rgba(255,255,255,0.4)' }}
+        >
+          {label}
+        </span>
+        {active && (
+          <span
+            className="ml-auto px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
+            style={{ background: `${color}20`, color }}
+          >
+            {badge ?? 'Active'}
+          </span>
+        )}
+        {!active && interactive && (
+          <span className="ml-auto text-[9px] font-medium uppercase text-white/25">Off</span>
+        )}
+      </div>
+      <p className="text-[11px] text-white/30">{desc}</p>
+    </button>
   )
 }
 
@@ -617,6 +690,10 @@ function ClientConfigCard() {
 export function PairingPage() {
   const { data: pairInfo } = usePairInfo()
   const authMode = pairInfo?.auth_mode ?? 'required'
+  // Derive toggle states from the mode when the explicit flags aren't present
+  // (older backend), so the UI stays correct either way.
+  const localTrust = pairInfo?.local_trust ?? (authMode === 'local-trust' || authMode === 'pairing')
+  const pairingOn = pairInfo?.pairing ?? (authMode === 'pairing')
 
   return (
     <div className="h-full overflow-y-auto">
@@ -645,7 +722,7 @@ export function PairingPage() {
               color: authMode === 'pairing' ? '#8b5cf6' : authMode === 'local-trust' ? '#14b8a6' : '#f59e0b',
             }}
           />
-          <AuthModeStatus authMode={authMode} />
+          <AuthModeStatus authMode={authMode} localTrust={localTrust} pairing={pairingOn} />
         </GlassCard>
 
         {/* Generate Pairing Code (admin tool) */}
