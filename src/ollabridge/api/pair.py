@@ -59,12 +59,20 @@ def _format_code(code: str) -> str:
 @router.get("/info")
 async def pair_info(request: Request):
     """Public endpoint: check pairing status and auth mode."""
-    auth_mode = (settings.AUTH_MODE or "required").lower().strip()
+    # Report the effective (runtime-overridable) mode so the UI reflects live
+    # changes without a restart; fall back to the env default.
+    from ollabridge.core import runtime_settings as rts
+
+    auth_mode = rts.effective_auth_mode()
     mgr = getattr(request.app.state, "pairing_manager", None)
 
     result: dict = {
         "auth_mode": auth_mode,
         "pairing_enabled": auth_mode == "pairing",
+        # Composable flags for the UI toggles, layered on the always-on API-key
+        # baseline. Each mode is a cumulative superset of the previous.
+        "local_trust": auth_mode in ("local-trust", "pairing"),
+        "pairing": auth_mode == "pairing",
         "code_length": settings.PAIRING_CODE_LENGTH,
         "code_ttl": settings.PAIRING_CODE_TTL_SECONDS,
     }

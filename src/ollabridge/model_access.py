@@ -84,14 +84,18 @@ def load_all(path: Path | None = None) -> dict[str, ModelAccess]:
 def _default_access(source_id: str, model_id: str) -> ModelAccess:
     """Access defaults for a newly discovered model.
 
-    Local Ollama models are shared with the cloud by default so a fresh local
-    install publishes the same model list shown in Local Runtimes. Other source
-    types remain cloud-private until they are explicitly enabled.
+    Local Ollama models AND HomePilot persona/personality models are shared with
+    the cloud by default, so a fresh local install publishes the same list shown
+    in Local Runtimes — the whole point of enabling the HomePilot source is to
+    expose those agents to paired devices and external apps (personas are
+    further gated by HomePilot's own "Publish as API Model" step before they are
+    even discovered here). Other source types remain cloud-private until they
+    are explicitly enabled. Users can still disable cloud sharing per model.
     """
     return ModelAccess(
         source_id=source_id,
         model_id=model_id,
-        visible_cloud=(source_id == "ollama"),
+        visible_cloud=(source_id in ("ollama", "homepilot")),
     )
 
 

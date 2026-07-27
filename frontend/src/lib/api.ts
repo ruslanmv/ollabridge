@@ -113,7 +113,25 @@ export type PairInfoResponse = {
   code_display?: string
   auth_mode?: string
   pairing_enabled?: boolean
+  // Composable flags layered on the always-on API-key baseline. Reflect the
+  // live (runtime-overridable) mode so the UI toggles show real state.
+  local_trust?: boolean
+  pairing?: boolean
   device_count?: number
+}
+
+export type AuthModeUpdate = {
+  /** Explicit mode, or omit and pass the composable toggles below. */
+  mode?: 'required' | 'local-trust' | 'pairing'
+  local_trust?: boolean
+  pairing?: boolean
+}
+
+export type AuthModeResponse = {
+  ok: boolean
+  auth_mode: string
+  local_trust: boolean
+  pairing: boolean
 }
 
 export type PairGenerateResponse = {
@@ -256,6 +274,12 @@ export const api = {
   recent: (limit = 20) => request<RecentResponse>(`/admin/recent?limit=${limit}`),
   flowMetrics: () => request<FlowMetricsResponse>('/admin/flow-metrics'),
   pairInfo: () => request<PairInfoResponse>('/pair/info'),
+  setAuthMode: (body: AuthModeUpdate) =>
+    request<AuthModeResponse>('/admin/auth-mode', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
   pairGenerate: () => request<PairGenerateResponse>('/pair/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
   pairExchange: (code: string, label: string) =>
     request<PairExchangeResponse>('/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, label }) }),

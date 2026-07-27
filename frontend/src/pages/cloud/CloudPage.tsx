@@ -336,6 +336,20 @@ function normalizeVerificationUrl(url: string): string {
   }
 }
 
+// Prefill the pairing code into the Cloud approval URL so the user lands on a
+// ready-to-approve page instead of retyping the code. The Cloud `/link` route
+// accepts a `code` query parameter; a malformed URL falls through unchanged.
+function withPairingCode(url: string, code: string): string {
+  if (!code) return url
+  try {
+    const u = new URL(url)
+    u.searchParams.set('code', code)
+    return u.toString()
+  } catch {
+    return url
+  }
+}
+
 function PairingSection({ status }: { status: CloudStatus }) {
   const queryClient = useQueryClient()
   const [cloudUrl, setCloudUrl] = useState('https://api.ollabridge.com')
@@ -492,13 +506,13 @@ function PairingSection({ status }: { status: CloudStatus }) {
 
               {verificationUrl && (
                 <a
-                  href={verificationUrl}
+                  href={withPairingCode(verificationUrl, pairingCode)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs text-glow-cyan/70 hover:text-glow-cyan transition-colors"
                 >
                   <Globe size={12} />
-                  Open Cloud Dashboard to confirm
+                  Approve this computer
                   <ArrowRight size={10} />
                 </a>
               )}
