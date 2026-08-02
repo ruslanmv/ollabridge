@@ -27,6 +27,7 @@ from ollabridge.addons.providers.adapters.openrouter import OpenRouterAdapter
 from ollabridge.addons.providers.adapters.huggingface import HuggingFaceAdapter
 from ollabridge.addons.providers.adapters.ollama_bridge import OllamaBridgeAdapter
 from ollabridge.addons.providers.adapters.openai_compatible import OpenAICompatibleAdapter
+from ollabridge.addons.providers.adapters.open_webui import OpenWebUIAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ _ADAPTER_MAP: dict[str, type[BaseProviderAdapter]] = {
     "huggingface": HuggingFaceAdapter,
     "ollama_bridge": OllamaBridgeAdapter,
     "openai_compatible": OpenAICompatibleAdapter,
+    "open_webui": OpenWebUIAdapter,
 }
 
 
@@ -66,6 +68,26 @@ def _create_adapter(config: ProviderConfig) -> BaseProviderAdapter | None:
             "provider will be registered but may fail requests",
             config.id,
             config.credential_env,
+        )
+
+    # The Open WebUI adapter takes extra, per-source endpoint/behavior options
+    # from the provider record; every other adapter keeps its 2-arg construction.
+    if config.kind == "open_webui":
+        return OpenWebUIAdapter(
+            base_url=config.base_url,
+            api_key=api_key,
+            models_path=config.models_path,
+            chat_path=config.chat_path,
+            fallback_models_path=config.fallback_models_path or "/models",
+            fallback_chat_path=config.fallback_chat_path or "/chat/completions",
+            model_prefix=config.model_prefix or "openwebui",
+            auth_header=config.auth_header,
+            fail_closed=config.fail_closed,
+            auth_strategy=config.auth_strategy,
+            token_url=config.token_url,
+            client_id=config.client_id,
+            oauth_scope=config.oauth_scope,
+            oauth_audience=config.oauth_audience,
         )
 
     return adapter_cls(base_url=config.base_url, api_key=api_key)

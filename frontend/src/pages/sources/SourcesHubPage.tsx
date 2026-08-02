@@ -19,6 +19,7 @@ import { GlassCard } from './ui'
 import { ConfiguredSourceCard, AvailableSourceCard } from './SourceCard'
 import { SourceModal, type ModalTarget } from './SourceModal'
 import { RotateModal } from './RotateModal'
+import { AddSourceDialog } from './AddSourceDialog'
 import { ModelsAccessTab } from './ModelsAccessTab'
 
 type Tab = 'sources' | 'models' | 'routing' | 'usage' | 'cloud'
@@ -70,6 +71,7 @@ function SourcesTab({
   onRotate: (s: SourceObject) => void
 }) {
   const { data, isLoading, isError, error } = useSources()
+  const [chooserOpen, setChooserOpen] = useState(false)
 
   const configured = data?.configured ?? []
   const available = data?.available ?? []
@@ -96,16 +98,24 @@ function SourcesTab({
           )}
         </div>
         <button
-          onClick={() => {
-            // Prefer adding the first available; otherwise nudge nothing.
-            if (available[0]) onAdd(available[0])
-          }}
+          onClick={() => setChooserOpen(true)}
           disabled={available.length === 0}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-glow-cyan/20 border border-glow-cyan/40 text-glow-cyan hover:bg-glow-cyan/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Plus size={15} /> Add Source
         </button>
       </div>
+
+      {chooserOpen && (
+        <AddSourceDialog
+          available={available}
+          onClose={() => setChooserOpen(false)}
+          onPick={(s) => {
+            setChooserOpen(false)
+            onAdd(s)
+          }}
+        />
+      )}
 
       {isError && (
         <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm">
