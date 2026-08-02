@@ -58,3 +58,4 @@ frontend/dist/
 *.db-wal
 .env
 /backup
+.venv/

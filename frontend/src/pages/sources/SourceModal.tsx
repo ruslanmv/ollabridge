@@ -11,6 +11,8 @@ import {
   HardDrive,
   CloudUpload,
   ShieldCheck,
+  Info,
+  Globe,
 } from 'lucide-react'
 import type {
   AvailableSource,
@@ -22,8 +24,10 @@ import type {
 } from '../../lib/api'
 import { useUpsertSource } from '../../lib/hooks'
 import { useToast } from './toast'
+import { sourceUiProfile } from './sourceUiProfiles'
 
-/** A source needs an explicit base_url before it can be configured. */
+/** A source needs an explicit base_url before it can be configured. Some sources
+ * declare the same requirement through their UI profile (requiresBaseUrl). */
 const BASE_URL_REQUIRED = new Set(['azure-openai', 'custom'])
 
 type StorageOption = {
@@ -102,11 +106,24 @@ export function SourceModal({
   const name = target.source.name
   const label = target.source.label
   const isEdit = target.mode === 'edit'
-  const baseUrlRequired = BASE_URL_REQUIRED.has(name)
+  const profile = sourceUiProfile(name)
+  const baseUrlRequired = BASE_URL_REQUIRED.has(name) || !!profile.requiresBaseUrl
 
   const [form, setForm] = useState<FormState>(() => initialState(target))
+
+  // Warn on an unencrypted connection to a non-local host.
+  const isRemoteHttp = useMemo(() => {
+    const u = form.base_url.trim().toLowerCase()
+    return (
+      u.startsWith('http://') &&
+      !u.startsWith('http://localhost') &&
+      !u.startsWith('http://127.0.0.1') &&
+      !u.startsWith('http://[::1]')
+    )
+  }, [form.base_url])
   const [showKey, setShowKey] = useState(false)
   const [testResult, setTestResult] = useState<SourceUpsertResponse['test'] | null>(null)
+  const [discovery, setDiscovery] = useState<SourceUpsertResponse['discovery'] | null>(null)
   const [validationError, setValidationError] = useState<string | null>(null)
 
   const upsert = useUpsertSource()
@@ -188,6 +205,7 @@ export function SourceModal({
       setForm((f) => ({ ...f, api_key: '' })) // never retain the key after save
       setShowKey(false)
       setTestResult(res.test)
+      setDiscovery(res.discovery ?? null)
       if (res.test) {
         if (res.test.ok) toast.success(`${label} connected — ${res.test.detail}`)
         else toast.error(`${label}: ${res.test.detail}`)
@@ -303,16 +321,37 @@ export function SourceModal({
 
             {/* Base URL */}
             <div>
-              {fieldLabel(baseUrlRequired ? 'Base URL (required)' : 'Base URL')}
+              {fieldLabel(baseUrlRequired ? 'Server URL (required)' : 'Base URL')}
               <input
                 type="text"
                 value={form.base_url}
                 onChange={(e) => set('base_url', e.target.value)}
-                placeholder="https://api.example.com/v1"
+                placeholder={profile.baseUrlPlaceholder ?? 'https://api.example.com/v1'}
                 spellCheck={false}
                 className="w-full bg-navy-900/60 border border-white/10 rounded-lg px-3 py-2.5 text-sm font-mono text-white placeholder:text-white/20 focus:outline-none focus:border-glow-cyan/40 transition-colors"
               />
+              {isRemoteHttp && (
+                <p className="text-[11px] text-amber-300/80 mt-1.5">
+                  This remote connection is not encrypted. Use HTTPS.
+                </p>
+              )}
             </div>
+
+            {/* Setup hint + remote-source notice (from the source UI profile) */}
+            {profile.setupHint && (
+              <p className="text-[11px] text-white/40 flex items-start gap-1.5">
+                <Info size={12} className="shrink-0 mt-0.5" /> {profile.setupHint}
+              </p>
+            )}
+            {profile.showRemoteNotice && (
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-200/90 text-[11px]">
+                <Globe size={13} className="shrink-0 mt-0.5" />
+                <span>
+                  <span className="font-semibold">Remote AI source.</span> Prompts sent through this
+                  source are processed by the configured remote server.
+                </span>
+              </div>
+            )}
 
             {/* Default model */}
             <div>
@@ -437,6 +476,27 @@ export function SourceModal({
                 </span>
               </div>
             )}
+
+            {/* Discovery summary — real counts of the models this key can access. */}
+            {discovery && (
+              <div className="px-3 py-2.5 rounded-lg bg-glow-cyan/5 border border-glow-cyan/20 text-xs text-white/70">
+                <div className="font-semibold text-white/90">
+                  {discovery.count} accessible model{discovery.count === 1 ? '' : 's'} discovered
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-white/50">
+                  {Object.entries(discovery.connection_types).map(([k, n]) => (
+                    <span key={k}>{n} {k}</span>
+                  ))}
+                  <span>{discovery.persona_compatible} persona-compatible</span>
+                </div>
+                {discovery.count === 0 && (
+                  <p className="mt-1.5 text-white/45">
+                    Connected, but no models are visible to this key’s user. Confirm the user has
+                    access to at least one model.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Footer */}
@@ -457,7 +517,7 @@ export function SourceModal({
               ) : (
                 <CheckCircle2 size={14} />
               )}
-              Save &amp; Test
+              {isEdit ? 'Save & Test' : (profile.connectLabel ?? 'Save & Test')}
             </button>
           </div>
         </motion.div>

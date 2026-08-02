@@ -87,6 +87,72 @@ def test_custom_requires_base_url(client):
     assert "base_url" in r.text
 
 
+def test_open_webui_requires_base_url(client):
+    # The Open WebUI-compatible source cannot be saved without its server URL —
+    # enforced server-side so the frontend rule cannot be bypassed.
+    r = client.post(
+        "/admin/sources/open_webui", headers=AUTH, json={"api_key": "sk-12345678"}
+    )
+    assert r.status_code == 422
+    assert "base_url" in r.text
+
+
+def _openwebui_catalog(_req):
+    return httpx.Response(200, json={"data": [
+        {"id": "llama", "name": "Llama", "connection_type": "local", "tags": [{"name": "internal"}]},
+        {"id": "gpt", "name": "GPT", "connection_type": "external", "tags": ["legal"]},
+        {"id": "img", "name": "Image", "connection_type": "external",
+         "tags": [{"name": "image"}], "pipe": {"type": "img"}},
+    ]})
+
+
+def _patch_openwebui_upstream(monkeypatch):
+    """Route the adapter's async client through a MockTransport catalog."""
+    from ollabridge.addons.providers.adapters import open_webui as ow_mod
+
+    real = ow_mod.httpx.AsyncClient
+    transport = httpx.MockTransport(_openwebui_catalog)
+
+    def _patched(*a, **kw):
+        kw.setdefault("transport", transport)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(ow_mod.httpx, "AsyncClient", _patched)
+
+
+def test_open_webui_upsert_returns_discovery_and_models_filter(client, monkeypatch):
+    _patch_openwebui_upstream(monkeypatch)
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        r = client.post(
+            "/admin/sources/open_webui",
+            headers=AUTH,
+            json={"api_key": "sk-owkey123456", "base_url": "https://h.example/api"},
+        )
+    assert r.status_code == 200, r.text
+    disc = r.json()["discovery"]
+    assert disc["count"] == 3
+    assert disc["connection_types"] == {"local": 1, "external": 2}
+    assert disc["persona_compatible"] == 2  # the image pipe is excluded
+    assert "sk-owkey" not in r.text  # key never echoed
+
+    # Filters return live, normalized data — not an empty/fake list.
+    all_models = client.get("/admin/sources/open_webui/models", headers=AUTH).json()
+    assert {m["upstream_model_id"] for m in all_models["models"]} == {"llama", "gpt", "img"}
+    local = client.get("/admin/sources/open_webui/models?connection_type=local", headers=AUTH).json()
+    assert {m["upstream_model_id"] for m in local["models"]} == {"llama"}
+    legal = client.get("/admin/sources/open_webui/models?tag=legal", headers=AUTH).json()
+    assert {m["upstream_model_id"] for m in legal["models"]} == {"gpt"}
+    persona = client.get("/admin/sources/open_webui/models?persona_compatible=true", headers=AUTH).json()
+    assert {m["upstream_model_id"] for m in persona["models"]} == {"llama", "gpt"}
+
+
+def test_models_endpoint_rejects_non_dynamic_source(client, monkeypatch):
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        client.post("/admin/sources/openai", headers=AUTH, json={"api_key": "sk-openaikey12345"})
+    r = client.get("/admin/sources/openai/models", headers=AUTH)
+    assert r.status_code == 400 and "discovery" in r.text
+
+
 def test_update_toggles_without_touching_key(client):
     with patch("ollabridge.provider_ops.httpx.get", _ok_get):
         client.post(

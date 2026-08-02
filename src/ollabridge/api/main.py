@@ -383,6 +383,19 @@ def create_app() -> FastAPI:
                 app.state.provider_registry = registry
                 app.state.provider_router = provider_router
 
+                # Register saved dynamic sources (Open WebUI-compatible, …) so
+                # their discovered models are servable immediately after restart.
+                try:
+                    from ollabridge.addons.providers.services.dynamic_source_sync import (
+                        sync_all,
+                    )
+
+                    synced = await sync_all(app)
+                    if synced:
+                        log.info("Registered %d dynamic source(s) into the registry", synced)
+                except Exception as e:  # noqa: BLE001 - never block startup
+                    log.warning("dynamic source sync at startup failed: %s", e)
+
                 # Encrypted token store — survives restarts, decrypts on demand.
                 store = SecretStore()
                 app.state.secret_store = store
@@ -1367,6 +1380,27 @@ def create_app() -> FastAPI:
 
             except Exception as e:
                 log.warning("Failed to list models from node %s: %s", node.node_id, e)
+
+        # Dynamic addon providers (e.g. an Open WebUI-compatible source) expose
+        # discovered, namespaced models. Include the registered ones so they are
+        # both listable here and servable via /v1/chat/completions.
+        registry = getattr(app.state, "provider_registry", None)
+        if registry is not None:
+            try:
+                for cfg in registry.list_enabled():
+                    if not getattr(cfg, "dynamic_models", False):
+                        continue
+                    adapter = registry.get_adapter(cfg.id)
+                    if adapter is None:
+                        continue
+                    try:
+                        for m in await adapter.list_models():
+                            if isinstance(m, dict):
+                                all_models.append(m)
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("dynamic provider %s model list failed: %s", cfg.id, e)
+            except Exception as e:  # noqa: BLE001
+                log.warning("dynamic provider enumeration failed: %s", e)
 
         if not all_models:
             response.headers["X-OllaBridge-Warning"] = "models_unavailable"

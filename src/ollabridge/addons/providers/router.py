@@ -136,6 +136,11 @@ class ProviderRouter:
         m = model.lower()
         kind = (config.kind or "").lower()
         pid = (config.id or "").lower().split("-")[0]
+        # A discovery provider owns its exact namespace prefix (e.g. an Open
+        # WebUI source exposing "openwebui/<model>"): match it precisely.
+        prefix = (getattr(config, "model_prefix", None) or "").lower().strip("/")
+        if prefix and m.startswith(prefix + "/"):
+            return True
         if kind and kind in m:
             return True
         if pid and pid in m:

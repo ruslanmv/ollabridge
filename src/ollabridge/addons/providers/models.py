@@ -53,6 +53,26 @@ class ProviderConfig(BaseModel):
     tags: list[str] = Field(default_factory=list)
     notes: str = ""
 
+    # --- Optional endpoint/behavior overrides (additive) ----------------------
+    # Consumed by the generic Open WebUI-compatible adapter; ignored by every
+    # existing adapter, so these defaults preserve current behavior exactly.
+    models_path: str = "/v1/models"          # preferred OpenAI-compat listing path
+    chat_path: str = "/v1/chat/completions"  # preferred OpenAI-compat chat path
+    fallback_models_path: Optional[str] = None   # tried on a 404 from the preferred path
+    fallback_chat_path: Optional[str] = None
+    model_prefix: Optional[str] = None       # local namespace, e.g. "openwebui" → openwebui/<id>
+    dynamic_models: bool = False             # discover models at runtime instead of a static list
+    fail_closed: bool = False                # explicit model errors instead of silently rerouting
+    supports_streaming: bool = False
+    auth_header: str = "authorization"       # "authorization" (Bearer) or "x-api-key"
+    # Optional non-interactive auth strategy (never the interactive browser flow):
+    #   "api_key" (default) | "bearer" | "oauth2_client_credentials".
+    auth_strategy: str = "api_key"
+    token_url: Optional[str] = None          # OAuth2 token endpoint (client_credentials)
+    client_id: Optional[str] = None          # OAuth2 client id (secret is the provider key)
+    oauth_scope: Optional[str] = None
+    oauth_audience: Optional[str] = None
+
 
 class ProviderState(BaseModel):
     """Runtime state for a provider, tracked in memory."""

@@ -20,7 +20,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ollabridge.core.redact import redact_secret
@@ -116,9 +116,12 @@ async def get_source(name: str, _key: str = Depends(require_api_key)) -> dict[st
 
 @router.post("/{name}")
 async def upsert_source(
-    name: str, body: SourceUpsert, _key: str = Depends(require_api_key)
+    name: str, body: SourceUpsert, request: Request, _key: str = Depends(require_api_key)
 ) -> dict[str, Any]:
-    """Add or update a source. Saves the key encrypted, then tests it."""
+    """Add or update a source. Saves the key encrypted, then tests it. For a
+    dynamic source (one that discovers its models at runtime) it also registers
+    the live adapter and returns a discovery summary, so the gateway can serve
+    the models — the UI never shows "Connected" for something it cannot route."""
     from ollabridge.provider_ops import set_secret, test_provider
 
     name = name.lower().strip()
@@ -153,7 +156,7 @@ async def upsert_source(
     if body.allow_routing is not None:
         rec.allow_routing = body.allow_routing
 
-    if name in ("azure-openai", "custom") and not rec.base_url:
+    if name in ("azure-openai", "custom", "open_webui") and not rec.base_url:
         raise HTTPException(422, "base_url is required for this source")
 
     if body.api_key is not None:
@@ -171,7 +174,97 @@ async def upsert_source(
         rec = get_record(name) or rec  # test_provider stamps last_test_*
         test = {"ok": ok, "detail": detail}
 
-    return {"source": _source_view(rec, _get_secret(name)), "test": test}
+    # Dynamic sources: register the live adapter + summarize what was discovered.
+    discovery = await _sync_and_discover(request, name)
+
+    return {"source": _source_view(rec, _get_secret(name)), "test": test, "discovery": discovery}
+
+
+async def _sync_and_discover(request: Request, name: str) -> dict[str, Any] | None:
+    """Register a dynamic source in the live registry and return a summary of the
+    models its API key can access. None for non-dynamic sources. Best-effort:
+    never raises, so a discovery hiccup cannot fail the save."""
+    from ollabridge.addons.providers.services import dynamic_source_sync as dss
+
+    rec = get_record(name)
+    if rec is None or not dss.is_dynamic(rec.kind):
+        return None
+    secret = _get_secret(name)
+    await dss.sync_source(request.app, name, secret)
+    adapter = dss.build_adapter(rec, secret)
+    if adapter is None:
+        return None
+    try:
+        models = await adapter.list_models()
+    except Exception:  # noqa: BLE001 - a discovery failure is not a save failure
+        return None
+    return dss.discovery_summary(models)
+
+
+async def _discover_models(name: str) -> tuple[ProviderRecord, list[dict[str, Any]]]:
+    """Build the dynamic source's adapter and return (record, normalized models).
+    Raises HTTPException for the caller to surface a clean status."""
+    from ollabridge.addons.providers.errors import (
+        ProviderAuthError,
+        ProviderError,
+    )
+    from ollabridge.addons.providers.services import dynamic_source_sync as dss
+
+    rec = get_record(name)
+    if rec is None:
+        raise HTTPException(404, f"source {name!r} is not configured")
+    if not dss.is_dynamic(rec.kind):
+        raise HTTPException(400, f"source {name!r} does not support model discovery")
+    adapter = dss.build_adapter(rec, _get_secret(name))
+    if adapter is None:
+        raise HTTPException(422, "base_url is required for this source")
+    try:
+        return rec, await adapter.list_models()
+    except ProviderAuthError:
+        raise HTTPException(401, "the server rejected this API key")
+    except ProviderError as exc:
+        raise HTTPException(502, f"model discovery failed: {type(exc).__name__}")
+
+
+@router.get("/{name}/models")
+async def source_models(
+    name: str,
+    _key: str = Depends(require_api_key),
+    connection_type: str | None = None,
+    tag: str | None = None,
+    category: str | None = None,
+    persona_compatible: str | None = None,
+    search: str | None = None,
+) -> dict[str, Any]:
+    """List the models a dynamic source exposes, with the same All / Local /
+    External / tag / persona-compatible filters the UI shows. Data is live from
+    the upstream (filtered by the API key's user), never a guessed catalog."""
+    from ollabridge.addons.providers.adapters.open_webui import OpenWebUIAdapter
+    from ollabridge.addons.providers.services import dynamic_source_sync as dss
+
+    _rec, models = await _discover_models(name)
+    pc = None if persona_compatible is None else persona_compatible.lower() in ("1", "true", "yes")
+    filtered = OpenWebUIAdapter.filter_models(
+        models, connection_type=connection_type, tag=tag, category=category, persona_compatible=pc,
+    )
+    if search:
+        q = search.lower()
+        filtered = [
+            m for m in filtered
+            if q in str(m.get("id", "")).lower() or q in str(m.get("name", "")).lower()
+        ]
+    return {"models": filtered, "summary": dss.discovery_summary(models)}
+
+
+@router.post("/{name}/models/refresh")
+async def refresh_source_models(
+    name: str, _key: str = Depends(require_api_key)
+) -> dict[str, Any]:
+    """Re-discover a dynamic source's models from the upstream."""
+    from ollabridge.addons.providers.services import dynamic_source_sync as dss
+
+    _rec, models = await _discover_models(name)
+    return {"models": models, "summary": dss.discovery_summary(models)}
 
 
 @router.post("/{name}/test")
@@ -212,11 +305,15 @@ async def rotate_source(
 
 @router.delete("/{name}")
 async def delete_source(
-    name: str, _key: str = Depends(require_api_key)
+    name: str, request: Request, _key: str = Depends(require_api_key)
 ) -> dict[str, Any]:
     """Remove a source, delete its stored key, and drop its access records."""
+    from ollabridge.addons.providers.services import dynamic_source_sync as dss
     from ollabridge.model_access import remove_source as drop_access
     from ollabridge.provider_ops import delete_secret
+
+    # Drop it from the live registry first so its models stop being served.
+    await dss.unsync_source(request.app, name)
 
     removed_meta = remove_record(name)
     removed_key = delete_secret(name)

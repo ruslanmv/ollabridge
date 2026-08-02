@@ -167,6 +167,18 @@ PROVIDER_CATALOG: dict[str, ProviderSpec] = {
             base_url="",
             notes="set base_url to any OpenAI-compatible endpoint",
         ),
+        ProviderSpec(
+            name="open_webui",
+            label="Open WebUI (compatible)",
+            env_var="OPEN_WEBUI_API_KEY",
+            key_prefix="sk-",
+            base_url="",
+            models_path="/v1/models",
+            openai_compatible=True,
+            notes="Any Open WebUI-compatible server. Set base_url to the server's "
+            "/api root (e.g. https://<host>/api); models are discovered "
+            "dynamically and namespaced <prefix>/<model-id>. No vendor lock-in.",
+        ),
     ]
 }
 

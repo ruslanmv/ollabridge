@@ -408,6 +408,13 @@ export const api = {
     request<SourceTestResponse>(`/admin/sources/${encodeURIComponent(name)}/test`, {
       method: 'POST',
     }),
+  // Live model discovery + filtering for a dynamic source (Open WebUI-compatible).
+  getSourceModels: (name: string, filters?: Record<string, string>) => {
+    const qs = new URLSearchParams(filters ?? {}).toString()
+    return request<SourceModelsResponse>(
+      `/admin/sources/${encodeURIComponent(name)}/models${qs ? `?${qs}` : ''}`,
+    )
+  },
   rotateSource: (name: string, api_key: string) =>
     request<SourceUpsertResponse>(`/admin/sources/${encodeURIComponent(name)}/rotate`, {
       method: 'POST',
@@ -499,9 +506,35 @@ export type SourceUpsertBody = {
 
 export type SourceTestResult = { ok: boolean; detail: string }
 
+export type DiscoverySummary = {
+  count: number
+  connection_types: Record<string, number>
+  persona_compatible: number
+  tags: Record<string, number>
+}
+
 export type SourceUpsertResponse = {
   source: SourceObject
   test: SourceTestResult | null
+  discovery?: DiscoverySummary | null
+}
+
+export type SourceModel = {
+  id: string
+  object: string
+  name?: string
+  owned_by?: string
+  upstream_model_id?: string
+  connection_type?: 'local' | 'external' | null
+  tags?: Array<{ name: string }>
+  category?: string
+  persona_compatible?: boolean | null
+  capabilities?: Record<string, boolean | null>
+}
+
+export type SourceModelsResponse = {
+  models: SourceModel[]
+  summary: DiscoverySummary
 }
 
 export type SourceTestResponse = {
