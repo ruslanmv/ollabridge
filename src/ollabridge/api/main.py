@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -33,7 +34,19 @@ limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIM
 
 class ChatMessage(BaseModel):
     role: str
-    content: str
+    # Widened from `str` to accept two more shapes that real OpenAI clients
+    # send, both of which used to 422:
+    #   - null, on an assistant turn that carries tool_calls
+    #   - a list of content parts, e.g. [{"type": "text", "text": "..."}],
+    #     which the OpenAI SDK and LangChain emit routinely
+    # A plain string is still a plain string, so every previously valid
+    # payload remains valid.
+    content: str | list[dict[str, Any]] | None = None
+    # Tool-calling fields. All optional with defaults, so a message without
+    # them behaves exactly as it did before.
+    tool_calls: list[dict[str, Any]] | None = None
+    tool_call_id: str | None = None
+    name: str | None = None
 
 
 class ChatReq(BaseModel):
@@ -41,6 +54,69 @@ class ChatReq(BaseModel):
     messages: list[ChatMessage]
     temperature: float | None = None
     max_tokens: int | None = None
+    # Optional. When absent, the request follows exactly the pre-existing path.
+    tools: list[dict[str, Any]] | None = None
+    tool_choice: Any | None = None
+
+
+def _content_to_text(content: str | list[dict[str, Any]] | None) -> str:
+    """Reduce any accepted content shape to the plain text Ollama expects.
+
+    A string passes through untouched. A list of content parts is joined on
+    its text segments; non-text parts (images and such) are skipped here
+    rather than guessed at.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    parts: list[str] = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            parts.append(str(block.get("text", "")))
+        elif isinstance(block, str):
+            parts.append(block)
+    return "".join(parts)
+
+
+def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
+    """Flatten a ChatMessage for an upstream runtime.
+
+    For a message carrying no tool fields and plain string content the result
+    is identical to the previous ``{"role": ..., "content": ...}`` flattening,
+    so existing traffic is unaffected.
+    """
+    wire: dict[str, Any] = {"role": m.role, "content": _content_to_text(m.content)}
+    if m.tool_calls:
+        wire["tool_calls"] = m.tool_calls
+    if m.tool_call_id:
+        wire["tool_call_id"] = m.tool_call_id
+    if m.name:
+        wire["name"] = m.name
+    return wire
+
+
+def _tool_calls_to_openai(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert Ollama's tool_calls into the OpenAI wire shape.
+
+    Ollama returns ``{"function": {"name": ..., "arguments": {...}}}`` with
+    arguments as an object. OpenAI clients expect an ``id``, a ``type``, and
+    ``arguments`` as a JSON *string*.
+    """
+    out: list[dict[str, Any]] = []
+    for i, call in enumerate(raw or []):
+        fn = call.get("function") or {}
+        args = fn.get("arguments")
+        if not isinstance(args, str):
+            args = json.dumps(args if args is not None else {})
+        out.append(
+            {
+                "id": call.get("id") or f"call_{i}_{uuid.uuid4().hex[:8]}",
+                "type": "function",
+                "function": {"name": fn.get("name", ""), "arguments": args},
+            }
+        )
+    return out
 
 
 class EmbeddingsReq(BaseModel):
@@ -632,28 +708,81 @@ def create_app() -> FastAPI:
     ) -> dict[str, Any]:
         model = req.model or rts.get("default_model", settings.DEFAULT_MODEL)
         t0 = time.time()
-        prompt_tokens_est = sum(_estimate_tokens(m.content) for m in req.messages)
+        prompt_tokens_est = sum(_estimate_tokens(_content_to_text(m.content)) for m in req.messages)
         trace_provider: str | None = None
         trace_device: str | None = None
         trace_fallback = False
+        # Assistant tool_calls to return, when the upstream produced any.
+        tool_calls: list[dict[str, Any]] = []
 
         try:
-            payload_messages = [
-                {"role": m.role, "content": m.content} for m in req.messages
-            ]
+            payload_messages = [_message_to_wire(m) for m in req.messages]
             decision = await app.state.obridge.router.choose_node(model=model)
             node = decision.node
             trace_device = node.node_id
 
+            # A tools request must never be answered by a backend that cannot
+            # carry tool calls: silently dropping the field returns a confident
+            # prose answer and the caller has no way to tell it happened. Only
+            # reachable when `tools` is set, so pre-existing traffic is
+            # untouched.
+            #
+            # Relay nodes self-report what they can do in their hello frame, so
+            # a paired device running an older node is refused with an
+            # actionable message instead of quietly degrading.
+            if req.tools:
+                node_caps = (node.meta or {}).get("capabilities") or []
+                if node.connector == "relay_link" and "tools" not in node_caps:
+                    raise HTTPException(
+                        status_code=501,
+                        detail={
+                            "error": {
+                                "message": (
+                                    f"Paired device '{node.node_id}' does not "
+                                    f"advertise tool calling. Upgrade the "
+                                    f"OllaBridge node on that machine, or omit "
+                                    f"'tools'."
+                                ),
+                                "type": "unsupported_capability",
+                                "param": "tools",
+                            }
+                        },
+                    )
+                if node.connector == "homepilot":
+                    raise HTTPException(
+                        status_code=501,
+                        detail={
+                            "error": {
+                                "message": (
+                                    "Tool calling is not supported over the "
+                                    "'homepilot' connector. Route this model to "
+                                    "an Ollama runtime, or omit 'tools'."
+                                ),
+                                "type": "unsupported_capability",
+                                "param": "tools",
+                            }
+                        },
+                    )
+
             if node.connector == "relay_link":
+                relay_payload: dict[str, Any] = {
+                    "model": model,
+                    "messages": payload_messages,
+                }
+                # Extra key only when present, so an older node sees the exact
+                # payload it saw before.
+                if req.tools:
+                    relay_payload["tools"] = req.tools
                 frame = await app.state.relay_hub.request(
                     node.node_id,
                     "chat",
-                    {"model": model, "messages": payload_messages},
+                    relay_payload,
                 )
                 if not frame.get("ok", True):
                     raise RuntimeError(frame.get("error") or "upstream error")
-                content = (frame.get("data") or {}).get("content", "")
+                frame_data = frame.get("data") or {}
+                content = frame_data.get("content", "")
+                tool_calls = _tool_calls_to_openai(frame_data.get("tool_calls") or [])
 
             elif node.connector == "direct_endpoint":
                 data = await app.state.obridge.direct.chat(
@@ -754,9 +883,29 @@ def create_app() -> FastAPI:
                 if not addon_handled:
                     trace_fallback = bool(provider_router)
                     trace_provider = "ollama-local"
-                    from ollabridge.providers.ollama_client import chat as ollama_chat
+                    if req.tools:
+                        # Tool-aware path. Ollama's /api/chat carries `tools`
+                        # and returns message.tool_calls.
+                        from ollabridge.providers.ollama_client import chat_message
 
-                    content = await ollama_chat(model=model, messages=payload_messages)
+                        message = await chat_message(
+                            model=model,
+                            messages=payload_messages,
+                            tools=req.tools,
+                        )
+                        content = message.get("content", "") or ""
+                        tool_calls = _tool_calls_to_openai(
+                            message.get("tool_calls") or []
+                        )
+                    else:
+                        # Unchanged pre-existing path.
+                        from ollabridge.providers.ollama_client import (
+                            chat as ollama_chat,
+                        )
+
+                        content = await ollama_chat(
+                            model=model, messages=payload_messages
+                        )
 
             if node.connector == "homepilot":
                 trace_provider = "homepilot"
@@ -807,15 +956,21 @@ def create_app() -> FastAPI:
             client_type = request.headers.get("x-client-type", "")
             content = _normalize_content(content)
 
+            assistant_message: dict[str, Any] = {
+                "role": "assistant",
+                "content": content,
+            }
+            choice: dict[str, Any] = {"index": 0, "message": assistant_message}
+            if tool_calls:
+                # OpenAI wire format: content is null on a tool-call turn.
+                assistant_message["content"] = content or None
+                assistant_message["tool_calls"] = tool_calls
+                choice["finish_reason"] = "tool_calls"
+
             result: dict[str, Any] = {
                 "id": "ollabridge-chat",
                 "object": "chat.completion",
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {"role": "assistant", "content": content},
-                    }
-                ],
+                "choices": [choice],
             }
 
             # Attach persona context when client opts in via header

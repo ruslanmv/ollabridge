@@ -11,7 +11,18 @@ def _join(base: str, path: str) -> str:
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=0.5, max=4))
-async def chat(model: str, messages: list[dict], options: dict | None = None) -> str:
+async def chat_message(
+    model: str,
+    messages: list[dict],
+    options: dict | None = None,
+    tools: list[dict] | None = None,
+) -> dict:
+    """Return Ollama's full assistant message, including any ``tool_calls``.
+
+    Ollama's native ``/api/chat`` already accepts a ``tools`` array and returns
+    ``message.tool_calls``; this surfaces that instead of discarding everything
+    but the text.
+    """
     payload = {
         "model": model,
         "messages": messages,
@@ -19,12 +30,20 @@ async def chat(model: str, messages: list[dict], options: dict | None = None) ->
     }
     if options:
         payload["options"] = options
+    if tools:
+        payload["tools"] = tools
 
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(_join(settings.OLLAMA_BASE_URL, settings.OLLAMA_CHAT_PATH), json=payload)
         r.raise_for_status()
         data = r.json()
-        return data.get("message", {}).get("content", "") or ""
+        return data.get("message", {}) or {}
+
+
+async def chat(model: str, messages: list[dict], options: dict | None = None) -> str:
+    """Text-only chat. Signature and return type unchanged for existing callers."""
+    message = await chat_message(model=model, messages=messages, options=options)
+    return message.get("content", "") or ""
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=0.5, max=4))
