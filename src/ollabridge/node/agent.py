@@ -75,8 +75,21 @@ async def run_node(config: NodeConfig) -> None:
 
             try:
                 if op == "chat":
-                    content = await runtime.chat(model=payload["model"], messages=payload["messages"])
-                    res = {"type": "res", "id": req_id, "ok": True, "data": {"content": content}}
+                    # Only diverges when the gateway sent tools, so an existing
+                    # payload takes the identical path it always did.
+                    if payload.get("tools"):
+                        message = await runtime.chat_message(
+                            model=payload["model"],
+                            messages=payload["messages"],
+                            tools=payload["tools"],
+                        )
+                        data = {"content": message.get("content", "") or ""}
+                        if message.get("tool_calls"):
+                            data["tool_calls"] = message["tool_calls"]
+                        res = {"type": "res", "id": req_id, "ok": True, "data": data}
+                    else:
+                        content = await runtime.chat(model=payload["model"], messages=payload["messages"])
+                        res = {"type": "res", "id": req_id, "ok": True, "data": {"content": content}}
                 elif op == "embeddings":
                     emb = await runtime.embeddings(model=payload["model"], text=payload.get("input") or "")
                     res = {"type": "res", "id": req_id, "ok": True, "data": {"embedding": emb}}
@@ -132,7 +145,7 @@ async def run_cloud_device(config: CloudDeviceConfig) -> None:
     headers = {"Authorization": f"Bearer {config.device_token}"}
 
     async with websockets.connect(ws_url, extra_headers=headers, max_size=2**25) as ws:
-        capabilities = ["chat", "embeddings", "models"]
+        capabilities = ["chat", "embeddings", "models", "tools"]
         hello = {
             "type": "hello",
             "device_id": config.device_id,

@@ -17,14 +17,30 @@ class LocalRuntime:
         self.base_url = base_url
         self._client = httpx.AsyncClient(timeout=120)
 
-    async def chat(self, *, model: str, messages: list[dict[str, Any]]) -> str:
-        r = await self._client.post(
-            _join(self.base_url, "/api/chat"),
-            json={"model": model, "messages": messages, "stream": False},
-        )
+    async def chat_message(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Return Ollama's full assistant message, including any tool_calls."""
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+        }
+        if tools:
+            body["tools"] = tools
+        r = await self._client.post(_join(self.base_url, "/api/chat"), json=body)
         r.raise_for_status()
         data = r.json()
-        return data.get("message", {}).get("content", "") or ""
+        return data.get("message", {}) or {}
+
+    async def chat(self, *, model: str, messages: list[dict[str, Any]]) -> str:
+        """Text-only chat. Signature and return type unchanged for callers."""
+        message = await self.chat_message(model=model, messages=messages)
+        return message.get("content", "") or ""
 
     async def chat_stream(self, *, model: str, messages: list[dict[str, Any]]) -> AsyncIterator[str]:
         """
