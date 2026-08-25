@@ -477,8 +477,44 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 OllaBridge will offer to install it automatically when you run `make start`.
 
 Or install manually:
-- **Linux/macOS:** `curl -fsSL https://ollama.com/install.sh | sh`
+- **Linux:** `curl -fsSL https://ollama.com/install.sh | sh`
+- **macOS:** `brew install ollama`, or download from https://ollama.com/download
 - **Windows:** Download from https://ollama.com/download
+
+### Linux/WSL: `This version requires zstd for extraction`
+
+Ollama's install script extracts zstd-compressed tarballs, and `zstd` is not
+preinstalled on Debian/Ubuntu (including stock WSL images), so the script
+aborts:
+
+```
+ERROR: This version requires zstd for extraction.
+```
+
+OllaBridge now detects this before running the script: it installs the missing
+prerequisites (`curl`, `tar`, `zstd`) with your system package manager
+(apt-get/dnf/yum/zypper/pacman/apk), then runs the installer — and retries once
+if the script still reports a missing `zstd`.
+
+If you prefer to do it yourself:
+
+```bash
+sudo apt-get update && sudo apt-get install -y zstd   # Debian/Ubuntu/WSL
+sudo dnf install -y zstd                              # RHEL/CentOS/Fedora
+sudo pacman -S zstd                                   # Arch
+```
+
+Then re-run `ollabridge start`.
+
+### Ollama installed but "not on your PATH"
+
+The install script drops the binary in `/usr/local/bin`, which some non-login
+shells (and freshly provisioned WSL distros) leave off `PATH`. OllaBridge still
+finds and uses it, but to get the `ollama` command yourself:
+
+```bash
+export PATH="/usr/local/bin:$PATH"
+```
 
 ### Model not found
 
