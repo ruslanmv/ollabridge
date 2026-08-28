@@ -29,8 +29,12 @@ from ollabridge.providers_meta import (
     PROVIDER_CATALOG,
     STORAGE_MODES,
     ProviderRecord,
+    apply_extras,
+    extra_fields_for,
     get_record,
+    get_extra,
     load_providers,
+    missing_extras,
     remove_record,
     upsert_record,
 )
@@ -57,15 +61,36 @@ class SourceUpsert(BaseModel):
     storage_mode: Optional[str] = (
         None  # local_only | cloud_encrypted_vault | organization_vault
     )
+    extra: Optional[dict[str, str]] = Field(
+        default=None,
+        description=(
+            "Provider-specific non-secret config declared by the catalog, "
+            "e.g. {'project_id': '...'} for watsonx. An empty value clears "
+            "a field; undeclared keys are ignored."
+        ),
+    )
+
+
+def _field_view(rec: ProviderRecord, spec) -> dict[str, Any]:
+    """One extra field with its resolved value, for the UI to render."""
+    return {
+        **spec.model_dump(),
+        "value": get_extra(rec, spec.name) or "",
+    }
 
 
 def _source_view(rec: ProviderRecord, key: str | None) -> dict[str, Any]:
     """Public view of a source: metadata + redacted key hint, never the key."""
     spec = PROVIDER_CATALOG.get(rec.kind or rec.name)
+    missing = missing_extras(rec)
     if key:
         status = "connected" if rec.last_test_ok is not False else "error"
     else:
         status = "missing_key"
+    # A key alone is not enough when the provider declares required extra
+    # config — say so rather than reporting the source as connected.
+    if key and missing:
+        status = "missing_config"
     if not rec.enabled:
         status = "disabled"
     return {
@@ -73,6 +98,10 @@ def _source_view(rec: ProviderRecord, key: str | None) -> dict[str, Any]:
         "label": spec.label if spec else rec.name,
         "key": redact_secret(key) if key else None,
         "key_configured": bool(key),
+        "extra_fields": [
+            _field_view(rec, f) for f in extra_fields_for(rec.kind or rec.name)
+        ],
+        "missing_config": missing,
         "status": status,
     }
 
@@ -98,6 +127,9 @@ async def list_sources(_key: str = Depends(require_api_key)) -> dict[str, Any]:
             "base_url": spec.base_url,
             "env_var": spec.env_var,
             "notes": spec.notes,
+            # So the add form can prompt for what this provider needs
+            # beyond an API key (watsonx: a project id).
+            "extra_fields": [f.model_dump() for f in spec.extra_fields],
             "status": "not_configured",
         }
         for spec in PROVIDER_CATALOG.values()
@@ -155,6 +187,9 @@ async def upsert_source(
         rec.enabled = body.enabled
     if body.allow_routing is not None:
         rec.allow_routing = body.allow_routing
+
+    if body.extra is not None:
+        apply_extras(rec, body.extra)
 
     if name in ("azure-openai", "custom", "open_webui") and not rec.base_url:
         raise HTTPException(422, "base_url is required for this source")
