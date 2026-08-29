@@ -128,8 +128,10 @@ def test_groq_is_discoverable_and_anthropic_is_not():
     assert dss.is_discoverable("groq") is True
     assert dss.is_discoverable("openrouter") is True
     assert dss.is_discoverable("open_webui") is True
+    # watsonx is not OpenAI-compatible but has its own catalog adapter.
+    assert dss.is_discoverable("watsonx") is True
     assert dss.is_discoverable("anthropic") is False
-    assert dss.is_discoverable("watsonx") is False
+    assert dss.is_discoverable("bedrock") is False
 
 
 def test_discovery_builds_the_groq_adapter_even_without_a_saved_base_url():

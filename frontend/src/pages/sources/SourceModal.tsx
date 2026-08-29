@@ -146,7 +146,7 @@ export function SourceModal({
   const [keySaved, setKeySaved] = useState(
     () => target.mode === 'edit' && target.source.key_configured,
   )
-  const freeModels = target.source.free_models ?? []
+  const suggested = target.source.suggested_models ?? []
 
   // Warn on an unencrypted connection to a non-local host.
   const isRemoteHttp = useMemo(() => {
@@ -478,15 +478,17 @@ export function SourceModal({
                 value={form.default_model}
                 onChange={(e) => set('default_model', e.target.value)}
                 placeholder={
-                  freeModels[0] ?? profile.defaultModelPlaceholder ?? 'gpt-4o-mini'
+                  suggested[0] ?? profile.defaultModelPlaceholder ?? 'gpt-4o-mini'
                 }
                 spellCheck={false}
                 className="w-full bg-navy-900/60 border border-white/10 rounded-lg px-3 py-2.5 text-sm font-mono text-white placeholder:text-white/20 focus:outline-none focus:border-glow-cyan/40 transition-colors"
               />
               <p className="text-[11px] text-white/30 mt-1.5">
-                {freeModels.length > 0
-                  ? `Leave blank to use a free model — ${freeModels[0]} when your key can reach it.`
-                  : 'Used when a request does not pin a model.'}
+                {suggested.length > 0
+                  ? `Leave blank to use a free model — ${suggested[0]} when your key can reach it.`
+                  : canDiscover
+                    ? 'Leave blank and the best model your key can reach is chosen for you.'
+                    : 'Used when a request does not pin a model.'}
               </p>
               {canDiscover && (
                 <div className="mt-2">

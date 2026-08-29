@@ -13,7 +13,9 @@ configured base URL already carries it.
 
 from __future__ import annotations
 
-from ollabridge.addons.providers.adapters.openai_compatible import OpenAICompatibleAdapter
+from ollabridge.addons.providers.adapters.openai_compatible import (
+    OpenAICompatibleAdapter,
+)
 
 #: Canonical base URL. Accepted equally: ``https://api.groq.com``.
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"

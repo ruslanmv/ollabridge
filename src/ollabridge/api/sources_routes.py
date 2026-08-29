@@ -18,12 +18,13 @@ Security invariants:
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from ollabridge.addons.providers.free_tier import free_models as free_models_for
+from ollabridge.addons.providers.model_defaults import suggested_models
 from ollabridge.core.redact import redact_secret
 from ollabridge.core.security import require_api_key
 from ollabridge.providers_meta import (
@@ -39,6 +40,8 @@ from ollabridge.providers_meta import (
     remove_record,
     upsert_record,
 )
+
+log = logging.getLogger("ollabridge.sources")
 
 router = APIRouter(prefix="/admin/sources", tags=["sources"])
 
@@ -111,9 +114,10 @@ def _source_view(rec: ProviderRecord, key: str | None) -> dict[str, Any]:
         ],
         "missing_config": missing,
         "supports_discovery": _supports_discovery(rec.kind or rec.name),
-        # Free models this provider is known to serve, so the form can suggest
-        # one before any key has been saved to discover with.
-        "free_models": free_models_for(rec.kind or rec.name),
+        # Models worth suggesting before a key has been saved to discover
+        # with. Empty for a provider whose catalog is per-account (watsonx):
+        # there is nothing honest to suggest until we have asked it.
+        "suggested_models": suggested_models(rec.kind or rec.name),
         "status": status,
     }
 
@@ -143,7 +147,7 @@ async def list_sources(_key: str = Depends(require_api_key)) -> dict[str, Any]:
             # beyond an API key (watsonx: a project id).
             "extra_fields": [f.model_dump() for f in spec.extra_fields],
             "supports_discovery": _supports_discovery(spec.name),
-            "free_models": free_models_for(spec.name),
+            "suggested_models": suggested_models(spec.name),
             "status": "not_configured",
         }
         for spec in PROVIDER_CATALOG.values()
@@ -237,11 +241,33 @@ async def upsert_source(
     # choice, and never invents a model the provider does not serve.
     rec = _apply_default_model(rec, body, models)
 
+    # Choosing a model, switching routing on, or disabling the source changes
+    # what this device publishes to OllaBridge Cloud. Re-publish now so a
+    # paired device sees the change in seconds rather than at the next
+    # five-minute refresh. A default filled in by discovery counts too — it is
+    # the model the source will actually serve, and it arrives with the key.
+    if any(
+        v is not None
+        for v in (body.default_model, body.allow_routing, body.enabled, body.api_key)
+    ):
+        await _republish_to_cloud(request)
+
     return {
         "source": _source_view(rec, _get_secret(name)),
         "test": test,
         "discovery": discovery,
     }
+
+
+async def _republish_to_cloud(request: Request) -> None:
+    """Ask the cloud bridge to re-send its approved manifest. Best-effort."""
+    bridge = getattr(request.app.state, "cloud_bridge", None)
+    if bridge is None or not hasattr(bridge, "refresh_models_now"):
+        return
+    try:
+        await bridge.refresh_models_now()
+    except Exception as exc:  # noqa: BLE001 - never fail a save over this
+        log.warning("cloud manifest refresh after a source change failed: %s", exc)
 
 
 def _apply_default_model(
@@ -431,6 +457,8 @@ async def delete_source(
     removed_access = drop_access(name)
     if not (removed_meta or removed_key):
         raise HTTPException(404, f"source {name!r} is not configured")
+    # Its models must stop being offered on paired devices too, not just here.
+    await _republish_to_cloud(request)
     return {
         "ok": True,
         "removed_metadata": removed_meta,

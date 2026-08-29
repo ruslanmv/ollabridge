@@ -1554,6 +1554,17 @@ def create_app() -> FastAPI:
                                 all_models.append(m)
                     except Exception as e:  # noqa: BLE001
                         log.warning("dynamic provider %s model list failed: %s", cfg.id, e)
+
+                # External accounts connected in Sources and switched on for
+                # routing serve their selected model through this gateway, so
+                # list it here too — otherwise the model is offered to paired
+                # devices via the cloud manifest while being invisible to a
+                # client asking this machine what it can run.
+                from ollabridge.addons.providers.services import (
+                    dynamic_source_sync as dss,
+                )
+
+                all_models.extend(dss.byok_runtime_models(registry, all_models))
             except Exception as e:  # noqa: BLE001
                 log.warning("dynamic provider enumeration failed: %s", e)
 

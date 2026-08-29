@@ -503,8 +503,9 @@ export type SourceObject = {
   missing_config: string[]
   /** The settings UI can fetch this source's model list from the upstream. */
   supports_discovery?: boolean
-  /** Free-tier models this provider is known to serve, in preference order. */
-  free_models?: string[]
+  /** Models worth suggesting before discovery has run. Empty for a provider
+   * whose catalog is per-account (watsonx) — ask it rather than guess. */
+  suggested_models?: string[]
 }
 
 /** A catalog provider that has not been configured yet. */
@@ -518,8 +519,9 @@ export type AvailableSource = {
   extra_fields: Omit<SourceExtraField, 'value'>[]
   /** The settings UI can fetch this source's model list once a key is saved. */
   supports_discovery?: boolean
-  /** Free-tier models this provider is known to serve, in preference order. */
-  free_models?: string[]
+  /** Models worth suggesting before discovery has run. Empty for a provider
+   * whose catalog is per-account (watsonx) — ask it rather than guess. */
+  suggested_models?: string[]
   status: 'not_configured'
 }
 
@@ -572,6 +574,11 @@ export type SourceModel = {
   capabilities?: Record<string, boolean | null>
   /** On the provider's free tier — no paid usage to run it. */
   free?: boolean
+  /** The provider has scheduled this model for retirement. */
+  deprecated?: boolean
+  /** Lifecycle states the provider reports, e.g. ["available"]. */
+  lifecycle?: string[]
+  description?: string | null
   context_window?: number | null
 }
 

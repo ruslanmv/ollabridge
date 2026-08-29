@@ -31,12 +31,18 @@ export const SOURCE_UI_PROFILES: Record<string, SourceUiProfile> = {
     // the placeholder is what tells the user the URL carries it.
     baseUrlPlaceholder: 'https://us-south.ml.cloud.ibm.com',
     credentialLabel: 'IBM Cloud API key',
-    defaultModelPlaceholder: 'ibm/granite-3-8b-instruct',
+    // No defaultModelPlaceholder: which foundation models exist depends on
+    // the region, the plan and what the account has been granted, so any
+    // fixed example would be wrong for someone. The picker lists the real
+    // ones once a key is saved.
+    connectLabel: 'Connect and discover',
     showRemoteNotice: true,
+    supportsDiscovery: true,
     setupHint:
       'Create an IBM Cloud API key at cloud.ibm.com → Manage → Access (IAM) → ' +
       'API keys. Use the base URL for your region (us-south, eu-de, eu-gb, ' +
-      'jp-tok, au-syd).',
+      'jp-tok, au-syd). Leave the model blank and OllaBridge picks the best ' +
+      'chat model your account can reach.',
   },
   groq: {
     // The base URL the OpenAI SDK is pointed at for Groq. A bare
