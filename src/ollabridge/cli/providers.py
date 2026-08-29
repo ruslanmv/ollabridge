@@ -8,6 +8,7 @@ or exported.
 from __future__ import annotations
 
 import json
+import os
 
 import typer
 from rich.console import Console
@@ -18,8 +19,10 @@ from ollabridge.providers_meta import (
     PROVIDER_CATALOG,
     STORAGE_MODES,
     ProviderRecord,
+    apply_extras,
     get_record,
     load_providers,
+    missing_extras,
     remove_record,
     upsert_record,
 )
@@ -48,6 +51,27 @@ def _resolve_storage_mode(choice: str) -> str:
     if choice in STORAGE_MODES:
         return choice
     raise typer.BadParameter(f"choose 1-3 or one of {STORAGE_MODES}")
+
+
+def _parse_extras(pairs: list[str] | None) -> dict[str, str]:
+    """Turn repeated ``--extra name=value`` options into a dict."""
+    values: dict[str, str] = {}
+    for pair in pairs or []:
+        if "=" not in pair:
+            raise typer.BadParameter(f"--extra must be name=value, got {pair!r}")
+        field, _, value = pair.partition("=")
+        values[field.strip()] = value.strip()
+    return values
+
+
+def _warn_missing_extras(record: ProviderRecord) -> None:
+    missing = missing_extras(record)
+    if missing:
+        console.print(
+            f"[yellow]⚠ {record.name} is missing required config: "
+            f"{', '.join(missing)}. Set it with:  "
+            f"ollabridge providers config {record.name} <field>=<value>[/yellow]"
+        )
 
 
 def _vault_notice(mode: str) -> None:
@@ -128,6 +152,12 @@ def providers_add(
     base_url: str = typer.Option(
         "", "--base-url", help="Override/required for azure-openai and custom"
     ),
+    extra: list[str] = typer.Option(
+        None,
+        "--extra",
+        help="Provider-specific config as name=value (repeatable), "
+        "e.g. --extra project_id=2762997c-... for watsonx",
+    ),
 ):
     """Add a provider credential (stored encrypted, never printed)."""
     from ollabridge.provider_ops import set_secret
@@ -162,10 +192,33 @@ def providers_add(
         console.print("[red]--base-url is required for this provider.[/red]")
         raise typer.Exit(1)
 
-    set_secret(name, key)
-    upsert_record(
-        ProviderRecord(name=name, kind=name, storage_mode=mode, base_url=resolved_base)
+    record = ProviderRecord(
+        name=name, kind=name, storage_mode=mode, base_url=resolved_base
     )
+
+    # Provider-specific config (watsonx needs a project id). Values come
+    # from --extra; anything required and still missing is prompted for,
+    # so `providers add watsonx` cannot leave an unusable source behind.
+    values = _parse_extras(extra)
+    for field in spec.extra_fields:
+        if values.get(field.name):
+            continue
+        env_value = os.environ.get(field.env_var, "").strip() if field.env_var else ""
+        if env_value:
+            console.print(
+                f"[dim]{field.label}: using {field.env_var} from the environment[/dim]"
+            )
+            continue
+        if field.required:
+            values[field.name] = typer.prompt(field.label).strip()
+
+    applied = apply_extras(record, values)
+
+    set_secret(name, key)
+    upsert_record(record)
+
+    for field_name in applied:
+        console.print(f"[green]✅ {field_name} saved[/green] (metadata, not a secret)")
 
     from ollabridge.addons.providers.secret_store import SecretStore
 
@@ -180,7 +233,69 @@ def providers_add(
             "[yellow]⚠ Set OLLA_SECRET and re-add the key to enable encryption.[/yellow]"
         )
     _vault_notice(mode)
+    _warn_missing_extras(record)
     console.print(f"[dim]Test it:  ollabridge providers test {name}[/dim]")
+
+
+@providers_app.command("config")
+def providers_config(
+    provider: str = typer.Argument(...),
+    values: list[str] = typer.Argument(
+        None, help="name=value pairs, e.g. project_id=2762997c-30dd-4b93-ad9f-dc6bbb5a343c"
+    ),
+):
+    """Show or set a provider's non-secret config (e.g. the watsonx project id).
+
+    With no name=value pairs this prints the current configuration.
+    Values are metadata — they go in providers.yaml, never the key store.
+    """
+    from ollabridge.providers_meta import extra_fields_for, get_extra
+
+    name = provider.lower().strip()
+    rec = get_record(name)
+    if rec is None:
+        console.print(
+            f"[red]{name!r} is not configured — add it first:  "
+            f"ollabridge providers add {name}[/red]"
+        )
+        raise typer.Exit(1)
+
+    fields = extra_fields_for(rec.kind or rec.name)
+    if not fields:
+        console.print(f"{name} has no provider-specific config fields.")
+        return
+
+    parsed = _parse_extras(values)
+    if parsed:
+        declared = {f.name for f in fields}
+        unknown = sorted(set(parsed) - declared)
+        if unknown:
+            console.print(
+                f"[red]Unknown field(s) for {name}: {', '.join(unknown)}. "
+                f"Known: {', '.join(sorted(declared))}[/red]"
+            )
+            raise typer.Exit(1)
+        applied = apply_extras(rec, parsed)
+        upsert_record(rec)
+        console.print(f"[green]✅ Updated {', '.join(applied) or 'nothing'}[/green]")
+
+    # Printed as plain lines, not a table: an id like a watsonx project
+    # id gets copied by hand, and a table would ellipsize or fold it.
+    console.print(f"[bold]{name} configuration[/bold]")
+    for field in fields:
+        own = (rec.extra or {}).get(field.name, "")
+        resolved = get_extra(rec, field.name)
+        if own:
+            source = "providers.yaml"
+        elif resolved:
+            source = f"env {field.env_var}"
+        else:
+            source = ""
+        value = resolved or "[red](not set)[/red]"
+        suffix = f" [dim]({source})[/dim]" if source else ""
+        required = " [dim]— required[/dim]" if field.required and not resolved else ""
+        console.print(f"  {field.name} = {value}{suffix}{required}")
+    _warn_missing_extras(rec)
 
 
 @providers_app.command("remove")

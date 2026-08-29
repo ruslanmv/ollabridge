@@ -17,6 +17,7 @@ export const STATUS_META: Record<
 > = {
   connected: { label: 'Connected', color: '#14b8a6', icon: CheckCircle2 },
   missing_key: { label: 'Missing key', color: '#f59e0b', icon: AlertTriangle },
+  missing_config: { label: 'Needs config', color: '#f59e0b', icon: AlertTriangle },
   error: { label: 'Error', color: '#ef4444', icon: XCircle },
   disabled: { label: 'Disabled', color: 'rgba(255,255,255,0.35)', icon: PauseCircle },
   not_configured: { label: 'Not configured', color: 'rgba(255,255,255,0.35)', icon: CircleDashed },

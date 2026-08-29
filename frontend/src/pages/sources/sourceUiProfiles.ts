@@ -12,6 +12,8 @@ export type SourceUiProfile = {
   baseUrlPlaceholder?: string
   credentialLabel?: string
   credentialPlaceholder?: string
+  /** Example model id for this provider (the generic one is OpenAI-shaped). */
+  defaultModelPlaceholder?: string
   /** Label for the primary connect button (e.g. "Connect and discover"). */
   connectLabel?: string
   /** Show the "Remote AI source — prompts leave this machine" notice. */
@@ -23,6 +25,18 @@ export type SourceUiProfile = {
 }
 
 export const SOURCE_UI_PROFILES: Record<string, SourceUiProfile> = {
+  watsonx: {
+    // The region IS the base URL — watsonx has no separate region field, so
+    // the placeholder is what tells the user the URL carries it.
+    baseUrlPlaceholder: 'https://us-south.ml.cloud.ibm.com',
+    credentialLabel: 'IBM Cloud API key',
+    defaultModelPlaceholder: 'ibm/granite-3-8b-instruct',
+    showRemoteNotice: true,
+    setupHint:
+      'Create an IBM Cloud API key at cloud.ibm.com → Manage → Access (IAM) → ' +
+      'API keys. Use the base URL for your region (us-south, eu-de, eu-gb, ' +
+      'jp-tok, au-syd).',
+  },
   open_webui: {
     requiresBaseUrl: true,
     baseUrlPlaceholder: 'https://openwebui.example.com/api',

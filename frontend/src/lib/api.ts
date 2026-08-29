@@ -453,9 +453,28 @@ export type SourceStorageMode = 'local_only' | 'cloud_encrypted_vault' | 'organi
 export type SourceStatus =
   | 'connected'
   | 'missing_key'
+  /** Key is set, but a required extra field (e.g. watsonx project_id) is not. */
+  | 'missing_config'
   | 'error'
   | 'disabled'
   | 'not_configured'
+
+/**
+ * One provider-specific config field beyond api_key / base_url, declared by
+ * the backend catalog. watsonx, for example, needs a project_id in every chat
+ * payload. These are identifiers, not secrets — they are stored as metadata
+ * and echoed back in full, unlike the API key.
+ */
+export type SourceExtraField = {
+  name: string
+  label: string
+  required: boolean
+  env_var: string
+  placeholder: string
+  help: string
+  /** Resolved current value (own value, else the env_var fallback). */
+  value: string
+}
 
 /** A configured external source (metadata + redacted key hint, never the key). */
 export type SourceObject = {
@@ -476,6 +495,12 @@ export type SourceObject = {
   last_test_at: string | null
   rotated_at: string | null
   created_at?: string | null
+  /** Saved provider-specific config (non-secret), e.g. { project_id: '…' }. */
+  extra: Record<string, string>
+  /** Declared config fields with their resolved values, for the form. */
+  extra_fields: SourceExtraField[]
+  /** Labels of required fields still unset — empty when fully configured. */
+  missing_config: string[]
 }
 
 /** A catalog provider that has not been configured yet. */
@@ -485,6 +510,8 @@ export type AvailableSource = {
   base_url: string
   env_var: string
   notes: string
+  /** What this provider needs beyond an API key (no values — nothing saved yet). */
+  extra_fields: Omit<SourceExtraField, 'value'>[]
   status: 'not_configured'
 }
 
@@ -502,6 +529,8 @@ export type SourceUpsertBody = {
   allow_routing?: boolean
   sharing?: SourceSharing
   storage_mode?: SourceStorageMode
+  /** Provider-specific config; an empty value clears a field. */
+  extra?: Record<string, string>
 }
 
 export type SourceTestResult = { ok: boolean; detail: string }
