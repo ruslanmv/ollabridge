@@ -25,6 +25,7 @@ import type {
 } from '../../lib/api'
 import { useUpsertSource } from '../../lib/hooks'
 import { useToast } from './toast'
+import { ModelPicker } from './ModelPicker'
 import { sourceUiProfile } from './sourceUiProfiles'
 
 /** A source needs an explicit base_url before it can be configured. Some sources
@@ -134,6 +135,18 @@ export function SourceModal({
   const extraFields = useMemo(() => extraFieldsOf(target), [target])
 
   const [form, setForm] = useState<FormState>(() => initialState(target))
+
+  // Whether the model list can be fetched at all. The backend's flag is
+  // authoritative — the UI profile is only a hint for providers the catalog
+  // has not been asked about yet.
+  const canDiscover =
+    target.source.supports_discovery ?? profile.supportsDiscovery ?? false
+  // Discovery needs a saved key, so it only becomes possible after the first
+  // successful save. `keySaved` tracks that within this dialog's lifetime.
+  const [keySaved, setKeySaved] = useState(
+    () => target.mode === 'edit' && target.source.key_configured,
+  )
+  const freeModels = target.source.free_models ?? []
 
   // Warn on an unencrypted connection to a non-local host.
   const isRemoteHttp = useMemo(() => {
@@ -257,8 +270,16 @@ export function SourceModal({
 
     try {
       const res = await upsert.mutateAsync({ name, body })
-      setForm((f) => ({ ...f, api_key: '' })) // never retain the key after save
+      // Never retain the key after save. Show whichever default model the
+      // backend settled on, so a source saved with the field blank does not
+      // read as "no model" when it has in fact been given a free one.
+      setForm((f) => ({
+        ...f,
+        api_key: '',
+        default_model: res.source.default_model ?? f.default_model,
+      }))
       setShowKey(false)
+      setKeySaved(res.source.key_configured)
       setTestResult(res.test)
       setDiscovery(res.discovery ?? null)
       if (res.test) {
@@ -449,17 +470,34 @@ export function SourceModal({
               </div>
             )}
 
-            {/* Default model */}
+            {/* Default model — typed, or picked from the source's live catalog */}
             <div>
               {fieldLabel('Default model')}
               <input
                 type="text"
                 value={form.default_model}
                 onChange={(e) => set('default_model', e.target.value)}
-                placeholder={profile.defaultModelPlaceholder ?? 'gpt-4o-mini'}
+                placeholder={
+                  freeModels[0] ?? profile.defaultModelPlaceholder ?? 'gpt-4o-mini'
+                }
                 spellCheck={false}
                 className="w-full bg-navy-900/60 border border-white/10 rounded-lg px-3 py-2.5 text-sm font-mono text-white placeholder:text-white/20 focus:outline-none focus:border-glow-cyan/40 transition-colors"
               />
+              <p className="text-[11px] text-white/30 mt-1.5">
+                {freeModels.length > 0
+                  ? `Leave blank to use a free model — ${freeModels[0]} when your key can reach it.`
+                  : 'Used when a request does not pin a model.'}
+              </p>
+              {canDiscover && (
+                <div className="mt-2">
+                  <ModelPicker
+                    name={name}
+                    enabled={keySaved}
+                    value={form.default_model}
+                    onSelect={(id) => set('default_model', id)}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Storage mode */}
@@ -583,6 +621,9 @@ export function SourceModal({
                   {Object.entries(discovery.connection_types).map(([k, n]) => (
                     <span key={k}>{n} {k}</span>
                   ))}
+                  {discovery.free !== undefined && (
+                    <span className="text-teal-300/80">{discovery.free} free</span>
+                  )}
                   <span>{discovery.persona_compatible} persona-compatible</span>
                 </div>
                 {discovery.count === 0 && (

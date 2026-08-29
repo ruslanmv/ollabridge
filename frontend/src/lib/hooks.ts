@@ -174,6 +174,28 @@ export function useUpsertSource() {
   })
 }
 
+/**
+ * Live model catalog for one source — what the saved key can actually reach.
+ *
+ * Disabled until the caller says the source can be discovered and has a key,
+ * so opening the form for an unconfigured provider does not fire a request
+ * that can only 422. Not polled: the upstream list changes rarely, and each
+ * fetch is a round-trip to the provider.
+ */
+export function useSourceModels(
+  name: string | null,
+  options: { enabled?: boolean; filters?: Record<string, string> } = {},
+) {
+  const { enabled = true, filters } = options
+  return useQuery({
+    queryKey: ['sourceModels', name, filters ?? {}] as const,
+    queryFn: () => api.getSourceModels(name as string, filters),
+    enabled: Boolean(name) && enabled,
+    staleTime: 60_000,
+    retry: false,
+  })
+}
+
 export function useTestSource() {
   const qc = useQueryClient()
   return useMutation({

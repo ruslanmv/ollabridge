@@ -23,6 +23,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from ollabridge.addons.providers.free_tier import free_models as free_models_for
 from ollabridge.core.redact import redact_secret
 from ollabridge.core.security import require_api_key
 from ollabridge.providers_meta import (
@@ -79,6 +80,13 @@ def _field_view(rec: ProviderRecord, spec) -> dict[str, Any]:
     }
 
 
+def _supports_discovery(kind: str) -> bool:
+    """Can the settings UI fetch this source's model list from the upstream?"""
+    from ollabridge.addons.providers.services import dynamic_source_sync as dss
+
+    return dss.is_discoverable(kind)
+
+
 def _source_view(rec: ProviderRecord, key: str | None) -> dict[str, Any]:
     """Public view of a source: metadata + redacted key hint, never the key."""
     spec = PROVIDER_CATALOG.get(rec.kind or rec.name)
@@ -102,6 +110,10 @@ def _source_view(rec: ProviderRecord, key: str | None) -> dict[str, Any]:
             _field_view(rec, f) for f in extra_fields_for(rec.kind or rec.name)
         ],
         "missing_config": missing,
+        "supports_discovery": _supports_discovery(rec.kind or rec.name),
+        # Free models this provider is known to serve, so the form can suggest
+        # one before any key has been saved to discover with.
+        "free_models": free_models_for(rec.kind or rec.name),
         "status": status,
     }
 
@@ -130,6 +142,8 @@ async def list_sources(_key: str = Depends(require_api_key)) -> dict[str, Any]:
             # So the add form can prompt for what this provider needs
             # beyond an API key (watsonx: a project id).
             "extra_fields": [f.model_dump() for f in spec.extra_fields],
+            "supports_discovery": _supports_discovery(spec.name),
+            "free_models": free_models_for(spec.name),
             "status": "not_configured",
         }
         for spec in PROVIDER_CATALOG.values()
@@ -209,54 +223,96 @@ async def upsert_source(
         rec = get_record(name) or rec  # test_provider stamps last_test_*
         test = {"ok": ok, "detail": detail}
 
-    # Dynamic sources: register the live adapter + summarize what was discovered.
-    discovery = await _sync_and_discover(request, name)
+    # Push the saved key onto the live adapters, and — when there is something
+    # to learn — summarize what it can reach. Discovery is a round-trip to the
+    # provider, so it runs when the credential just changed or the source still
+    # needs a default model, not on every toggle of a checkbox.
+    needs_discovery = body.api_key is not None or not rec.default_model
+    discovery, models = await _sync_and_discover(
+        request, name, discover=needs_discovery
+    )
 
-    return {"source": _source_view(rec, _get_secret(name)), "test": test, "discovery": discovery}
+    # Free by default: a source the user did not give a model gets the first
+    # free one its own catalog still offers. Never overrides an explicit
+    # choice, and never invents a model the provider does not serve.
+    rec = _apply_default_model(rec, body, models)
+
+    return {
+        "source": _source_view(rec, _get_secret(name)),
+        "test": test,
+        "discovery": discovery,
+    }
 
 
-async def _sync_and_discover(request: Request, name: str) -> dict[str, Any] | None:
-    """Register a dynamic source in the live registry and return a summary of the
-    models its API key can access. None for non-dynamic sources. Best-effort:
-    never raises, so a discovery hiccup cannot fail the save."""
+def _apply_default_model(
+    rec: ProviderRecord, body: SourceUpsert, models: list[dict[str, Any]] | None
+) -> ProviderRecord:
+    """Fill in a free default model when the source has none. Returns the record."""
+    from ollabridge.addons.providers.services import dynamic_source_sync as dss
+
+    if rec.default_model or (body.default_model is not None and body.default_model.strip()):
+        return rec
+    chosen = dss.default_model_for(rec, models)
+    if not chosen:
+        return rec
+    rec.default_model = chosen
+    upsert_record(rec)
+    return get_record(rec.name) or rec
+
+
+async def _sync_and_discover(
+    request: Request, name: str, *, discover: bool = True
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]] | None]:
+    """Reconcile a saved source with the live registry, then return
+    ``(summary, models)`` for what its key can reach — ``(None, None)`` when the
+    source cannot or need not be discovered. Best-effort: never raises, so a
+    discovery hiccup cannot fail the save."""
     from ollabridge.addons.providers.services import dynamic_source_sync as dss
 
     rec = get_record(name)
-    if rec is None or not dss.is_dynamic(rec.kind):
-        return None
+    if rec is None:
+        return None, None
     secret = _get_secret(name)
     await dss.sync_source(request.app, name, secret)
+    if not discover or not dss.is_discoverable(rec.kind) or not secret:
+        return None, None
     adapter = dss.build_adapter(rec, secret)
     if adapter is None:
-        return None
+        return None, None
     try:
-        models = await adapter.list_models()
+        models = dss.normalize_models(rec, await adapter.list_models())
     except Exception:  # noqa: BLE001 - a discovery failure is not a save failure
-        return None
-    return dss.discovery_summary(models)
+        return None, None
+    return dss.discovery_summary(models), models
 
 
 async def _discover_models(name: str) -> tuple[ProviderRecord, list[dict[str, Any]]]:
-    """Build the dynamic source's adapter and return (record, normalized models).
+    """Build the source's adapter and return (record, normalized models).
     Raises HTTPException for the caller to surface a clean status."""
     from ollabridge.addons.providers.errors import (
         ProviderAuthError,
         ProviderError,
+        ProviderQuotaExceeded,
     )
     from ollabridge.addons.providers.services import dynamic_source_sync as dss
 
     rec = get_record(name)
     if rec is None:
         raise HTTPException(404, f"source {name!r} is not configured")
-    if not dss.is_dynamic(rec.kind):
+    if not dss.is_discoverable(rec.kind):
         raise HTTPException(400, f"source {name!r} does not support model discovery")
-    adapter = dss.build_adapter(rec, _get_secret(name))
+    secret = _get_secret(name)
+    if not secret:
+        raise HTTPException(422, "no API key configured for this source")
+    adapter = dss.build_adapter(rec, secret)
     if adapter is None:
         raise HTTPException(422, "base_url is required for this source")
     try:
-        return rec, await adapter.list_models()
+        return rec, dss.normalize_models(rec, await adapter.list_models())
     except ProviderAuthError:
         raise HTTPException(401, "the server rejected this API key")
+    except ProviderQuotaExceeded:
+        raise HTTPException(429, "the provider is rate limiting or out of quota")
     except ProviderError as exc:
         raise HTTPException(502, f"model discovery failed: {type(exc).__name__}")
 
@@ -269,37 +325,57 @@ async def source_models(
     tag: str | None = None,
     category: str | None = None,
     persona_compatible: str | None = None,
+    free: str | None = None,
     search: str | None = None,
 ) -> dict[str, Any]:
-    """List the models a dynamic source exposes, with the same All / Local /
-    External / tag / persona-compatible filters the UI shows. Data is live from
-    the upstream (filtered by the API key's user), never a guessed catalog."""
+    """List the models this source exposes, with the same All / Local /
+    External / tag / persona-compatible / free filters the UI shows. Data is
+    live from the upstream (what this API key can actually reach), never a
+    guessed catalog."""
     from ollabridge.addons.providers.adapters.open_webui import OpenWebUIAdapter
     from ollabridge.addons.providers.services import dynamic_source_sync as dss
 
-    _rec, models = await _discover_models(name)
-    pc = None if persona_compatible is None else persona_compatible.lower() in ("1", "true", "yes")
+    rec, models = await _discover_models(name)
+    pc = _as_bool(persona_compatible)
     filtered = OpenWebUIAdapter.filter_models(
         models, connection_type=connection_type, tag=tag, category=category, persona_compatible=pc,
     )
+    free_only = _as_bool(free)
+    if free_only is not None:
+        filtered = [m for m in filtered if bool(m.get("free")) is free_only]
     if search:
         q = search.lower()
         filtered = [
             m for m in filtered
             if q in str(m.get("id", "")).lower() or q in str(m.get("name", "")).lower()
         ]
-    return {"models": filtered, "summary": dss.discovery_summary(models)}
+    return {
+        "models": filtered,
+        "summary": dss.discovery_summary(models),
+        # What the UI should preselect when the source has no default yet.
+        "recommended_default": rec.default_model or dss.default_model_for(rec, models),
+    }
+
+
+def _as_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    return value.strip().lower() in ("1", "true", "yes", "on")
 
 
 @router.post("/{name}/models/refresh")
 async def refresh_source_models(
     name: str, _key: str = Depends(require_api_key)
 ) -> dict[str, Any]:
-    """Re-discover a dynamic source's models from the upstream."""
+    """Re-discover a source's models from the upstream."""
     from ollabridge.addons.providers.services import dynamic_source_sync as dss
 
-    _rec, models = await _discover_models(name)
-    return {"models": models, "summary": dss.discovery_summary(models)}
+    rec, models = await _discover_models(name)
+    return {
+        "models": models,
+        "summary": dss.discovery_summary(models),
+        "recommended_default": rec.default_model or dss.default_model_for(rec, models),
+    }
 
 
 @router.post("/{name}/test")

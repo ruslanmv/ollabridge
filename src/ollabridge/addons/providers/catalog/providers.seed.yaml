@@ -39,9 +39,22 @@ providers:
     category: free
     priority: 95
     weight: 25
-    base_url: https://api.groq.com
+    # Same base URL the OpenAI SDK is pointed at for Groq. A bare
+    # https://api.groq.com also works — the adapter normalizes both.
+    base_url: https://api.groq.com/openai/v1
     credential_env: GROQ_API_KEY
     tags: [free, fast, testing]
+    # Concrete ids this provider serves, so the router can send
+    # "openai/gpt-oss-20b" to Groq — the id names neither "groq" nor a vendor
+    # the heuristic would otherwise resolve here. Groq retired its Llama chat
+    # models during 2026 and points migrations at the gpt-oss family.
+    models:
+      - openai/gpt-oss-20b
+      - openai/gpt-oss-120b
+      - qwen/qwen3.6-27b
+      - meta-llama/llama-4-maverick-17b-128e-instruct
+      - groq/compound
+      - groq/compound-mini
     notes: "Fastest provider for latency benchmarks"
 
   - id: openrouter-free

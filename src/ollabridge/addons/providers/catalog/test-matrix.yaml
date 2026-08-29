@@ -15,7 +15,7 @@ tests:
   - id: smoke-groq
     provider: groq-free
     type: chat
-    model: llama-3.3-70b-versatile
+    model: openai/gpt-oss-20b
     prompt: "Summarize: routing based on latency and quotas."
 
   - id: smoke-openrouter

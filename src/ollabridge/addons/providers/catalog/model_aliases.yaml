@@ -39,7 +39,7 @@ aliases:
     - provider: huggingface-free
       model: meta-llama/Llama-3.3-70B-Instruct
     - provider: groq-free
-      model: llama-3.3-70b-versatile
+      model: openai/gpt-oss-120b
     - provider: gemini-free
       model: gemini-2.5-flash
 
@@ -59,13 +59,13 @@ aliases:
     - provider: gemini-free
       model: gemini-2.5-flash
     - provider: groq-free
-      model: llama-3.3-70b-versatile
+      model: openai/gpt-oss-120b
     - provider: openrouter-free
       model: google/gemma-3-27b-it:free
 
   free-fast:
     - provider: groq-free
-      model: llama-3.3-70b-versatile
+      model: openai/gpt-oss-120b
     - provider: gemini-free
       model: gemini-2.5-flash
 
@@ -96,10 +96,10 @@ aliases:
 
   # Lowest-latency live chat route
   ollabridge:fast:
+    - provider: groq-free
+      model: openai/gpt-oss-20b
     - provider: huggingface-free
       model: meta-llama/Llama-3.1-8B-Instruct:groq
-    - provider: groq-free
-      model: llama-3.3-70b-versatile
 
   # Best reasoning / thinking model
   ollabridge:reasoning:
