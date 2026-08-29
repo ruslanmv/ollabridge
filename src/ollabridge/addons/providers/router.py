@@ -108,7 +108,21 @@ class ProviderRouter:
                     candidates.append((config, ac.model))
             return self._rank_candidates(candidates)
 
-        # 2. Not an alias. Only offer the concrete model to a provider that
+        # 2. Not an alias. A provider that *declares* this exact model id wins
+        #    outright — the id is data, not a guess. This is what routes
+        #    "openai/gpt-oss-20b" to Groq: the name heuristic below would
+        #    otherwise read the "openai/" namespace and offer it to an OpenAI
+        #    source that does not serve it.
+        available = [c for c in self.registry.list_enabled() if self._is_available(c)]
+        declared = [
+            (config, model_or_alias)
+            for config in available
+            if self._declares_model(config, model_or_alias)
+        ]
+        if declared:
+            return self._rank_candidates(declared)
+
+        # 3. Otherwise only offer the concrete model to a provider that
         #    plausibly serves it — i.e. the model id namespaces to the
         #    provider (e.g. "openai/...", "google/...") or the provider id /
         #    kind is named in the model string. We do NOT fan a bare model
@@ -117,13 +131,20 @@ class ProviderRouter:
         #    producing 401/403/404 noise before the gateway falls back to the
         #    local runtime. When nothing matches we return no candidates so
         #    the gateway uses its own local/relay routing.
-        candidates = []
-        for config in self.registry.list_enabled():
-            if self._is_available(config) and self._provider_serves_model(
-                config, model_or_alias
-            ):
-                candidates.append((config, model_or_alias))
+        candidates = [
+            (config, model_or_alias)
+            for config in available
+            if self._provider_serves_model(config, model_or_alias)
+        ]
         return self._rank_candidates(candidates)
+
+    @staticmethod
+    def _declares_model(config: ProviderConfig, model: str) -> bool:
+        """Does this provider's catalog entry name *model* outright?"""
+        wanted = (model or "").strip().lower()
+        if not wanted:
+            return False
+        return any(wanted == str(m).strip().lower() for m in (config.models or []))
 
     @staticmethod
     def _provider_serves_model(config: ProviderConfig, model: str) -> bool:

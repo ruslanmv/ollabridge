@@ -44,6 +44,21 @@ _ADAPTER_MAP: dict[str, type[BaseProviderAdapter]] = {
 }
 
 
+def _byok_key(kind: str) -> str | None:
+    """The key the user saved for this provider kind in the Sources UI, if any.
+
+    Best-effort: the SecretStore is optional (a fresh install has none) and a
+    failure to read it must never stop the provider system from booting.
+    """
+    try:
+        from ollabridge.provider_ops import get_secret
+
+        return get_secret(kind) or None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("BYOK key lookup for %s failed: %s", kind, exc)
+        return None
+
+
 def _create_adapter(config: ProviderConfig) -> BaseProviderAdapter | None:
     """Instantiate the right adapter for a provider config."""
     adapter_cls = _ADAPTER_MAP.get(config.kind)
@@ -62,6 +77,12 @@ def _create_adapter(config: ProviderConfig) -> BaseProviderAdapter | None:
         # HF_TOKEN is the canonical name; HUGGINGFACE_API_KEY is the legacy
         # OllaBridge env var. Try both so existing deployments still work.
         api_key = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_API_KEY")
+    if not api_key:
+        # A key saved through the Sources UI lives in the encrypted
+        # SecretStore under the catalog kind, not in the environment. Without
+        # this the UI can report a provider "connected" while every request
+        # it routes goes out unauthenticated.
+        api_key = _byok_key(config.kind)
     if not api_key:
         logger.info(
             "No API key found for provider %s (env: %s) — "

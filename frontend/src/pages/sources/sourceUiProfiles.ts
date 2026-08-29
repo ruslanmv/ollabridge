@@ -18,7 +18,8 @@ export type SourceUiProfile = {
   connectLabel?: string
   /** Show the "Remote AI source — prompts leave this machine" notice. */
   showRemoteNotice?: boolean
-  /** The source discovers its model list dynamically after connecting. */
+  /** The source discovers its model list dynamically after connecting.
+   * Only a hint: the backend's `supports_discovery` is authoritative. */
   supportsDiscovery?: boolean
   /** A short, actionable line explaining how to obtain the credential. */
   setupHint?: string
@@ -36,6 +37,31 @@ export const SOURCE_UI_PROFILES: Record<string, SourceUiProfile> = {
       'Create an IBM Cloud API key at cloud.ibm.com → Manage → Access (IAM) → ' +
       'API keys. Use the base URL for your region (us-south, eu-de, eu-gb, ' +
       'jp-tok, au-syd).',
+  },
+  groq: {
+    // The base URL the OpenAI SDK is pointed at for Groq. A bare
+    // https://api.groq.com works too — the backend normalizes both.
+    baseUrlPlaceholder: 'https://api.groq.com/openai/v1',
+    credentialLabel: 'API key',
+    credentialPlaceholder: 'gsk_••••••••••••••••',
+    defaultModelPlaceholder: 'openai/gpt-oss-20b',
+    connectLabel: 'Connect and discover',
+    showRemoteNotice: true,
+    supportsDiscovery: true,
+    setupHint:
+      'Create a key at console.groq.com → API Keys. Leave the model blank and ' +
+      'OllaBridge picks a free one from the models your key can reach.',
+  },
+  openrouter: {
+    baseUrlPlaceholder: 'https://openrouter.ai/api/v1',
+    credentialPlaceholder: 'sk-or-••••••••••••••••',
+    defaultModelPlaceholder: 'meta-llama/llama-3.3-70b-instruct:free',
+    connectLabel: 'Connect and discover',
+    showRemoteNotice: true,
+    supportsDiscovery: true,
+    setupHint:
+      'Create a key at openrouter.ai/keys. Model ids ending in :free cost ' +
+      'nothing to run.',
   },
   open_webui: {
     requiresBaseUrl: true,

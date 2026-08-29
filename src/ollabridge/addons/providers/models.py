@@ -51,6 +51,11 @@ class ProviderConfig(BaseModel):
     base_url: str = ""
     credential_env: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
+    # Concrete model ids this provider is known to serve. When a request names
+    # one of these, the router sends it here instead of guessing from the id's
+    # shape — the only way "openai/gpt-oss-20b" reaches Groq rather than a
+    # provider whose name happens to appear in the string.
+    models: list[str] = Field(default_factory=list)
     notes: str = ""
 
     # --- Optional endpoint/behavior overrides (additive) ----------------------

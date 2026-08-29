@@ -501,6 +501,10 @@ export type SourceObject = {
   extra_fields: SourceExtraField[]
   /** Labels of required fields still unset — empty when fully configured. */
   missing_config: string[]
+  /** The settings UI can fetch this source's model list from the upstream. */
+  supports_discovery?: boolean
+  /** Free-tier models this provider is known to serve, in preference order. */
+  free_models?: string[]
 }
 
 /** A catalog provider that has not been configured yet. */
@@ -512,6 +516,10 @@ export type AvailableSource = {
   notes: string
   /** What this provider needs beyond an API key (no values — nothing saved yet). */
   extra_fields: Omit<SourceExtraField, 'value'>[]
+  /** The settings UI can fetch this source's model list once a key is saved. */
+  supports_discovery?: boolean
+  /** Free-tier models this provider is known to serve, in preference order. */
+  free_models?: string[]
   status: 'not_configured'
 }
 
@@ -539,6 +547,9 @@ export type DiscoverySummary = {
   count: number
   connection_types: Record<string, number>
   persona_compatible: number
+  /** How many of the discovered models are on the provider's free tier. */
+  free?: number
+  categories?: Record<string, number>
   tags: Record<string, number>
 }
 
@@ -559,11 +570,16 @@ export type SourceModel = {
   category?: string
   persona_compatible?: boolean | null
   capabilities?: Record<string, boolean | null>
+  /** On the provider's free tier — no paid usage to run it. */
+  free?: boolean
+  context_window?: number | null
 }
 
 export type SourceModelsResponse = {
   models: SourceModel[]
   summary: DiscoverySummary
+  /** The model the UI should preselect when the source has no default yet. */
+  recommended_default?: string
 }
 
 export type SourceTestResponse = {

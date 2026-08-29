@@ -146,11 +146,117 @@ def test_open_webui_upsert_returns_discovery_and_models_filter(client, monkeypat
     assert {m["upstream_model_id"] for m in persona["models"]} == {"llama", "gpt"}
 
 
-def test_models_endpoint_rejects_non_dynamic_source(client, monkeypatch):
+#: A Groq-shaped ``/openai/v1/models`` listing: chat models plus the non-chat
+#: ones Groq reports in the same payload.
+_CATALOG_MODELS = [
+    {"id": "openai/gpt-oss-20b", "object": "model", "owned_by": "OpenAI"},
+    {"id": "openai/gpt-oss-120b", "object": "model", "owned_by": "OpenAI"},
+    {"id": "some-vendor/paid-model", "object": "model", "owned_by": "Vendor"},
+    {"id": "whisper-large-v3", "object": "model", "owned_by": "OpenAI"},
+]
+
+
+def _groq_catalog(_req):
+    return httpx.Response(200, json={"data": _CATALOG_MODELS})
+
+
+def _patch_openai_compatible_upstream(monkeypatch, handler=_groq_catalog):
+    """Route every OpenAI-compatible adapter's async client at a mock upstream."""
+    from ollabridge.addons.providers.adapters import openai_compatible as oc_mod
+
+    real = oc_mod.httpx.AsyncClient
+    transport = httpx.MockTransport(handler)
+
+    def _patched(*a, **kw):
+        kw.setdefault("transport", transport)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(oc_mod.httpx, "AsyncClient", _patched)
+
+
+def test_models_endpoint_rejects_source_that_cannot_discover(client, monkeypatch):
+    """Anthropic does not speak an OpenAI-style listing, so discovery is refused
+    rather than attempted and failed."""
     with patch("ollabridge.provider_ops.httpx.get", _ok_get):
-        client.post("/admin/sources/openai", headers=AUTH, json={"api_key": "sk-openaikey12345"})
-    r = client.get("/admin/sources/openai/models", headers=AUTH)
+        client.post(
+            "/admin/sources/anthropic", headers=AUTH, json={"api_key": "sk-ant-key12345"}
+        )
+    r = client.get("/admin/sources/anthropic/models", headers=AUTH)
     assert r.status_code == 400 and "discovery" in r.text
+
+
+def test_groq_discovers_live_models_and_flags_free_ones(client, monkeypatch):
+    _patch_openai_compatible_upstream(monkeypatch)
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        r = client.post(
+            "/admin/sources/groq", headers=AUTH, json={"api_key": "gsk_key1234567890"}
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["discovery"]["count"] == 4
+    assert body["discovery"]["free"] == 2  # only the gpt-oss pair is free-tier
+    assert "gsk_key" not in r.text  # key never echoed
+
+    listing = client.get("/admin/sources/groq/models", headers=AUTH).json()
+    assert {m["id"] for m in listing["models"]} == {
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+        "some-vendor/paid-model",
+        "whisper-large-v3",
+    }
+    # A transcription model is discovered but never offered as a chat default.
+    by_id = {m["id"]: m for m in listing["models"]}
+    assert by_id["whisper-large-v3"]["category"] == "audio"
+    assert by_id["openai/gpt-oss-20b"]["free"] is True
+    assert by_id["some-vendor/paid-model"]["free"] is False
+
+    free_only = client.get("/admin/sources/groq/models?free=true", headers=AUTH).json()
+    assert {m["id"] for m in free_only["models"]} == {
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+    }
+
+
+def test_source_defaults_to_a_free_model(client, monkeypatch):
+    """A source saved without a model gets the preferred free one, not blank."""
+    _patch_openai_compatible_upstream(monkeypatch)
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        r = client.post(
+            "/admin/sources/groq", headers=AUTH, json={"api_key": "gsk_key1234567890"}
+        )
+    assert r.json()["source"]["default_model"] == "openai/gpt-oss-20b"
+
+
+def test_a_settings_toggle_does_not_call_the_provider(client, monkeypatch):
+    """Discovery is a round-trip upstream, so it runs when the credential
+    changed or a default model is still needed — not on every checkbox."""
+    calls: list[str] = []
+
+    def counting(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, json={"data": _CATALOG_MODELS})
+
+    _patch_openai_compatible_upstream(monkeypatch, counting)
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        client.post(
+            "/admin/sources/groq", headers=AUTH, json={"api_key": "gsk_key1234567890"}
+        )
+        assert len(calls) == 1  # the key was new, so the catalog was fetched
+
+        r = client.post("/admin/sources/groq", headers=AUTH, json={"allow_routing": True})
+    assert r.json()["source"]["allow_routing"] is True
+    assert len(calls) == 1  # unchanged: no second round-trip for a toggle
+
+
+def test_explicit_default_model_is_never_overridden(client, monkeypatch):
+    _patch_openai_compatible_upstream(monkeypatch)
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        r = client.post(
+            "/admin/sources/groq",
+            headers=AUTH,
+            json={"api_key": "gsk_key1234567890", "default_model": "openai/gpt-oss-120b"},
+        )
+    assert r.json()["source"]["default_model"] == "openai/gpt-oss-120b"
 
 
 def test_update_toggles_without_touching_key(client):
@@ -164,13 +270,13 @@ def test_update_toggles_without_touching_key(client):
             json={
                 "allow_routing": True,
                 "sharing": "workspace",
-                "default_model": "llama-3.3-70b-versatile",
+                "default_model": "openai/gpt-oss-120b",
             },
         )
     src = r.json()["source"]
     assert src["allow_routing"] is True
     assert src["sharing"] == "workspace"
-    assert src["default_model"] == "llama-3.3-70b-versatile"
+    assert src["default_model"] == "openai/gpt-oss-120b"
     assert src["key_configured"] is True
 
 

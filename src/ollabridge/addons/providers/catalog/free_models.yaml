@@ -1,0 +1,67 @@
+# ─────────────────────────────────────────────────────────────
+# OllaBridge — Free-tier model catalog
+# ─────────────────────────────────────────────────────────────
+# Which models a provider serves on its *free* tier, in preference order.
+#
+# Two jobs:
+#   1. Default: a source added through the Sources UI with no explicit
+#      default model gets the first entry here that its live catalog
+#      actually offers. Free by default — the user opts in to paid.
+#   2. Badging: live discovery marks a model `free: true` when its id is
+#      listed (or matches a `prefixes` entry), so the settings picker can
+#      show and filter the free ones.
+#
+# This file never replaces live discovery — `GET {base}/models` is the
+# source of truth for what exists. It only says which of those are free
+# and which one to pick first. Keep the lists short and current: a model
+# id that has been decommissioned upstream simply stops matching.
+#
+# Groq deprecated its Llama chat models (llama-3.3-70b-versatile,
+# llama-3.1-8b-instant), qwen/qwen3-32b, meta-llama/llama-4-scout-* and
+# moonshotai/kimi-k2-instruct-0905 during 2026; the gpt-oss family is the
+# migration target Groq itself recommends.
+# ─────────────────────────────────────────────────────────────
+
+kinds:
+  groq:
+    # Preference order: small+fastest first, then larger, then multimodal.
+    models:
+      - openai/gpt-oss-20b
+      - openai/gpt-oss-120b
+      - qwen/qwen3.6-27b
+      - meta-llama/llama-4-maverick-17b-128e-instruct
+      - groq/compound-mini
+      - groq/compound
+    # Anything under these namespaces is free-tier on Groq even when it is
+    # newer than this file.
+    prefixes:
+      - openai/gpt-oss
+      - groq/compound
+
+  openrouter:
+    # OpenRouter marks its free routes with a ``:free`` suffix.
+    models:
+      - openai/gpt-oss-20b:free
+      - meta-llama/llama-3.3-70b-instruct:free
+      - google/gemma-3-27b-it:free
+      - deepseek/deepseek-chat:free
+    suffixes:
+      - ":free"
+
+  gemini:
+    models:
+      - gemini-2.5-flash
+      - gemini-2.5-flash-lite
+
+  huggingface:
+    # HF Inference Providers bills monthly free credits rather than
+    # per-model, so every route is "free" until the credit runs out.
+    models:
+      - meta-llama/Llama-3.3-70B-Instruct
+      - meta-llama/Llama-3.1-8B-Instruct
+      - Qwen/Qwen2.5-72B-Instruct
+
+  cerebras:
+    models:
+      - gpt-oss-120b
+      - qwen-3-32b
