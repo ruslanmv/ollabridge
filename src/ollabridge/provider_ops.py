@@ -75,6 +75,19 @@ def rotate_secret(name: str, new_value: str, store=None) -> ProviderRecord:
     return rec
 
 
+def _record_outcome(
+    rec: ProviderRecord | None, outcome: tuple[bool, str]
+) -> tuple[bool, str]:
+    """Stamp a probe verdict on the source so the UI reflects it, then return it."""
+    if rec:
+        rec.last_test_ok = outcome[0]
+        rec.last_test_at = dt.datetime.now(dt.timezone.utc).isoformat(
+            timespec="seconds"
+        )
+        upsert_record(rec)
+    return outcome
+
+
 def test_provider(name: str, *, store=None, timeout: float = 10.0) -> tuple[bool, str]:
     """Lightweight credential/health check. Never sends prompt content.
 
@@ -101,17 +114,27 @@ def test_provider(name: str, *, store=None, timeout: float = 10.0) -> tuple[bool
     elif kind == "watsonx":
         # watsonx does not accept the IBM Cloud API key as a bearer token —
         # it must first be exchanged for a short-lived IAM access token.
+        # A rejection here is a credential verdict like any other, so it is
+        # recorded on the source rather than returned unstamped: otherwise
+        # the UI keeps showing the last (stale) status for a bad key.
         try:
             key = _watsonx_iam_token(key, timeout=timeout)
         except httpx.TimeoutException:
-            return False, f"timeout after {timeout}s reaching {IAM_TOKEN_URL}"
+            return _record_outcome(
+                rec, (False, f"timeout after {timeout}s reaching {IAM_TOKEN_URL}")
+            )
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
-            if status in (400, 401, 403):
-                return False, f"IBM Cloud API key rejected by IAM (HTTP {status})"
-            return False, f"IAM token exchange failed (HTTP {status})"
+            detail = (
+                f"IBM Cloud API key rejected by IAM (HTTP {status})"
+                if status in (400, 401, 403)
+                else f"IAM token exchange failed (HTTP {status})"
+            )
+            return _record_outcome(rec, (False, detail))
         except httpx.HTTPError as exc:
-            return False, redact_text(f"{type(exc).__name__}: {exc}")
+            return _record_outcome(
+                rec, (False, redact_text(f"{type(exc).__name__}: {exc}"))
+            )
         url = f"{base}{spec.models_path}"
         headers = {"Authorization": f"Bearer {key}"}
     else:
@@ -147,13 +170,7 @@ def test_provider(name: str, *, store=None, timeout: float = 10.0) -> tuple[bool
     else:
         outcome = False, redact_text(f"HTTP {r.status_code}: {r.text[:120]}")
 
-    if rec:
-        rec.last_test_ok = outcome[0]
-        rec.last_test_at = dt.datetime.now(dt.timezone.utc).isoformat(
-            timespec="seconds"
-        )
-        upsert_record(rec)
-    return outcome
+    return _record_outcome(rec, outcome)
 
 
 def export_redacted(store=None) -> dict:

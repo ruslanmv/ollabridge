@@ -156,20 +156,34 @@ def test_probe_exchanges_the_api_key_for_an_iam_token(ollabridge_home):
     assert get.call_args.kwargs["headers"]["Authorization"] == "Bearer iam-token-1"
 
 
+def _iam_denied(url, data=None, headers=None, timeout=None):
+    return httpx.Response(
+        400, json={"errorCode": "BXNIM0415E"}, request=httpx.Request("POST", url)
+    )
+
+
 def test_probe_reports_a_rejected_ibm_key_clearly(ollabridge_home):
     set_secret("watsonx", "bad-key")
     upsert_record(_watsonx_record(extra={"project_id": PROJECT_ID}))
-
-    def _iam_denied(url, data=None, headers=None, timeout=None):
-        return httpx.Response(
-            400, json={"errorCode": "BXNIM0415E"}, request=httpx.Request("POST", url)
-        )
 
     with patch("httpx.post", side_effect=_iam_denied):
         ok, detail = probe_provider("watsonx")
 
     assert ok is False
     assert "IAM" in detail
+
+
+def test_a_rejected_ibm_key_is_recorded_on_the_source(ollabridge_home):
+    """An IAM rejection must be stamped, or the card keeps saying Connected."""
+    set_secret("watsonx", "bad-key")
+    upsert_record(_watsonx_record(extra={"project_id": PROJECT_ID}))
+
+    with patch("httpx.post", side_effect=_iam_denied):
+        probe_provider("watsonx")
+
+    rec = get_record("watsonx")
+    assert rec.last_test_ok is False
+    assert rec.last_test_at is not None
 
 
 def test_probe_fails_when_the_project_id_is_missing(ollabridge_home):

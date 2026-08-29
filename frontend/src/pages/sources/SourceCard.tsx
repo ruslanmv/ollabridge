@@ -12,6 +12,7 @@ import {
   Cpu,
   CheckCircle2,
   XCircle,
+  AlertTriangle,
 } from 'lucide-react'
 import type { AvailableSource, SourceObject } from '../../lib/api'
 import { useDeleteSource, useTestSource, useUpsertSource } from '../../lib/hooks'
@@ -153,6 +154,17 @@ export function ConfiguredSourceCard({
         )}
       </div>
 
+      {/* A key alone is not always enough — name what is still missing, so
+          the card says what to do rather than only that something is wrong. */}
+      {source.missing_config?.length > 0 && (
+        <div className="flex items-start gap-1.5 px-2.5 py-2 mb-4 rounded-lg bg-amber-500/8 border border-amber-500/25 text-[11px] text-amber-200/90">
+          <AlertTriangle size={12} className="shrink-0 mt-px" />
+          <span>
+            Needs {source.missing_config.join(', ')} — open Configure to set it.
+          </span>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="mt-auto">
         {confirmRemove ? (
@@ -217,6 +229,14 @@ export function AvailableSourceCard({
   delay?: number
   onAdd: (s: AvailableSource) => void
 }) {
+  // Say what this source actually needs. A provider with required extra
+  // config (watsonx: a project id) needs more than a key, and promising
+  // only "Add API key" sets the user up to hit a validation error.
+  const alsoNeeds = (source.extra_fields ?? [])
+    .filter((f) => f.required)
+    .map((f) => f.label)
+  const cta = alsoNeeds.length > 0 ? `Add key + ${alsoNeeds.join(', ')}` : 'Add API key'
+
   return (
     <motion.button
       initial={{ opacity: 0, y: 14 }}
@@ -238,7 +258,7 @@ export function AvailableSourceCard({
         <p className="text-[11px] text-white/35 leading-relaxed line-clamp-2 mb-3">{source.notes}</p>
       )}
       <span className="mt-auto inline-flex items-center gap-1.5 text-[11px] font-medium text-glow-cyan/80 group-hover:text-glow-cyan">
-        <KeyRound size={12} /> Add API key
+        <KeyRound size={12} /> {cta}
       </span>
     </motion.button>
   )
