@@ -8,6 +8,7 @@ import {
   type SourceHealthRequest,
 } from '../../lib/api'
 import { useModelAccess, useModels, useSetModelAccess, useSettings } from '../../lib/hooks'
+import { ExternalRuntimes } from './ExternalRuntimes'
 import type { Page } from '../../App'
 
 type SourceHealthResult = {
@@ -577,6 +578,11 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
             </div>
           </SectionCard>
         </div>
+
+        {/* External accounts acting as runtimes. Configured in Sources; shown
+            here because a routing-enabled source serves requests exactly like
+            a local backend does, and is published to Cloud alongside them. */}
+        <ExternalRuntimes onNavigate={onNavigate} />
 
         <div className="flex justify-end">
           <button

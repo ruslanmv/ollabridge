@@ -81,19 +81,54 @@ def _homepilot_models() -> list[str]:
     return []
 
 
-def _inventory() -> list[tuple[str, str, str]]:
-    """(source_id, source_label, model_id) across local Ollama + HomePilot.
+def _external_source_models() -> list[tuple[str, str, str]]:
+    """(source_id, label, model_id) for each connected external source.
 
-    Concrete model lists are available for local Ollama and, when enabled, the
-    HomePilot persona source. Other external sources expose their models after a
-    catalog sync (out of scope here), so they appear as a source row the UI can
-    drill into.
+    A source contributes the model it is actually configured to serve — the
+    one the Sources card shows under its name — plus any other model the user
+    has already made an explicit access decision about. Enumerating a
+    provider's whole catalog here would mean a network round trip per source
+    on every manifest build, to publish hundreds of models the user never
+    chose; the selected model is the one they did choose.
+
+    Reads ``providers.yaml`` only. Metadata, no secrets, no network.
+    """
+    from ollabridge.providers_meta import PROVIDER_CATALOG, load_providers
+
+    decided: dict[str, set[str]] = {}
+    for rec in ma.load_all().values():
+        decided.setdefault(rec.source_id, set()).add(rec.model_id)
+
+    inv: list[tuple[str, str, str]] = []
+    for rec in load_providers():
+        if not rec.enabled:
+            continue
+        spec = PROVIDER_CATALOG.get(rec.kind or rec.name)
+        label = rec.display_name or (spec.label if spec else rec.name)
+        seen: set[str] = set()
+        for mid in [rec.default_model, *sorted(decided.get(rec.name, ()))]:
+            mid = (mid or "").strip()
+            if mid and mid not in seen:
+                seen.add(mid)
+                inv.append((rec.name, label, mid))
+    return inv
+
+
+def _inventory() -> list[tuple[str, str, str]]:
+    """(source_id, source_label, model_id) across every configured source.
+
+    Local Ollama and HomePilot are enumerated live; external accounts
+    contribute the model each is configured to serve. Without the external
+    half, a Groq or watsonx source could read "Connected · Routing on" in the
+    UI while being invisible to Models & Access and absent from everything
+    published to OllaBridge Cloud.
     """
     inv: list[tuple[str, str, str]] = []
     for mid in _local_ollama_models():
         inv.append(("ollama", "Ollama on this PC", mid))
     for mid in _homepilot_models():
         inv.append(("homepilot", "HomePilot personas", mid))
+    inv.extend(_external_source_models())
     return inv
 
 

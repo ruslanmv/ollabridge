@@ -30,6 +30,9 @@ from typing import Literal, Optional
 import yaml
 from pydantic import BaseModel, Field
 
+from ollabridge.addons.providers.adapters.watsonx import (
+    WATSONX_API_VERSION as _WATSONX_API_VERSION,
+)
 from ollabridge.core import paths
 
 StorageMode = Literal["local_only", "cloud_encrypted_vault", "organization_vault"]
@@ -123,7 +126,10 @@ PROVIDER_CATALOG: dict[str, ProviderSpec] = {
             env_var="WATSONX_API_KEY",
             base_url="https://us-south.ml.cloud.ibm.com",
             openai_compatible=False,
-            models_path="/ml/v1/foundation_model_specs?version=2024-09-16",
+            # Credential probe only — the real catalog listing (paginated and
+            # filtered to chat models) lives in the watsonx adapter, which
+            # owns WATSONX_API_VERSION so the two cannot drift apart.
+            models_path=f"/ml/v1/foundation_model_specs?version={_WATSONX_API_VERSION}",
             notes="IBM watsonx.ai foundation models. Requires a project_id (or "
             "space_id) and a region base URL.",
             extra_fields=[

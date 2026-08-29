@@ -175,14 +175,130 @@ def _patch_openai_compatible_upstream(monkeypatch, handler=_groq_catalog):
 
 
 def test_models_endpoint_rejects_source_that_cannot_discover(client, monkeypatch):
-    """Anthropic does not speak an OpenAI-style listing, so discovery is refused
-    rather than attempted and failed."""
+    """Anthropic does not speak an OpenAI-style listing and has no catalog
+    adapter here, so discovery is refused rather than attempted and failed."""
     with patch("ollabridge.provider_ops.httpx.get", _ok_get):
         client.post(
             "/admin/sources/anthropic", headers=AUTH, json={"api_key": "sk-ant-key12345"}
         )
     r = client.get("/admin/sources/anthropic/models", headers=AUTH)
     assert r.status_code == 400 and "discovery" in r.text
+
+
+def _patch_watsonx_upstream(monkeypatch):
+    """Route the watsonx adapter at a mock IAM + foundation_model_specs pair."""
+    from ollabridge.addons.providers.adapters import watsonx as wx
+
+    def route(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "iam.cloud.ibm.com":
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(200, json={"resources": [
+            {"model_id": "ibm/granite-4-h-small", "label": "Granite 4 H Small",
+             "provider": "IBM", "lifecycle": [{"id": "available"}]},
+            {"model_id": "ibm/granite-3-8b-instruct", "label": "Granite 3 8B",
+             "provider": "IBM", "lifecycle": [{"id": "deprecated"}]},
+            {"model_id": "mistralai/mistral-large", "provider": "Mistral AI"},
+        ]})
+
+    real = wx.httpx.AsyncClient
+    transport = httpx.MockTransport(route)
+
+    def _patched(*a, **kw):
+        kw.setdefault("transport", transport)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(wx.httpx, "AsyncClient", _patched)
+
+
+def test_watsonx_defaults_to_the_best_live_model_not_a_hardcoded_one(
+    client, monkeypatch
+):
+    """The settings form used to ship ibm/granite-3-8b-instruct. The default
+    now comes from what this account can actually run, and skips the model
+    IBM has deprecated."""
+    _patch_watsonx_upstream(monkeypatch)
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        r = client.post(
+            "/admin/sources/watsonx",
+            headers=AUTH,
+            json={"api_key": "ibm-cloud-key", "extra": {"project_id": "proj-1"}},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["source"]["default_model"] == "ibm/granite-4-h-small"
+
+
+def test_watsonx_lists_its_catalog_with_deprecation_marked(client, monkeypatch):
+    _patch_watsonx_upstream(monkeypatch)
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        client.post(
+            "/admin/sources/watsonx",
+            headers=AUTH,
+            json={"api_key": "ibm-cloud-key", "extra": {"project_id": "proj-1"}},
+        )
+    body = client.get("/admin/sources/watsonx/models", headers=AUTH).json()
+    by_id = {m["id"]: m for m in body["models"]}
+    assert set(by_id) == {
+        "ibm/granite-4-h-small",
+        "ibm/granite-3-8b-instruct",
+        "mistralai/mistral-large",
+    }
+    assert by_id["ibm/granite-3-8b-instruct"]["deprecated"] is True
+    assert by_id["ibm/granite-4-h-small"]["name"] == "Granite 4 H Small"
+    # Nothing on watsonx is free, so the picker shows no free badges.
+    assert body["summary"]["free"] == 0
+    assert body["recommended_default"] == "ibm/granite-4-h-small"
+
+
+def test_a_routing_enabled_source_reaches_the_cloud_manifest(client, monkeypatch):
+    """End to end: connect watsonx, switch routing on, and its model is in the
+    manifest this device publishes to OllaBridge Cloud — which is what makes it
+    selectable in a paired app's model picker."""
+    from ollabridge.api.model_access_routes import router as access_router
+
+    client.app.include_router(access_router)
+    # No Ollama or HomePilot in this fixture, so the manifest is exactly the
+    # external half — the part that used to be missing entirely.
+    _patch_watsonx_upstream(monkeypatch)
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        client.post(
+            "/admin/sources/watsonx",
+            headers=AUTH,
+            json={
+                "api_key": "ibm-cloud-key",
+                "extra": {"project_id": "proj-1"},
+                "allow_routing": True,
+            },
+        )
+    manifest = client.get("/admin/model-access/manifest/cloud", headers=AUTH).json()
+    published = {m["model_id"]: m for m in manifest["models"]}
+    assert "ibm/granite-4-h-small" in published
+    assert published["ibm/granite-4-h-small"]["source_id"] == "watsonx"
+    assert published["ibm/granite-4-h-small"]["source_label"] == "IBM watsonx.ai"
+
+
+def test_a_routing_off_source_is_never_published(client, monkeypatch):
+    """Safe by default: connecting an account does not share it."""
+    from ollabridge.api.model_access_routes import router as access_router
+
+    client.app.include_router(access_router)
+    _patch_watsonx_upstream(monkeypatch)
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        client.post(
+            "/admin/sources/watsonx",
+            headers=AUTH,
+            json={"api_key": "ibm-cloud-key", "extra": {"project_id": "proj-1"}},
+        )
+    manifest = client.get("/admin/model-access/manifest/cloud", headers=AUTH).json()
+    assert manifest["models"] == []
+
+
+def test_watsonx_suggests_nothing_before_a_key_is_saved(client):
+    """A per-account catalog has no honest fixed suggestion — the field stays
+    empty rather than naming a model the account may not have."""
+    listing = client.get("/admin/sources", headers=AUTH).json()
+    watsonx = next(s for s in listing["available"] if s["name"] == "watsonx")
+    assert watsonx["suggested_models"] == []
+    assert watsonx["supports_discovery"] is True
 
 
 def test_groq_discovers_live_models_and_flags_free_ones(client, monkeypatch):

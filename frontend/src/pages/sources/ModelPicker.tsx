@@ -27,16 +27,25 @@ export function ModelPicker({
   onSelect: (modelId: string) => void
 }) {
   const [search, setSearch] = useState('')
-  const [freeOnly, setFreeOnly] = useState(true)
+  // null = follow the catalog: filter to free models when the provider has
+  // any. A provider that bills for everything (watsonx) would otherwise open
+  // on an empty list behind a filter the user never asked for.
+  const [freeOnlyChoice, setFreeOnlyChoice] = useState<boolean | null>(null)
   const query = useSourceModels(name, { enabled })
+
+  const summary = query.data?.summary
+  const freeCount = summary?.free ?? 0
+  const hasFreeTier = freeCount > 0
+  const freeOnly = freeOnlyChoice ?? hasFreeTier
 
   const models = useMemo(() => {
     const all = query.data?.models ?? []
-    // A transcription or moderation model is a real part of the catalog but
-    // never a chat default, so it is listed last rather than hidden.
+    // An embedding or safety-guard model is a real part of the catalog but
+    // never a chat default, so it is listed last rather than hidden. Same for
+    // a model the provider has marked deprecated.
     const chatFirst = [...all].sort((a, b) => {
       const rank = (m: SourceModel) =>
-        (m.category === 'chat' ? 0 : 2) + (m.free ? 0 : 1)
+        (m.category === 'chat' ? 0 : 4) + (m.deprecated ? 2 : 0) + (m.free ? 0 : 1)
       return rank(a) - rank(b) || String(a.id).localeCompare(String(b.id))
     })
     const q = search.trim().toLowerCase()
@@ -48,9 +57,6 @@ export function ModelPicker({
           String(m.name ?? '').toLowerCase().includes(q)),
     )
   }, [query.data, search, freeOnly])
-
-  const summary = query.data?.summary
-  const freeCount = summary?.free ?? 0
 
   if (!enabled) {
     return (
@@ -79,19 +85,21 @@ export function ModelPicker({
             className="w-full bg-transparent pl-6 pr-2 py-1 text-xs text-white placeholder:text-white/25 focus:outline-none"
           />
         </div>
-        <button
-          type="button"
-          onClick={() => setFreeOnly((v) => !v)}
-          aria-pressed={freeOnly}
-          className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium transition-colors"
-          style={{
-            background: freeOnly ? 'rgba(20,184,166,0.12)' : 'rgba(255,255,255,0.02)',
-            borderColor: freeOnly ? 'rgba(20,184,166,0.35)' : 'rgba(255,255,255,0.08)',
-            color: freeOnly ? '#5eead4' : 'rgba(255,255,255,0.5)',
-          }}
-        >
-          <Sparkles size={10} /> Free only
-        </button>
+        {hasFreeTier && (
+          <button
+            type="button"
+            onClick={() => setFreeOnlyChoice(!freeOnly)}
+            aria-pressed={freeOnly}
+            className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium transition-colors"
+            style={{
+              background: freeOnly ? 'rgba(20,184,166,0.12)' : 'rgba(255,255,255,0.02)',
+              borderColor: freeOnly ? 'rgba(20,184,166,0.35)' : 'rgba(255,255,255,0.08)',
+              color: freeOnly ? '#5eead4' : 'rgba(255,255,255,0.5)',
+            }}
+          >
+            <Sparkles size={10} /> Free only
+          </button>
+        )}
         <button
           type="button"
           onClick={() => query.refetch()}
@@ -150,6 +158,14 @@ export function ModelPicker({
                       </span>
                     )}
                   </span>
+                  {m.deprecated && (
+                    <span
+                      title="The provider has scheduled this model for retirement"
+                      className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-amber-400/10 text-amber-300 border border-amber-400/25"
+                    >
+                      Deprecated
+                    </span>
+                  )}
                   {m.free && (
                     <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-teal-400/10 text-teal-300 border border-teal-400/25">
                       Free
@@ -165,7 +181,7 @@ export function ModelPicker({
       {summary && (
         <div className="px-3 py-1.5 border-t border-white/5 text-[10px] text-white/35">
           {summary.count} model{summary.count === 1 ? '' : 's'} reachable with this
-          key · {freeCount} free
+          key{hasFreeTier ? ` · ${freeCount} free` : ''}
         </div>
       )}
     </div>

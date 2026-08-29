@@ -81,21 +81,53 @@ def load_all(path: Path | None = None) -> dict[str, ModelAccess]:
     return {r.access_key: r for r in records}
 
 
+#: Local execution backends. Their models are shared with the cloud by
+#: default, so a fresh install publishes the same list shown in Local
+#: Runtimes — the whole point of enabling the HomePilot source is to expose
+#: those agents to paired devices and external apps (personas are further
+#: gated by HomePilot's own "Publish as API Model" step before they are even
+#: discovered here).
+LOCAL_SOURCE_IDS = ("ollama", "homepilot")
+
+
+def _source_opted_into_routing(source_id: str) -> bool:
+    """Has the user switched routing on for this external source?
+
+    Read from ``providers.yaml`` rather than passed in, so every caller of
+    :func:`get` and :func:`cloud_manifest` sees the same default without
+    having to thread the flag through. Best-effort: an unreadable providers
+    file means "no opt-in", which is the safe answer.
+    """
+    try:
+        from ollabridge.providers_meta import get_record
+
+        rec = get_record(source_id)
+        return bool(rec and rec.enabled and rec.allow_routing)
+    except Exception:  # noqa: BLE001 - a missing/broken file is not an opt-in
+        return False
+
+
 def _default_access(source_id: str, model_id: str) -> ModelAccess:
     """Access defaults for a newly discovered model.
 
-    Local Ollama models AND HomePilot persona/personality models are shared with
-    the cloud by default, so a fresh local install publishes the same list shown
-    in Local Runtimes — the whole point of enabling the HomePilot source is to
-    expose those agents to paired devices and external apps (personas are
-    further gated by HomePilot's own "Publish as API Model" step before they are
-    even discovered here). Other source types remain cloud-private until they
-    are explicitly enabled. Users can still disable cloud sharing per model.
+    Local runtimes are cloud-visible by default (see ``LOCAL_SOURCE_IDS``).
+
+    An external source follows the routing opt-in the user made on the source
+    itself: switching on "Allow this source in routing" is the explicit act of
+    putting that account into service, so its chosen model joins the models
+    published to OllaBridge Cloud and becomes selectable on a paired device.
+    A source left routing-off stays cloud-private, and either way the user can
+    still flip cloud sharing per model afterwards — this only sets the default
+    for a model no one has decided about yet.
     """
+    if source_id in LOCAL_SOURCE_IDS:
+        return ModelAccess(source_id=source_id, model_id=model_id, visible_cloud=True)
+    routing_on = _source_opted_into_routing(source_id)
     return ModelAccess(
         source_id=source_id,
         model_id=model_id,
-        visible_cloud=(source_id in ("ollama", "homepilot")),
+        visible_cloud=routing_on,
+        allow_routing=routing_on,
     )
 
 

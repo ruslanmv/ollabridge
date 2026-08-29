@@ -12,7 +12,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from ollabridge.addons.providers import free_tier
+from ollabridge.addons.providers import model_defaults
 from ollabridge.addons.providers.adapters.deepseek import DeepSeekAdapter
 from ollabridge.addons.providers.adapters.groq import GROQ_BASE_URL, GroqAdapter
 from ollabridge.addons.providers.adapters.openrouter import OpenRouterAdapter
@@ -135,31 +135,31 @@ async def test_list_models_returns_the_live_catalog(monkeypatch):
 
 
 def test_groq_free_tier_covers_the_gpt_oss_family():
-    assert free_tier.is_free("groq", "openai/gpt-oss-20b")
-    assert free_tier.is_free("groq", "openai/gpt-oss-120b")
+    assert model_defaults.is_free("groq", "openai/gpt-oss-20b")
+    assert model_defaults.is_free("groq", "openai/gpt-oss-120b")
     # Prefix rule: a newer gpt-oss size is free without editing the catalog.
-    assert free_tier.is_free("groq", "openai/gpt-oss-40b")
-    assert not free_tier.is_free("groq", "some-vendor/paid-model")
+    assert model_defaults.is_free("groq", "openai/gpt-oss-40b")
+    assert not model_defaults.is_free("groq", "some-vendor/paid-model")
 
 
 def test_openrouter_free_routes_are_recognised_by_suffix():
-    assert free_tier.is_free("openrouter", "meta-llama/llama-3.3-70b-instruct:free")
-    assert not free_tier.is_free("openrouter", "meta-llama/llama-3.3-70b-instruct")
+    assert model_defaults.is_free("openrouter", "meta-llama/llama-3.3-70b-instruct:free")
+    assert not model_defaults.is_free("openrouter", "meta-llama/llama-3.3-70b-instruct")
 
 
 def test_preferred_default_skips_models_the_provider_no_longer_serves():
     # gpt-oss-20b is first in the catalog but absent upstream, so the next
     # free model that is actually offered wins.
     assert (
-        free_tier.preferred_default("groq", ["openai/gpt-oss-120b", "qwen/qwen3.6-27b"])
+        model_defaults.preferred_default("groq", ["openai/gpt-oss-120b", "qwen/qwen3.6-27b"])
         == "openai/gpt-oss-120b"
     )
     # Nothing free on offer: say so rather than saving a model that 400s.
-    assert free_tier.preferred_default("groq", ["some-vendor/paid-model"]) == ""
+    assert model_defaults.preferred_default("groq", ["some-vendor/paid-model"]) == ""
     # No discovery at all: fall back to the catalog's first choice.
-    assert free_tier.preferred_default("groq") == "openai/gpt-oss-20b"
+    assert model_defaults.preferred_default("groq") == "openai/gpt-oss-20b"
 
 
 def test_unknown_provider_kind_has_no_free_models():
-    assert free_tier.free_models("not-a-provider") == []
-    assert free_tier.preferred_default("not-a-provider") == ""
+    assert model_defaults.free_models("not-a-provider") == []
+    assert model_defaults.preferred_default("not-a-provider") == ""
