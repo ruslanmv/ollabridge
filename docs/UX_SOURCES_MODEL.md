@@ -74,8 +74,27 @@ HomePilot             Disabled                            [Enable]
 ```
 
 watsonx.ai is a **first-class source** (catalog entry `watsonx`), with
-provider-specific fields (`project_id`/space, `region`) surfaced by the Sources
-API's `extra_fields`, not a generic "custom endpoint".
+provider-specific fields surfaced by the Sources API's `extra_fields`, not a
+generic "custom endpoint". For watsonx those are `project_id` (required) and
+`space_id`; the region lives in `base_url`
+(`https://us-south.ml.cloud.ibm.com`) rather than as a second field that could
+disagree with it.
+
+Extra fields are **metadata, not secrets**: they persist in `providers.yaml`
+next to the rest of a source's config, never in the encrypted key store. Each
+declares an `env_var` that acts as a fallback (`WATSONX_PROJECT_ID`), so an
+exported value still works; a value saved on the source wins. Set one with:
+
+```bash
+ollabridge providers add watsonx --extra project_id=<id>   # prompts if omitted
+ollabridge providers config watsonx                        # show current config
+ollabridge providers config watsonx project_id=<id>        # change it later
+```
+
+`POST /admin/sources/watsonx` takes the same values as `{"extra": {...}}`, and
+a source whose required fields are unset reports `status: "missing_config"`
+with the labels in `missing_config` — an API key alone does not make watsonx
+usable.
 
 ### Models & Access tab — the key fix
 
@@ -124,7 +143,7 @@ get different labels — never both called "sharing".
 
 ```
 1. Sources → add Ollama on this PC        (auto-detected, 2 models)
-2. Sources → add IBM watsonx.ai           (project_id + region + key; Save & Test; sync models)
+2. Sources → add IBM watsonx.ai           (key + project_id + region base URL; Save & Test; sync models)
 3. Cloud   → pair this computer
 4. Models & Access → toggle Cloud + yourfriend.online for the models you want
 5. yourfriend.online → the model selector shows only those, grouped by source
@@ -144,7 +163,7 @@ granite-3-8b    IBM watsonx.ai · cloud direct          (if key in cloud vault)
 |---|---|
 | `model_access.py` + `/admin/model-access/*` | **Implemented & tested** — the new Access primitive |
 | `cloud_manifest()` filters by `visible_cloud` + per-app allow-lists | **Implemented & tested** |
-| watsonx.ai as a first-class source (catalog + `extra_fields`) | **Implemented** (cloud-side adapter already exists) |
+| watsonx.ai as a first-class source (catalog + `extra_fields`) | **Implemented & tested** — `extra_fields` are now read, stored, and surfaced end to end (CLI, Sources API, credential probe) |
 | Source removal cascades to access records | **Implemented & tested** |
 | Sources tab (cards, peers) | **Shipped** (External Sources Hub, sidebar → Sources) |
 | Models & Access tab UI | **Shipped** — per-model grid: This PC · LAN (soon) · Cloud · allowed apps · Routing |

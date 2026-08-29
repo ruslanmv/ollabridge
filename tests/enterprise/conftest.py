@@ -29,6 +29,10 @@ def ollabridge_home(tmp_path, monkeypatch):
         "AWS_BEARER_TOKEN_BEDROCK",
         "CUSTOM_LLM_API_KEY",
         "OLLABRIDGE_CLOUD_API_KEY",
+        "WATSONX_API_KEY",
+        # Extra-field fallbacks, not keys — same isolation rule applies.
+        "WATSONX_PROJECT_ID",
+        "WATSONX_SPACE_ID",
     ):
         monkeypatch.delenv(var, raising=False)
     # Reset the trace store singleton so it binds to the isolated home.

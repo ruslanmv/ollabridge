@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import type {
   AvailableSource,
+  SourceExtraField,
   SourceObject,
   SourceSharing,
   SourceStorageMode,
@@ -62,9 +63,25 @@ type FormState = {
   storage_mode: SourceStorageMode
   sharing: SourceSharing
   allow_routing: boolean
+  /** Provider-specific values, keyed by the backend field name. */
+  extra: Record<string, string>
+}
+
+/**
+ * The config fields this provider needs beyond a key, as declared by the
+ * backend catalog. On edit they carry the current values; on add there is
+ * nothing saved yet, so they start blank. Nothing here is provider-specific
+ * in code — watsonx's project id arrives the same way any future field would.
+ */
+function extraFieldsOf(target: ModalTarget): SourceExtraField[] {
+  if (target.mode === 'edit') return target.source.extra_fields ?? []
+  return (target.source.extra_fields ?? []).map((f) => ({ ...f, value: '' }))
 }
 
 function initialState(target: ModalTarget): FormState {
+  const extra = Object.fromEntries(
+    extraFieldsOf(target).map((f) => [f.name, f.value ?? '']),
+  )
   if (target.mode === 'edit') {
     const s = target.source
     return {
@@ -75,6 +92,7 @@ function initialState(target: ModalTarget): FormState {
       storage_mode: s.storage_mode,
       sharing: s.sharing,
       allow_routing: s.allow_routing,
+      extra,
     }
   }
   return {
@@ -85,6 +103,7 @@ function initialState(target: ModalTarget): FormState {
     storage_mode: 'local_only',
     sharing: 'private',
     allow_routing: false,
+    extra,
   }
 }
 
@@ -108,6 +127,11 @@ export function SourceModal({
   const isEdit = target.mode === 'edit'
   const profile = sourceUiProfile(name)
   const baseUrlRequired = BASE_URL_REQUIRED.has(name) || !!profile.requiresBaseUrl
+  // Some providers name their credential something other than "API key"
+  // (watsonx takes an IBM Cloud API key, not a watsonx-specific one).
+  const credentialLabel = profile.credentialLabel ?? 'API key'
+
+  const extraFields = useMemo(() => extraFieldsOf(target), [target])
 
   const [form, setForm] = useState<FormState>(() => initialState(target))
 
@@ -172,13 +196,32 @@ export function SourceModal({
     setValidationError(null)
   }
 
+  const setExtra = (field: string, value: string) => {
+    setForm((f) => ({ ...f, extra: { ...f.extra, [field]: value } }))
+    setValidationError(null)
+  }
+
+  /** Required provider config the form is still missing. */
+  const missingExtras = useMemo(
+    () => extraFields.filter((f) => f.required && !form.extra[f.name]?.trim()),
+    [extraFields, form.extra],
+  )
+
   const requiresKey = !isEdit || !target.source.key_configured
   const canSubmit = useMemo(() => {
     if (upsert.isPending) return false
     if (baseUrlRequired && !form.base_url.trim()) return false
     if (requiresKey && !form.api_key.trim()) return false
+    if (missingExtras.length > 0) return false
     return true
-  }, [upsert.isPending, baseUrlRequired, form.base_url, form.api_key, requiresKey])
+  }, [
+    upsert.isPending,
+    baseUrlRequired,
+    form.base_url,
+    form.api_key,
+    requiresKey,
+    missingExtras,
+  ])
 
   async function handleSave() {
     if (baseUrlRequired && !form.base_url.trim()) {
@@ -187,6 +230,11 @@ export function SourceModal({
     }
     if (requiresKey && !form.api_key.trim()) {
       setValidationError('An API key is required to add this source.')
+      return
+    }
+    if (missingExtras.length > 0) {
+      const labels = missingExtras.map((f) => f.label).join(', ')
+      setValidationError(`${labels} ${missingExtras.length === 1 ? 'is' : 'are'} required for ${label}.`)
       return
     }
 
@@ -199,6 +247,13 @@ export function SourceModal({
       allow_routing: form.allow_routing,
     }
     if (form.api_key.trim()) body.api_key = form.api_key.trim()
+    // Send every declared field, trimmed. A blank one clears the stored
+    // value, which is how the user removes an optional field.
+    if (extraFields.length > 0) {
+      body.extra = Object.fromEntries(
+        extraFields.map((f) => [f.name, (form.extra[f.name] ?? '').trim()]),
+      )
+    }
 
     try {
       const res = await upsert.mutateAsync({ name, body })
@@ -290,7 +345,11 @@ export function SourceModal({
 
             {/* API key */}
             <div>
-              {fieldLabel(isEdit ? 'API key (leave blank to keep current)' : 'API key')}
+              {fieldLabel(
+                isEdit
+                  ? `${credentialLabel} (leave blank to keep current)`
+                  : credentialLabel,
+              )}
               <div className="relative">
                 <input
                   type={showKey ? 'text' : 'password'}
@@ -299,7 +358,7 @@ export function SourceModal({
                   placeholder={
                     isEdit && target.source.key_configured
                       ? target.source.key ?? '••••••••••••••'
-                      : 'Paste your API key'
+                      : profile.credentialPlaceholder ?? `Paste your ${credentialLabel.toLowerCase()}`
                   }
                   spellCheck={false}
                   autoComplete="off"
@@ -318,6 +377,43 @@ export function SourceModal({
                 <Lock size={10} /> Stored encrypted; only a redacted hint is shown after saving.
               </p>
             </div>
+
+            {/* Provider-specific config (e.g. watsonx project id). Declared by
+                the backend catalog, so no provider is named in code here. */}
+            {extraFields.map((field) => {
+              const value = form.extra[field.name] ?? ''
+              const isMissing = field.required && !value.trim()
+              return (
+                <div key={field.name}>
+                  {fieldLabel(field.required ? `${field.label} (required)` : field.label)}
+                  <input
+                    type="text"
+                    value={value}
+                    onChange={(e) => setExtra(field.name, e.target.value)}
+                    placeholder={field.placeholder || field.label}
+                    spellCheck={false}
+                    autoComplete="off"
+                    aria-required={field.required}
+                    aria-invalid={isMissing}
+                    className="w-full bg-navy-900/60 border rounded-lg px-3 py-2.5 text-sm font-mono text-white placeholder:text-white/20 focus:outline-none focus:border-glow-cyan/40 transition-colors"
+                    style={{
+                      borderColor: isMissing
+                        ? 'rgba(245,158,11,0.4)'
+                        : 'rgba(255,255,255,0.1)',
+                    }}
+                  />
+                  {field.help && (
+                    <p className="text-[11px] text-white/30 mt-1.5">{field.help}</p>
+                  )}
+                  {field.env_var && (
+                    <p className="text-[11px] text-white/25 mt-1">
+                      Falls back to <span className="font-mono">{field.env_var}</span> when left
+                      blank.
+                    </p>
+                  )}
+                </div>
+              )
+            })}
 
             {/* Base URL */}
             <div>
@@ -360,7 +456,7 @@ export function SourceModal({
                 type="text"
                 value={form.default_model}
                 onChange={(e) => set('default_model', e.target.value)}
-                placeholder="gpt-4o-mini"
+                placeholder={profile.defaultModelPlaceholder ?? 'gpt-4o-mini'}
                 spellCheck={false}
                 className="w-full bg-navy-900/60 border border-white/10 rounded-lg px-3 py-2.5 text-sm font-mono text-white placeholder:text-white/20 focus:outline-none focus:border-glow-cyan/40 transition-colors"
               />

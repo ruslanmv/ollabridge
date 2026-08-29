@@ -41,6 +41,24 @@ STORAGE_MODES: tuple[StorageMode, ...] = (
 )
 
 
+class ExtraField(BaseModel):
+    """One provider-specific config field beyond api_key / base_url.
+
+    watsonx, for instance, cannot answer a chat request without a project
+    id. These are *not* secrets — they are identifiers — so they live in
+    ``providers.yaml`` next to the rest of a source's metadata, never in
+    the SecretStore. ``env_var`` names the environment variable that acts
+    as a fallback when nothing has been configured for the source.
+    """
+
+    name: str
+    label: str
+    required: bool = False
+    env_var: str = ""
+    placeholder: str = ""
+    help: str = ""
+
+
 class ProviderSpec(BaseModel):
     """Static catalog entry for a supported provider."""
 
@@ -53,9 +71,8 @@ class ProviderSpec(BaseModel):
     openai_compatible: bool = True
     notes: str = ""
     # Extra provider-specific config fields the UI should prompt for, beyond
-    # the generic api_key/base_url (e.g. watsonx needs a project_id). Each
-    # entry is (field_name, label, required).
-    extra_fields: list[tuple[str, str, bool]] = []
+    # the generic api_key/base_url (e.g. watsonx needs a project_id).
+    extra_fields: list[ExtraField] = Field(default_factory=list)
 
 
 PROVIDER_CATALOG: dict[str, ProviderSpec] = {
@@ -110,8 +127,22 @@ PROVIDER_CATALOG: dict[str, ProviderSpec] = {
             notes="IBM watsonx.ai foundation models. Requires a project_id (or "
             "space_id) and a region base URL.",
             extra_fields=[
-                ("project_id", "Project ID (or Space ID)", True),
-                ("region", "Region (e.g. us-south, eu-de)", False),
+                ExtraField(
+                    name="project_id",
+                    label="Project ID",
+                    required=True,
+                    env_var="WATSONX_PROJECT_ID",
+                    placeholder="2762997c-30dd-4b93-ad9f-dc6bbb5a343c",
+                    help="watsonx.ai project id — Manage → General → Project ID. "
+                    "Every chat request is scoped to it.",
+                ),
+                ExtraField(
+                    name="space_id",
+                    label="Deployment Space ID",
+                    env_var="WATSONX_SPACE_ID",
+                    help="Use a deployment space instead of a project. "
+                    "The project id wins when both are set.",
+                ),
             ],
         ),
         ProviderSpec(
@@ -208,6 +239,10 @@ class ProviderRecord(BaseModel):
     last_test_ok: Optional[bool] = None
     last_test_at: Optional[str] = None
     vault_synced: bool = False  # true only after an explicit, successful vault push
+    # Provider-specific non-secret config declared by the catalog's
+    # ``extra_fields`` — e.g. the watsonx project id. Metadata, so it
+    # belongs here rather than in the SecretStore.
+    extra: dict[str, str] = Field(default_factory=dict)
 
 
 class ProvidersFile(BaseModel):
@@ -270,6 +305,64 @@ def remove_record(name: str, path: Path | None = None) -> bool:
         return False
     save_providers(kept, path)
     return True
+
+
+# ── Provider-specific extra config (non-secret) ──────────────────────
+
+
+def extra_fields_for(kind: str) -> list[ExtraField]:
+    """Extra config fields a provider kind needs beyond api_key / base_url."""
+    spec = PROVIDER_CATALOG.get(kind)
+    return list(spec.extra_fields) if spec else []
+
+
+def get_extra(rec: ProviderRecord, field: str) -> str | None:
+    """Resolve one extra field: the source's own value, then the env var.
+
+    The env fallback keeps an exported ``WATSONX_PROJECT_ID`` working for
+    a source that has never had one saved.
+    """
+    value = (rec.extra or {}).get(field, "").strip()
+    if value:
+        return value
+    for spec in extra_fields_for(rec.kind or rec.name):
+        if spec.name == field and spec.env_var:
+            return os.environ.get(spec.env_var, "").strip() or None
+    return None
+
+
+def missing_extras(rec: ProviderRecord) -> list[str]:
+    """Labels of required extra fields this source still has no value for."""
+    return [
+        spec.label
+        for spec in extra_fields_for(rec.kind or rec.name)
+        if spec.required and not get_extra(rec, spec.name)
+    ]
+
+
+def apply_extras(rec: ProviderRecord, values: dict[str, str]) -> list[str]:
+    """Set the declared extra fields on ``rec`` from ``values``, in place.
+
+    Only fields the catalog declares for this kind are accepted, so an
+    unexpected key can never be written into providers.yaml. An empty
+    value clears the field. Returns the names actually changed.
+    """
+    declared = {spec.name for spec in extra_fields_for(rec.kind or rec.name)}
+    changed: list[str] = []
+    extra = dict(rec.extra or {})
+    for field, raw in values.items():
+        if field not in declared:
+            continue
+        value = (raw or "").strip()
+        if value:
+            if extra.get(field) != value:
+                changed.append(field)
+            extra[field] = value
+        elif field in extra:
+            extra.pop(field)
+            changed.append(field)
+    rec.extra = extra
+    return changed
 
 
 def secret_key_for(name: str) -> str:

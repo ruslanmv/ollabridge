@@ -16,15 +16,36 @@ from ollabridge.providers_meta import (
     env_key_for,
     get_record,
     load_providers,
+    missing_extras,
     secret_key_for,
     upsert_record,
 )
+
+
+IAM_TOKEN_URL = "https://iam.cloud.ibm.com/identity/token"
+IAM_GRANT_TYPE = "urn:ibm:params:oauth:grant-type:apikey"
 
 
 def _store():
     from ollabridge.addons.providers.secret_store import SecretStore
 
     return SecretStore()
+
+
+def _watsonx_iam_token(api_key: str, *, timeout: float = 10.0) -> str:
+    """Exchange an IBM Cloud API key for a short-lived IAM access token.
+
+    watsonx.ai authenticates with the IAM token, never with the raw API
+    key, so a credential check has to make this call first.
+    """
+    resp = httpx.post(
+        IAM_TOKEN_URL,
+        data={"grant_type": IAM_GRANT_TYPE, "apikey": api_key},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    return resp.json()["access_token"]
 
 
 def get_secret(name: str, store=None) -> str | None:
@@ -54,6 +75,19 @@ def rotate_secret(name: str, new_value: str, store=None) -> ProviderRecord:
     return rec
 
 
+def _record_outcome(
+    rec: ProviderRecord | None, outcome: tuple[bool, str]
+) -> tuple[bool, str]:
+    """Stamp a probe verdict on the source so the UI reflects it, then return it."""
+    if rec:
+        rec.last_test_ok = outcome[0]
+        rec.last_test_at = dt.datetime.now(dt.timezone.utc).isoformat(
+            timespec="seconds"
+        )
+        upsert_record(rec)
+    return outcome
+
+
 def test_provider(name: str, *, store=None, timeout: float = 10.0) -> tuple[bool, str]:
     """Lightweight credential/health check. Never sends prompt content.
 
@@ -77,6 +111,32 @@ def test_provider(name: str, *, store=None, timeout: float = 10.0) -> tuple[bool
     if kind == "anthropic":
         url = f"{base}/models"
         headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+    elif kind == "watsonx":
+        # watsonx does not accept the IBM Cloud API key as a bearer token —
+        # it must first be exchanged for a short-lived IAM access token.
+        # A rejection here is a credential verdict like any other, so it is
+        # recorded on the source rather than returned unstamped: otherwise
+        # the UI keeps showing the last (stale) status for a bad key.
+        try:
+            key = _watsonx_iam_token(key, timeout=timeout)
+        except httpx.TimeoutException:
+            return _record_outcome(
+                rec, (False, f"timeout after {timeout}s reaching {IAM_TOKEN_URL}")
+            )
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            detail = (
+                f"IBM Cloud API key rejected by IAM (HTTP {status})"
+                if status in (400, 401, 403)
+                else f"IAM token exchange failed (HTTP {status})"
+            )
+            return _record_outcome(rec, (False, detail))
+        except httpx.HTTPError as exc:
+            return _record_outcome(
+                rec, (False, redact_text(f"{type(exc).__name__}: {exc}"))
+            )
+        url = f"{base}{spec.models_path}"
+        headers = {"Authorization": f"Bearer {key}"}
     else:
         url = f"{base}{spec.models_path}"
         headers = {"Authorization": f"Bearer {key}"}
@@ -90,7 +150,17 @@ def test_provider(name: str, *, store=None, timeout: float = 10.0) -> tuple[bool
 
     outcome: tuple[bool, str]
     if r.status_code == 200:
-        outcome = True, f"key valid, {base} reachable"
+        # A valid key is not a usable source when the provider also needs
+        # config the user has not supplied (watsonx without a project id
+        # authenticates fine, then fails on every chat request).
+        missing = missing_extras(rec) if rec else []
+        if missing:
+            outcome = False, (
+                f"key valid and {base} reachable, but not configured: "
+                f"{', '.join(missing)} is not set"
+            )
+        else:
+            outcome = True, f"key valid, {base} reachable"
     elif r.status_code in (401, 403):
         outcome = False, f"key rejected (HTTP {r.status_code})"
     elif r.status_code == 429:
@@ -100,13 +170,7 @@ def test_provider(name: str, *, store=None, timeout: float = 10.0) -> tuple[bool
     else:
         outcome = False, redact_text(f"HTTP {r.status_code}: {r.text[:120]}")
 
-    if rec:
-        rec.last_test_ok = outcome[0]
-        rec.last_test_at = dt.datetime.now(dt.timezone.utc).isoformat(
-            timespec="seconds"
-        )
-        upsert_record(rec)
-    return outcome
+    return _record_outcome(rec, outcome)
 
 
 def export_redacted(store=None) -> dict:

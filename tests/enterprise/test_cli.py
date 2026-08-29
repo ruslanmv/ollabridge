@@ -279,3 +279,80 @@ def test_login_flow_with_mocked_cloud(monkeypatch):
     assert cfg.enabled is True
     assert cfg.prompt_logging is False
     assert cfg.provider_secrets_cloud_vault is False
+
+
+# ── providers config (non-secret extra fields) ──────────────────────────
+
+
+WX_PROJECT_ID = "2762997c-30dd-4b93-ad9f-dc6bbb5a343c"
+
+
+def _add_watsonx(*extra_args):
+    return runner.invoke(
+        app,
+        ["providers", "add", "watsonx", "--api-key", "ibm-key", "--storage", "1", *extra_args],
+    )
+
+
+def test_providers_add_accepts_extra_project_id():
+    result = _add_watsonx("--extra", f"project_id={WX_PROJECT_ID}")
+    assert result.exit_code == 0
+    shown = runner.invoke(app, ["providers", "config", "watsonx"])
+    assert WX_PROJECT_ID in shown.stdout
+
+
+def test_providers_add_prompts_for_a_required_extra():
+    """Adding watsonx without a project id must not leave it unusable."""
+    result = runner.invoke(
+        app,
+        ["providers", "add", "watsonx", "--api-key", "ibm-key", "--storage", "1"],
+        input=f"{WX_PROJECT_ID}\n",
+    )
+    assert result.exit_code == 0
+    assert "Project ID" in result.stdout
+    shown = runner.invoke(app, ["providers", "config", "watsonx"])
+    assert WX_PROJECT_ID in shown.stdout
+
+
+def test_providers_add_rejects_malformed_extra():
+    result = _add_watsonx("--extra", "project_id")
+    assert result.exit_code != 0
+
+
+def test_providers_config_sets_a_field_after_the_fact():
+    _add_watsonx("--extra", f"project_id={WX_PROJECT_ID}")
+    result = runner.invoke(
+        app, ["providers", "config", "watsonx", "project_id=new-project"]
+    )
+    assert result.exit_code == 0
+    assert "new-project" in result.stdout
+
+
+def test_providers_config_rejects_an_unknown_field():
+    _add_watsonx("--extra", f"project_id={WX_PROJECT_ID}")
+    result = runner.invoke(app, ["providers", "config", "watsonx", "nonsense=x"])
+    assert result.exit_code == 1
+    assert "Unknown field" in result.stdout
+
+
+def test_providers_config_on_an_unconfigured_source_fails():
+    result = runner.invoke(app, ["providers", "config", "watsonx"])
+    assert result.exit_code == 1
+    assert "not configured" in result.stdout
+
+
+def test_providers_config_reports_the_env_fallback(monkeypatch):
+    monkeypatch.setenv("WATSONX_PROJECT_ID", "from-env")
+    _add_watsonx()
+    result = runner.invoke(app, ["providers", "config", "watsonx"])
+    assert "from-env" in result.stdout
+    assert "WATSONX_PROJECT_ID" in result.stdout
+
+
+def test_providers_config_says_nothing_to_configure_for_simple_providers():
+    runner.invoke(
+        app, ["providers", "add", "groq", "--api-key", "gsk_k1234567890", "--storage", "1"]
+    )
+    result = runner.invoke(app, ["providers", "config", "groq"])
+    assert result.exit_code == 0
+    assert "no provider-specific config" in result.stdout
