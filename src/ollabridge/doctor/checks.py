@@ -213,18 +213,19 @@ async def _relay_probe(
     cloud_url: str, device_token: str, models: list[str], timeout: float = 10.0
 ) -> dict:
     """Open the relay WS, register, ping, and reconnect. Returns step results."""
-    from websockets.asyncio.client import connect as ws_connect
+    from ollabridge.core.websocket_client import connection_options, websocket_connect
 
     ws_url = _relay_ws_url(cloud_url)
     steps: dict[str, object] = {"ws_url": ws_url}
 
     async def _session() -> None:
-        async with ws_connect(
-            ws_url,
-            additional_headers={"Authorization": f"Bearer {device_token}"},
+        connect_options = connection_options(
+            websocket_connect,
+            headers={"Authorization": f"Bearer {device_token}"},
             open_timeout=timeout,
             close_timeout=5,
-        ) as ws:
+        )
+        async with websocket_connect(ws_url, **connect_options) as ws:
             steps["connect"] = True
             hello = {
                 "type": "hello",

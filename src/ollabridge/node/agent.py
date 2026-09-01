@@ -10,16 +10,15 @@ import socket
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
-import websockets
-
-logger = logging.getLogger(__name__)
-
+from ollabridge.core.websocket_client import connection_options, websocket_connect
 from ollabridge.node import capability_report, gen_config
 from ollabridge.node.job_runner import is_generation_op, run_generation
 from ollabridge.node.runtime import LocalRuntime
 from ollabridge.node.runtime_detect import detect_runtimes
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -51,7 +50,7 @@ async def run_node(config: NodeConfig) -> None:
 
     ws_url = f"{config.control.rstrip('/')}/relay/connect?token={config.token}"
 
-    async with websockets.connect(ws_url, max_size=2**25) as ws:
+    async with websocket_connect(ws_url, max_size=2**25) as ws:
         hello = {
             "type": "hello",
             "node_id": config.node_id,
@@ -144,7 +143,10 @@ async def run_cloud_device(config: CloudDeviceConfig) -> None:
     ws_url = f"{config.cloud_url.rstrip('/')}/relay/connect"
     headers = {"Authorization": f"Bearer {config.device_token}"}
 
-    async with websockets.connect(ws_url, extra_headers=headers, max_size=2**25) as ws:
+    connect_options = connection_options(
+        websocket_connect, headers=headers, max_size=2**25
+    )
+    async with websocket_connect(ws_url, **connect_options) as ws:
         capabilities = ["chat", "embeddings", "models", "tools"]
         hello = {
             "type": "hello",

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import itertools
 from dataclasses import dataclass
-from typing import Optional
 
 from ollabridge.core.registry import RuntimeRegistry, RuntimeNodeState
 
@@ -26,8 +24,28 @@ class Router:
         self.registry = registry
         self._rr_counter = 0
 
-    async def choose_node(self, *, model: str | None = None, require_model: bool = False) -> RouteDecision:
+    async def choose_node(
+        self,
+        *,
+        model: str | None = None,
+        require_model: bool = False,
+        require_tools: bool = False,
+    ) -> RouteDecision:
         nodes = [n for n in await self.registry.list() if n.healthy]
+
+        if require_tools:
+            # Local Ollama carries tools natively. Relay nodes are eligible only
+            # when their handshake advertises the capability; other connectors
+            # currently drop or reject tools and must not enter round-robin.
+            nodes = [
+                node
+                for node in nodes
+                if node.connector == "local_ollama"
+                or (
+                    node.connector == "relay_link"
+                    and "tools" in ((node.meta or {}).get("capabilities") or [])
+                )
+            ]
 
         # Smart routing: persona:* and personality:* models go to HomePilot nodes
         if model and (model.startswith("persona:") or model.startswith("personality:")):
