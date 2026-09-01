@@ -25,12 +25,12 @@ from typing import Any, Optional
 import httpx
 
 try:
-    from websockets.asyncio.client import connect as ws_connect
+    from ollabridge.core.websocket_client import (
+        connection_options,
+        websocket_connect as ws_connect,
+    )
 except ImportError:
-    try:
-        from websockets.client import connect as ws_connect  # type: ignore[assignment]
-    except ImportError:
-        ws_connect = None  # type: ignore[assignment]
+    ws_connect = None  # type: ignore[assignment]
 
 from ollabridge.cloud.api_client import CloudApiClient, DevicePoll, DeviceStart
 from ollabridge.cloud.device_config import (
@@ -532,14 +532,15 @@ class CloudBridgeManager:
 
                 log.info("Connecting to cloud relay: %s (attempt %d)", ws_url, attempt)
 
-                async with ws_connect(
-                    ws_url,
-                    additional_headers={"Authorization": f"Bearer {self._creds.device_token}"},
+                connect_options = connection_options(
+                    ws_connect,
+                    headers={"Authorization": f"Bearer {self._creds.device_token}"},
                     ping_interval=PING_INTERVAL,
                     ping_timeout=10,
                     close_timeout=5,
                     proxy=None,
-                ) as ws:
+                )
+                async with ws_connect(ws_url, **connect_options) as ws:
                     self._ws = ws
                     attempt = 0
                     self.status.state = BridgeState.CONNECTED

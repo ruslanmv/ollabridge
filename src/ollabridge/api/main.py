@@ -717,7 +717,9 @@ def create_app() -> FastAPI:
 
         try:
             payload_messages = [_message_to_wire(m) for m in req.messages]
-            decision = await app.state.obridge.router.choose_node(model=model)
+            decision = await app.state.obridge.router.choose_node(
+                model=model, require_tools=bool(req.tools)
+            )
             node = decision.node
             trace_device = node.node_id
 
@@ -855,7 +857,10 @@ def create_app() -> FastAPI:
                 # Try the additive provider layer before falling back to local Ollama.
                 provider_router = getattr(app.state, "provider_router", None)
                 addon_handled = False
-                if provider_router:
+                # Provider addon chat doesn't yet carry OpenAI tool schemas.
+                # Keep tool loops on the tool-capable runtime selected above
+                # rather than silently converting the request to plain chat.
+                if provider_router and not req.tools:
                     try:
                         candidates = provider_router.resolve(model)
                         if candidates:
