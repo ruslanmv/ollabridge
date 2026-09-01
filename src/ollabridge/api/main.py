@@ -96,6 +96,46 @@ def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
     return wire
 
 
+def _message_to_ollama(m: ChatMessage) -> dict[str, Any]:
+    """Translate an OpenAI chat message to Ollama's native message shape.
+
+    OpenAI serializes function arguments inside an assistant ``tool_calls``
+    message as JSON text.  Ollama's ``/api/chat`` endpoint expects the same
+    arguments to be an object.  The distinction is invisible on the first
+    tool-calling turn, but causes Ollama to reject the second turn of an agent
+    loop when the assistant's call is included in the conversation history.
+
+    Call ids are an OpenAI/client concern and are deliberately omitted from
+    the native payload.  LangChain still receives them in OllaBridge's OpenAI
+    response and uses them to match the local tool result.
+    """
+    wire: dict[str, Any] = {
+        "role": m.role,
+        "content": _content_to_text(m.content),
+    }
+    if m.tool_calls:
+        native_calls: list[dict[str, Any]] = []
+        for call in m.tool_calls:
+            function = call.get("function") or {}
+            arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                try:
+                    decoded = json.loads(arguments)
+                except (json.JSONDecodeError, TypeError):
+                    decoded = arguments
+                arguments = decoded
+            native_calls.append(
+                {
+                    "function": {
+                        "name": function.get("name", ""),
+                        "arguments": arguments if arguments is not None else {},
+                    }
+                }
+            )
+        wire["tool_calls"] = native_calls
+    return wire
+
+
 def _tool_calls_to_openai(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert Ollama's tool_calls into the OpenAI wire shape.
 
@@ -895,7 +935,7 @@ def create_app() -> FastAPI:
 
                         message = await chat_message(
                             model=model,
-                            messages=payload_messages,
+                            messages=[_message_to_ollama(m) for m in req.messages],
                             tools=req.tools,
                         )
                         content = message.get("content", "") or ""
