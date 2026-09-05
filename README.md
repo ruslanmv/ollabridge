@@ -281,7 +281,7 @@ See [docs/MCP.md](docs/MCP.md).
 | | [Cloud Sync](docs/CLOUD_SYNC.md) | [Provider Keys (BYOK)](docs/PROVIDER_KEYS.md) |
 | | [Providers Hub](docs/PROVIDERS_HUB.md) | [Enterprise Readiness Audit](docs/AUDIT_ENTERPRISE_READINESS.md) |
 | | [HomePilot Integration](docs/HOMEPILOT.md) | [Enterprise Roadmap](docs/ROADMAP_ENTERPRISE.md) |
-| | [MCP / AI Agents](docs/MCP.md) | |
+| | [MCP / AI Agents](docs/MCP.md) | [Avatar Bridge](docs/AVATAR_BRIDGE.md) |
 | | [Local Model Catalog](docs/LOCAL_CATALOG.md) | |
 
 ---
@@ -343,6 +343,8 @@ If OllaBridge helped you, give it a star! ⭐
 </p>
 
 OllaBridge is the recommended gateway for [HomePilot](https://github.com/ruslanmv/HomePilot) personas. Route `persona:*` and `personality:*` models to HomePilot while serving local LLMs via Ollama — all through a single OpenAI-compatible endpoint. Setup: [docs/HOMEPILOT.md](docs/HOMEPILOT.md).
+
+It also relays the **avatar session**: [3D Avatar Chatbot](https://github.com/ruslanmv/3D-Avatar-Chatbot) opens one socket to OllaBridge and reaches HomePilot through it — locally as a straight proxy, and through Cloud over the relay link to your own machine. The browser presents OllaBridge's credential and never holds HomePilot's, and there is nothing to configure beyond enabling HomePilot. See [docs/AVATAR_BRIDGE.md](docs/AVATAR_BRIDGE.md) for the whole workflow.
 
 <p align="center">
   <img src="assets/ollabridge-architecture.svg" alt="OllaBridge Architecture" width="800" />

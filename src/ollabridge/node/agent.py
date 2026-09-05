@@ -14,6 +14,7 @@ from typing import Any
 
 from ollabridge.core.websocket_client import connection_options, websocket_connect
 from ollabridge.node import capability_report, gen_config
+from ollabridge.node.avatar_link import AvatarLink
 from ollabridge.node.job_runner import is_generation_op, run_generation
 from ollabridge.node.runtime import LocalRuntime
 from ollabridge.node.runtime_detect import detect_runtimes
@@ -171,6 +172,19 @@ async def run_cloud_device(config: CloudDeviceConfig) -> None:
         except Exception:
             pass  # never block the connection on capability detection
 
+        # Avatar session relay. Advertised only when this machine has a HomePilot to relay
+        # to: the Cloud picks a node by this capability, and a node that claims it without
+        # one turns a graceful "no HomePilot behind this bridge" into a socket that opens
+        # and then fails.
+        avatar_link = None
+        homepilot_base = os.environ.get("HOMEPILOT_BASE_URL", "").strip()
+        if homepilot_base:
+            hello["capabilities"] = list(hello.get("capabilities") or []) + ["avatar"]
+            avatar_link = AvatarLink(
+                homepilot_base=homepilot_base,
+                send=lambda frame: ws.send(json.dumps(frame)),
+            )
+
         await ws.send(json.dumps(hello))
 
         stop = asyncio.Event()
@@ -193,6 +207,13 @@ async def run_cloud_device(config: CloudDeviceConfig) -> None:
 
                 mtype = frame.get("type")
                 if mtype in ("pong", "hello_ack"):
+                    continue
+
+                # Avatar session frames, handled before the inference dispatch and entirely
+                # apart from it: `sig` needs no `res`, so it must never reach a branch that
+                # would try to answer it.
+                if avatar_link is not None and avatar_link.handles(frame):
+                    await avatar_link.handle(frame)
                     continue
 
                 if mtype != "req":
