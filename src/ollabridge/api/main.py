@@ -662,6 +662,12 @@ def create_app() -> FastAPI:
 
     app.include_router(trace_relay_router)
 
+    # Avatar session proxy (additive — one socket from the browser to HomePilot).
+    # The browser presents OllaBridge's credential; the proxy swaps in HomePilot's.
+    from ollabridge.api.avatar_session import router as avatar_session_router
+
+    app.include_router(avatar_session_router)
+
     # Cloud relay bridge (connect local GPU to OllaBridge Cloud)
     from ollabridge.api.cloud_routes import router as cloud_router
 
@@ -717,6 +723,23 @@ def create_app() -> FastAPI:
         set_pairing_manager(mgr)
         log.info("Pairing auth mode enabled — use /pair endpoints to pair devices")
 
+    def _avatar_health() -> dict[str, Any]:
+        """The ``avatar`` capability block, or nothing at all.
+
+        Nothing at all is the important case: every OllaBridge released before the proxy
+        omits this key, and the avatar client reads its absence as "this bridge cannot relay
+        the session" — no handshake, no minimum version, and no upgrade required to keep
+        working. So the block must be absent whenever the relay would not actually succeed,
+        not merely when HomePilot is switched off.
+        """
+        try:
+            from ollabridge.api.avatar_session import health_block  # noqa: PLC0415
+
+            block = health_block()
+        except Exception:
+            return {}
+        return {"avatar": block} if block else {}
+
     @app.get("/health")
     async def health() -> dict[str, Any]:
         ok = True
@@ -738,6 +761,7 @@ def create_app() -> FastAPI:
             "detail": detail,
             "homepilot_enabled": cfg.get("homepilot_enabled", False),
             "local_runtime_enabled": cfg.get("local_runtime_enabled", True),
+            **_avatar_health(),
         }
 
     @app.post("/v1/chat/completions")
