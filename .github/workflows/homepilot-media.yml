@@ -1,0 +1,40 @@
+name: HomePilot Media Bridge
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'src/ollabridge/connectors/media_proxy.py'
+      - 'tests/test_homepilot_media.py'
+      - '.github/workflows/homepilot-media.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'src/ollabridge/connectors/media_proxy.py'
+      - 'tests/test_homepilot_media.py'
+      - '.github/workflows/homepilot-media.yml'
+
+jobs:
+  validate:
+    name: Test and lint HomePilot media bridge
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install package and test tools
+        run: python -m pip install -e '.[dev]'
+
+      - name: Focused tests
+        run: pytest tests/test_homepilot_media.py -q
+
+      - name: Ruff
+        run: ruff check src/ollabridge/connectors/media_proxy.py tests/test_homepilot_media.py
+
+      - name: Black
+        run: black --check src/ollabridge/connectors/media_proxy.py tests/test_homepilot_media.py
