@@ -38,6 +38,13 @@ from ollabridge.cloud.device_config import (
     load_cloud_device_credentials,
     save_cloud_device_credentials,
 )
+from ollabridge.cloud.homepilot_image_relay import (
+    CAPABILITY_OP as HOMEPILOT_IMAGE_CAPABILITY_OP,
+    GENERATE_OP as HOMEPILOT_IMAGE_GENERATE_OP,
+    RELAY_CAPABILITY as HOMEPILOT_IMAGE_RELAY_CAPABILITY,
+    capability as homepilot_image_capability,
+    generate as homepilot_image_generate,
+)
 
 log = logging.getLogger("ollabridge.cloud")
 
@@ -397,6 +404,12 @@ class CloudBridgeManager:
             elif op == "media_fetch":
                 result = await self._fetch_media(payload)
                 response = {"type": "res", "id": req_id, "ok": True, "data": result}
+            elif op == HOMEPILOT_IMAGE_CAPABILITY_OP:
+                result = await homepilot_image_capability()
+                response = {"type": "res", "id": req_id, "ok": True, "data": result}
+            elif op == HOMEPILOT_IMAGE_GENERATE_OP:
+                result = await homepilot_image_generate(payload)
+                response = {"type": "res", "id": req_id, "ok": True, "data": result}
             else:
                 response = {
                     "type": "res",
@@ -563,6 +576,7 @@ class CloudBridgeManager:
                         "client_version": "ollabridge-gateway-1.0",
                         "platform": sys.platform,
                     }
+                    hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)
                     catalog_manifest = self._build_catalog_manifest()
                     if catalog_manifest is not None:
                         hello["local_catalog"] = catalog_manifest
@@ -653,6 +667,7 @@ class CloudBridgeManager:
             "client_version": "ollabridge-gateway-1.0",
             "platform": sys.platform,
         }
+        hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)
         await ws.send(json.dumps(hello))
         return models
 

@@ -1,0 +1,65 @@
+name: HomePilot Media Bridge
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'src/ollabridge/connectors/media_proxy.py'
+      - 'src/ollabridge/cloud/bridge_manager.py'
+      - 'src/ollabridge/cloud/homepilot_image_relay.py'
+      - 'tests/test_homepilot_media.py'
+      - 'tests/test_homepilot_cloud_image_relay.py'
+      - '.github/workflows/homepilot-media.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'src/ollabridge/connectors/media_proxy.py'
+      - 'src/ollabridge/cloud/bridge_manager.py'
+      - 'src/ollabridge/cloud/homepilot_image_relay.py'
+      - 'tests/test_homepilot_media.py'
+      - 'tests/test_homepilot_cloud_image_relay.py'
+      - '.github/workflows/homepilot-media.yml'
+
+jobs:
+  validate:
+    name: Test and lint HomePilot media bridge
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install package and test tools
+        run: python -m pip install -e '.[dev]'
+
+      - name: Compile touched modules
+        run: >-
+          python -m py_compile
+          src/ollabridge/connectors/media_proxy.py
+          src/ollabridge/cloud/bridge_manager.py
+          src/ollabridge/cloud/homepilot_image_relay.py
+
+      - name: Focused tests
+        run: pytest tests/test_homepilot_media.py tests/test_homepilot_cloud_image_relay.py -q
+
+      - name: Ruff additive files
+        run: >-
+          ruff check
+          src/ollabridge/connectors/media_proxy.py
+          src/ollabridge/cloud/homepilot_image_relay.py
+          tests/test_homepilot_media.py
+          tests/test_homepilot_cloud_image_relay.py
+
+      # media_proxy.py and bridge_manager.py predate the repository's current
+      # lint/Black configuration. Their behavior is covered above without
+      # rewriting unrelated legacy lines; strict Black is scoped to new files.
+      - name: Black additive files
+        run: >-
+          black --check
+          src/ollabridge/cloud/homepilot_image_relay.py
+          tests/test_homepilot_media.py
+          tests/test_homepilot_cloud_image_relay.py
