@@ -9,7 +9,9 @@ from fastapi import HTTPException
 from ollabridge.connectors import media_proxy
 
 
-def _configure(monkeypatch, *, enabled=True, base="http://homepilot:8000", api_key="hp-secret"):
+def _configure(
+    monkeypatch, *, enabled=True, base="http://homepilot:8000", api_key="hp-secret"
+):
     monkeypatch.setattr(
         media_proxy.rts,
         "get_all",
@@ -75,7 +77,9 @@ async def test_homepilot_capability_probes_health_with_server_side_auth(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_homepilot_generate_forwards_imagine_contract_and_returns_image_bytes(monkeypatch):
+async def test_homepilot_generate_forwards_imagine_contract_and_returns_image_bytes(
+    monkeypatch,
+):
     _configure(monkeypatch)
     seen = {}
 
@@ -91,9 +95,14 @@ async def test_homepilot_generate_forwards_imagine_contract_and_returns_image_by
                 },
             )
 
-        if request.method == "GET" and request.url.path == "/files/generated/avatar.png":
+        if (
+            request.method == "GET"
+            and request.url.path == "/files/generated/avatar.png"
+        ):
             assert request.headers["authorization"] == "Bearer hp-secret"
-            return httpx.Response(200, content=b"\x89PNG\r\nimage", headers={"content-type": "image/png"})
+            return httpx.Response(
+                200, content=b"\x89PNG\r\nimage", headers={"content-type": "image/png"}
+            )
 
         raise AssertionError(f"unexpected request: {request.method} {request.url}")
 
@@ -131,7 +140,9 @@ async def test_homepilot_generate_forwards_imagine_contract_and_returns_image_by
 
 
 @pytest.mark.asyncio
-async def test_homepilot_generate_accepts_absolute_image_url_from_homepilot(monkeypatch):
+async def test_homepilot_generate_accepts_absolute_image_url_from_homepilot(
+    monkeypatch,
+):
     _configure(monkeypatch)
 
     def handler(request: httpx.Request):
@@ -145,7 +156,9 @@ async def test_homepilot_generate_accepts_absolute_image_url_from_homepilot(monk
                 },
             )
         if request.method == "GET" and request.url.host == "127.0.0.1":
-            return httpx.Response(200, content=b"RIFFimage", headers={"content-type": "image/webp"})
+            return httpx.Response(
+                200, content=b"RIFFimage", headers={"content-type": "image/webp"}
+            )
         raise AssertionError(f"unexpected request: {request.method} {request.url}")
 
     _mock_httpx(monkeypatch, handler)
