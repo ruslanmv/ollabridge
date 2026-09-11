@@ -30,58 +30,50 @@ jobs:
           from pathlib import Path
 
           path = Path('src/ollabridge/cloud/bridge_manager.py')
-          text = path.read_text()
+          lines = path.read_text().splitlines()
 
-          import_anchor = '''from ollabridge.cloud.device_config import (
-              CloudDeviceCredentials,
-              load_cloud_device_credentials,
-              save_cloud_device_credentials,
-          )
-          '''
-          import_add = import_anchor + '''from ollabridge.cloud.homepilot_image_relay import (
-              CAPABILITY_OP as HOMEPILOT_IMAGE_CAPABILITY_OP,
-              GENERATE_OP as HOMEPILOT_IMAGE_GENERATE_OP,
-              RELAY_CAPABILITY as HOMEPILOT_IMAGE_RELAY_CAPABILITY,
-              capability as homepilot_image_capability,
-              generate as homepilot_image_generate,
-          )
-          '''
-          assert text.count(import_anchor) == 1
-          text = text.replace(import_anchor, import_add, 1)
+          start = lines.index('from ollabridge.cloud.device_config import (')
+          end = start + 1
+          while lines[end] != ')':
+              end += 1
+          imports = [
+              'from ollabridge.cloud.homepilot_image_relay import (',
+              '    CAPABILITY_OP as HOMEPILOT_IMAGE_CAPABILITY_OP,',
+              '    GENERATE_OP as HOMEPILOT_IMAGE_GENERATE_OP,',
+              '    RELAY_CAPABILITY as HOMEPILOT_IMAGE_RELAY_CAPABILITY,',
+              '    capability as homepilot_image_capability,',
+              '    generate as homepilot_image_generate,',
+              ')',
+          ]
+          lines[end + 1:end + 1] = imports
 
-          dispatch_anchor = '''            elif op == "media_fetch":
-              result = await self._fetch_media(payload)
-              response = {"type": "res", "id": req_id, "ok": True, "data": result}
-          '''
-          dispatch_add = dispatch_anchor + '''            elif op == HOMEPILOT_IMAGE_CAPABILITY_OP:
-              result = await homepilot_image_capability()
-              response = {"type": "res", "id": req_id, "ok": True, "data": result}
-          elif op == HOMEPILOT_IMAGE_GENERATE_OP:
-              result = await homepilot_image_generate(payload)
-              response = {"type": "res", "id": req_id, "ok": True, "data": result}
-          '''
-          assert text.count(dispatch_anchor) == 1
-          text = text.replace(dispatch_anchor, dispatch_add, 1)
-
-          catalog_anchor = '                    catalog_manifest = self._build_catalog_manifest()'
-          assert text.count(catalog_anchor) == 1
-          text = text.replace(
-              catalog_anchor,
-              '                    hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)\n' + catalog_anchor,
-              1,
+          media_idx = next(i for i, line in enumerate(lines) if line.strip() == 'elif op == "media_fetch":')
+          response_idx = next(
+              i for i in range(media_idx + 1, media_idx + 5)
+              if 'response = {"type": "res", "id": req_id, "ok": True, "data": result}' in lines[i]
           )
+          indent = lines[media_idx][: len(lines[media_idx]) - len(lines[media_idx].lstrip())]
+          child = indent + '    '
+          relay_lines = [
+              indent + 'elif op == HOMEPILOT_IMAGE_CAPABILITY_OP:',
+              child + 'result = await homepilot_image_capability()',
+              child + 'response = {"type": "res", "id": req_id, "ok": True, "data": result}',
+              indent + 'elif op == HOMEPILOT_IMAGE_GENERATE_OP:',
+              child + 'result = await homepilot_image_generate(payload)',
+              child + 'response = {"type": "res", "id": req_id, "ok": True, "data": result}',
+          ]
+          lines[response_idx + 1:response_idx + 1] = relay_lines
 
-          function_anchor = '    async def _send_model_update(self, ws: Any) -> list[str]:'
-          idx = text.index(function_anchor)
-          head, tail = text[:idx], text[idx:]
-          send_anchor = '        await ws.send(json.dumps(hello))'
-          assert tail.count(send_anchor) >= 1
-          tail = tail.replace(
-              send_anchor,
-              '        hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)\n' + send_anchor,
-              1,
-          )
-          path.write_text(head + tail)
+          catalog_idx = next(i for i, line in enumerate(lines) if 'catalog_manifest = self._build_catalog_manifest()' in line)
+          indent = lines[catalog_idx][: len(lines[catalog_idx]) - len(lines[catalog_idx].lstrip())]
+          lines.insert(catalog_idx, indent + 'hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)')
+
+          fn_idx = next(i for i, line in enumerate(lines) if line.strip().startswith('async def _send_model_update('))
+          send_idx = next(i for i in range(fn_idx + 1, len(lines)) if lines[i].strip() == 'await ws.send(json.dumps(hello))')
+          indent = lines[send_idx][: len(lines[send_idx]) - len(lines[send_idx].lstrip())]
+          lines.insert(send_idx, indent + 'hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)')
+
+          path.write_text('\n'.join(lines) + '\n')
           PY
           python -m py_compile src/ollabridge/cloud/bridge_manager.py
           python -m pip install black
