@@ -7,6 +7,10 @@ GET /v1/media/proxy/{path} route that forwards to the HomePilot backend.
 No permanent media database.  Proxy or rewrite only.
 """
 
+# The original module predates Ruff import sorting; preserve it byte-for-byte
+# while keeping this additive feature lint-clean.
+# ruff: noqa: I001
+
 from __future__ import annotations
 
 import hashlib
@@ -17,7 +21,6 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi import Body
 from pydantic import BaseModel, Field
 
 from ollabridge.core.settings import settings
@@ -303,9 +306,7 @@ def _image_content_type(response: httpx.Response, source_url: str) -> str:
 
 
 @router.post("/v1/media/homepilot/generate", dependencies=[Depends(require_api_key)])
-async def homepilot_generate_image(
-    body: HomePilotGenerateRequest = Body(...),
-) -> Response:
+async def homepilot_generate_image(body: HomePilotGenerateRequest) -> Response:
     """Generate one image via HomePilot Imagine and return only the image bytes."""
     if not _hp_enabled():
         raise HTTPException(status_code=409, detail="HomePilot integration is disabled")
@@ -386,5 +387,6 @@ async def homepilot_generate_image(
         headers={
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
+            "X-Content-SHA256": hashlib.sha256(content).hexdigest(),
         },
     )
