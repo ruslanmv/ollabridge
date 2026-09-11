@@ -572,12 +572,7 @@ class CloudBridgeManager:
                         # richer local policy (allowed_apps / allow_routing)
                         # rather than re-deriving it from the flat name list.
                         "published_models": manifest,
-                        "capabilities": [
-                            "chat",
-                            "models",
-                            "media_fetch",
-                            HOMEPILOT_IMAGE_RELAY_CAPABILITY,
-                        ],
+                        "capabilities": ["chat", "models", "media_fetch"],
                         "client_version": "ollabridge-gateway-1.0",
                         "platform": sys.platform,
                     }
@@ -586,8 +581,7 @@ class CloudBridgeManager:
                     if catalog_manifest is not None:
                         hello["local_catalog"] = catalog_manifest
                     self._ws = ws
-                    hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)
-        await ws.send(json.dumps(hello))
+                    await ws.send(json.dumps(hello))
                     log.info(
                         "Registered %d models with cloud: %s",
                         len(models),
@@ -669,15 +663,11 @@ class CloudBridgeManager:
             "type": "hello",
             "models": models,
             "published_models": manifest,
-            "capabilities": [
-                "chat",
-                "models",
-                "media_fetch",
-                HOMEPILOT_IMAGE_RELAY_CAPABILITY,
-            ],
+            "capabilities": ["chat", "models", "media_fetch"],
             "client_version": "ollabridge-gateway-1.0",
             "platform": sys.platform,
         }
+        hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)
         await ws.send(json.dumps(hello))
         return models
 
