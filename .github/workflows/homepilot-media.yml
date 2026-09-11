@@ -37,4 +37,4 @@ jobs:
         run: ruff check src/ollabridge/connectors/media_proxy.py tests/test_homepilot_media.py
 
       - name: Black
-        run: black --check src/ollabridge/connectors/media_proxy.py tests/test_homepilot_media.py
+        run: black --diff --check src/ollabridge/connectors/media_proxy.py tests/test_homepilot_media.py
