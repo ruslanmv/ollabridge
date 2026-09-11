@@ -106,7 +106,7 @@ class BridgeStatus:
         return {
             "state": self.state.value,
             "cloud_url": self.cloud_url,
-            "device_id": self.status.device_id if False else self.device_id,
+            "device_id": self.device_id,
             "models_shared": self.models_shared,
             "models_count": len(self.models_shared),
             "connected_since": self.connected_since,
@@ -581,11 +581,13 @@ class CloudBridgeManager:
                         "client_version": "ollabridge-gateway-1.0",
                         "platform": sys.platform,
                     }
+                    hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)
                     catalog_manifest = self._build_catalog_manifest()
                     if catalog_manifest is not None:
                         hello["local_catalog"] = catalog_manifest
                     self._ws = ws
-                    await ws.send(json.dumps(hello))
+                    hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)
+        await ws.send(json.dumps(hello))
                     log.info(
                         "Registered %d models with cloud: %s",
                         len(models),
@@ -618,7 +620,7 @@ class CloudBridgeManager:
                 break
             except Exception as exc:
                 # A 4401/4403 close means the cloud rejected our device token:
-                # the device was unlinked or its access revoked in
+                # the device was unlinked or its access was revoked in
                 # OllaBridge Cloud (or the token is stale). Retrying can never
                 # succeed with the same token, so stop the reconnect loop and
                 # surface an actionable status instead of spamming the log.

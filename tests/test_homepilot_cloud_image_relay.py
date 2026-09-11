@@ -37,7 +37,9 @@ async def test_relay_capability_uses_local_gateway_and_api_key(monkeypatch):
 
     def handler(request: httpx.Request):
         assert request.method == "GET"
-        assert str(request.url) == "http://127.0.0.1:11435/v1/media/homepilot/capability"
+        assert (
+            str(request.url) == "http://127.0.0.1:11435/v1/media/homepilot/capability"
+        )
         assert request.headers["x-api-key"] == "local-key"
         return httpx.Response(200, json={"available": True, "reason": "ok"})
 
@@ -57,7 +59,10 @@ async def test_relay_generation_returns_base64_image(monkeypatch):
         assert request.method == "POST"
         assert request.url.path == "/v1/media/homepilot/generate"
         assert request.headers["x-api-key"] == "local-key"
-        assert json.loads(request.content.decode()) == {"prompt": "cat", "mode": "imagine"}
+        assert json.loads(request.content.decode()) == {
+            "prompt": "cat",
+            "mode": "imagine",
+        }
         return httpx.Response(
             200,
             content=b"\x89PNG\r\nrelay",

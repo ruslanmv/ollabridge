@@ -40,7 +40,11 @@ async def capability() -> dict[str, Any]:
         )
         response.raise_for_status()
         data = response.json()
-        return data if isinstance(data, dict) else {"available": False, "reason": "invalid-response"}
+        return (
+            data
+            if isinstance(data, dict)
+            else {"available": False, "reason": "invalid-response"}
+        )
 
 
 async def generate(payload: dict[str, Any]) -> dict[str, Any]:
