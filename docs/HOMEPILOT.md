@@ -185,6 +185,39 @@ advance rather than a socket that opens and then fails.
 The node does not re-decide who may connect. The hello it forwards is the one the bridge already
 authorised and rewrote; making that judgement twice would mean two answers to one question.
 
+### HomePilot Cloud Mirror (tools and jobs from the cloud)
+
+OllaBridge Cloud has an owner-scoped *mirror plane* (`/v1/mirror/nodes/*`) that
+lets the owner's own apps (for example [SmartMirror](https://github.com/ruslanmv/SmartMirror))
+run allow-listed HomePilot operations — tool calls, image edits — on this PC.
+The cloud relays five op-codes to this gateway, which maps them onto HomePilot's
+localhost-only node endpoints:
+
+| Relay op | HomePilot endpoint |
+|---|---|
+| `homepilot.mirror.manifest` | `GET /v1/node/manifest` |
+| `homepilot.mirror.rpc` | `POST /v1/node/rpc` (HomePilot's read-only allow-list) |
+| `homepilot.mirror.job.create` | `POST /v1/node/jobs` (HomePilot's job whitelist; `resource_uri` forwarded) |
+| `homepilot.mirror.job.get` | `GET /v1/node/jobs/{job_id}` |
+| `homepilot.mirror.job.cancel` | `POST /v1/node/jobs/{job_id}/cancel` |
+
+It is **off by default**. Turn it on for this PC only:
+
+```bash
+# .env
+HOMEPILOT_ENABLED=true
+HOMEPILOT_MIRROR_RELAY_ENABLED=true
+```
+
+HomePilot must also enable its node jobs (`HOMEPILOT_MIRROR_JOBS_ENABLED=true`),
+and OllaBridge Cloud its mirror routes (`HOMEPILOT_MIRROR_ENABLED=true`). When on,
+the gateway advertises the `homepilot.mirror` capability to the cloud.
+
+Guarantees:
+- Only these five op-codes are served; job ids and operation names are validated.
+- HomePilot keeps enforcing its own allow-lists; this gateway adds none of its own and never logs request params.
+- With the flag off, the ops still answer `Unsupported operation`, exactly as before.
+
 ### Full Architecture
 
 ```

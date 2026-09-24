@@ -217,6 +217,7 @@ python -m ollabridge_cloud.main
 | `GOOGLE_CLIENT_SECRET` | `` | Google OAuth client secret |
 | `HOMEPILOT_ENABLED` | `false` | Enable HomePilot persona routing |
 | `HOMEPILOT_BASE_URL` | `http://localhost:8000` | HomePilot backend URL |
+| `HOMEPILOT_MIRROR_RELAY_ENABLED` | `false` | Gateway only: relay the cloud's `homepilot.mirror.*` ops to this PC's HomePilot (see HOMEPILOT.md) |
 | `FEDERATION_ENABLED` | `false` | Enable peer mesh federation |
 | `FEDERATION_PEERS` | `[]` | Comma-separated peer URLs |
 | `CORS_ORIGINS` | `http://localhost:3000,...` | Allowed CORS origins |
