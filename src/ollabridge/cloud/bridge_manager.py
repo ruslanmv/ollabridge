@@ -38,6 +38,12 @@ from ollabridge.cloud.device_config import (
     load_cloud_device_credentials,
     save_cloud_device_credentials,
 )
+from ollabridge.cloud.homepilot_mirror_relay import (
+    MIRROR_OPS as HOMEPILOT_MIRROR_OPS,
+    RELAY_CAPABILITY as HOMEPILOT_MIRROR_RELAY_CAPABILITY,
+    dispatch as homepilot_mirror_dispatch,
+    enabled as homepilot_mirror_enabled,
+)
 from ollabridge.cloud.homepilot_image_relay import (
     CAPABILITY_OP as HOMEPILOT_IMAGE_CAPABILITY_OP,
     GENERATE_OP as HOMEPILOT_IMAGE_GENERATE_OP,
@@ -410,6 +416,11 @@ class CloudBridgeManager:
             elif op == HOMEPILOT_IMAGE_GENERATE_OP:
                 result = await homepilot_image_generate(payload)
                 response = {"type": "res", "id": req_id, "ok": True, "data": result}
+            elif op in HOMEPILOT_MIRROR_OPS and homepilot_mirror_enabled(self._hp_enabled):
+                result = await homepilot_mirror_dispatch(
+                    op, payload, base_url=self._hp_url, api_key=self._hp_key
+                )
+                response = {"type": "res", "id": req_id, "ok": True, "data": result}
             else:
                 response = {
                     "type": "res",
@@ -577,6 +588,8 @@ class CloudBridgeManager:
                         "platform": sys.platform,
                     }
                     hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)
+                    if homepilot_mirror_enabled(self._hp_enabled):
+                        hello["capabilities"].append(HOMEPILOT_MIRROR_RELAY_CAPABILITY)
                     catalog_manifest = self._build_catalog_manifest()
                     if catalog_manifest is not None:
                         hello["local_catalog"] = catalog_manifest
@@ -668,6 +681,8 @@ class CloudBridgeManager:
             "platform": sys.platform,
         }
         hello["capabilities"].append(HOMEPILOT_IMAGE_RELAY_CAPABILITY)
+        if homepilot_mirror_enabled(self._hp_enabled):
+            hello["capabilities"].append(HOMEPILOT_MIRROR_RELAY_CAPABILITY)
         await ws.send(json.dumps(hello))
         return models
 

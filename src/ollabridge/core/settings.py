@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     HOMEPILOT_API_KEY: str = ""
     HOMEPILOT_NODE_ID: str = "homepilot"
     HOMEPILOT_NODE_TAGS: str = "homepilot,persona"
+    # Relay OllaBridge Cloud's HomePilot mirror ops (homepilot.mirror.*) to this
+    # machine's HomePilot node endpoints. Off by default; needs HOMEPILOT_ENABLED.
+    HOMEPILOT_MIRROR_RELAY_ENABLED: bool = False
 
     # Authentication mode: required | local-trust | pairing
     #   required   – static API keys (default, backwards-compatible)
