@@ -277,6 +277,7 @@ See [docs/MCP.md](docs/MCP.md).
 | [Tutorial](docs/TUTORIAL.md) | [API Reference](docs/API.md) | [Privacy](docs/PRIVACY.md) |
 | [Examples (SDKs, LangChain, cURL)](docs/EXAMPLES.md) | [Configuration & Auth](docs/CONFIGURATION.md) | [Threat Model](docs/THREAT_MODEL.md) |
 | [Install Guide](INSTALL.md) | [Scaling & Public Access](docs/SCALING.md) | [Deployment Hardening](docs/DEPLOYMENT_HARDENING.md) |
+| [Setting up AI sources (step by step)](docs/SOURCES_SETUP.md) | | |
 | | [Relay Verification](docs/RELAY_VERIFICATION.md) | [Enterprise Architecture & RBAC](docs/ENTERPRISE.md) |
 | | [Cloud Sync](docs/CLOUD_SYNC.md) | [Provider Keys (BYOK)](docs/PROVIDER_KEYS.md) |
 | | [Providers Hub](docs/PROVIDERS_HUB.md) | [Enterprise Readiness Audit](docs/AUDIT_ENTERPRISE_READINESS.md) |

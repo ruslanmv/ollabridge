@@ -74,6 +74,41 @@ def test_discovery_summary_counts(patch_upstream):
     assert summary["tags"] == {"internal": 1, "legal": 1, "image": 1}
 
 
+def _openwebui_0_11_catalog():
+    """Observed on Open WebUI 0.11.4: plain chat models whose capability map
+    allows the image-generation tool, next to ones with ``capabilities: null``."""
+    def _plain(mid, caps):
+        return {"id": mid, "name": mid, "owned_by": "openai",
+                "connection_type": "external", "tags": [{"name": "internal"}],
+                "info": {"meta": {"capabilities": caps}}}
+    allowed = {"vision": True, "file_upload": True, "web_search": True,
+               "image_generation": True, "code_interpreter": True,
+               "citations": True, "usage": False, "builtin_tools": True}
+    return {"data": [
+        _plain("internal-gemma4-31b", allowed),
+        _plain("internal-gpt-oss-120b", allowed),
+        _plain("internal-qwen3-8-27b", None),
+        _plain("internal-muse-glimmer-30b", None),
+    ]}
+
+
+def test_image_generation_flag_keeps_models_eligible_as_chat_defaults(patch_upstream):
+    """Regression: ``image_generation: true`` used to classify a plain model as
+    ``image_generation``, so the discovery summary under-counted and the
+    ``category == "chat"`` filter that ``default_model_for`` applies dropped it."""
+    patch_upstream(lambda req: httpx.Response(200, json=_openwebui_0_11_catalog()))
+    import asyncio
+    adapter = dss.build_adapter(_rec(), "sk-x")
+    models = asyncio.run(adapter.list_models())
+    summary = dss.discovery_summary(models)
+    assert summary["count"] == 4
+    assert summary["persona_compatible"] == 4  # none of them is an image pipe
+    # Exactly the filter default_model_for applies: every entry stays eligible.
+    eligible = [m["upstream_model_id"] for m in models if m.get("category", "chat") == "chat"]
+    assert eligible == ["internal-gemma4-31b", "internal-gpt-oss-120b",
+                        "internal-qwen3-8-27b", "internal-muse-glimmer-30b"]
+
+
 # --- registry sync makes the source servable ---------------------------------
 
 @pytest.mark.asyncio

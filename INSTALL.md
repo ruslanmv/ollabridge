@@ -260,7 +260,8 @@ This creates `.env` from `.env.example`. Edit it with your settings:
 # API Keys (comma-separated for multiple keys)
 API_KEYS=sk-ollabridge-your-key-here
 
-# Ollama connection
+# Ollama connection. A URL saved on the Local Runtimes page overrides this for
+# all Ollama traffic; from WSL or Docker point it at the host, not localhost.
 OLLAMA_BASE_URL=http://localhost:11434
 
 # Default models

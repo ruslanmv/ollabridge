@@ -25,7 +25,20 @@ from typing import Any, AsyncIterator, Optional
 
 import httpx
 
+from ollabridge.core.reachability import OLLAMA as _ollama_reachability
+
 logger = logging.getLogger(__name__)
+
+
+class LocalRuntimeUnreachable(RuntimeError):
+    """The runtime did not answer ``/api/tags``, so nothing is known about its
+    models. Deliberately distinct from an empty listing: a sync that mistook
+    downtime for "zero models" would mark every catalog row as removed."""
+
+    def __init__(self, base_url: str, cause: Exception) -> None:
+        self.base_url = base_url
+        self.cause = cause
+        super().__init__(f"{base_url}: {type(cause).__name__}: {cause}")
 
 
 class LocalRuntimeClient:
@@ -54,15 +67,21 @@ class LocalRuntimeClient:
     # ── Discovery ───────────────────────────────────────────
 
     async def list_tags(self) -> list[dict[str, Any]]:
-        """Return the raw entries from ``/api/tags`` (``models`` array)."""
+        """Return the raw entries from ``/api/tags`` (``models`` array).
+
+        Raises :class:`LocalRuntimeUnreachable` when the runtime does not
+        answer. The outage itself is logged once by the shared reachability
+        monitor, not on every call.
+        """
         try:
             async with self._http() as client:
                 resp = await client.get("/api/tags")
                 resp.raise_for_status()
                 data = resp.json()
         except httpx.HTTPError as exc:
-            logger.warning("local runtime /api/tags failed: %s", exc)
-            return []
+            _ollama_reachability.failure(self.base_url, exc)
+            raise LocalRuntimeUnreachable(self.base_url, exc) from exc
+        _ollama_reachability.success(self.base_url)
 
         models = data.get("models") if isinstance(data, dict) else None
         if not isinstance(models, list):
@@ -86,8 +105,13 @@ class LocalRuntimeClient:
         try:
             async with self._http(timeout=5.0) as client:
                 resp = await client.get("/api/tags")
-                return resp.status_code < 500
-        except httpx.HTTPError:
+                if resp.status_code < 500:
+                    _ollama_reachability.success(self.base_url)
+                    return True
+                _ollama_reachability.failure(self.base_url, f"HTTP {resp.status_code}")
+                return False
+        except httpx.HTTPError as exc:
+            _ollama_reachability.failure(self.base_url, exc)
             return False
 
     # ── Health probe (1-token chat) ─────────────────────────

@@ -116,3 +116,22 @@ export function relTime(iso: string | null | undefined): string {
   if (d < 30) return `${d}d ago`
   return new Date(iso).toLocaleDateString()
 }
+
+/**
+ * One discovered model. `source` names the runtime it is served from and is
+ * shown only when given: on the Ollama card every pill is an Ollama one, in
+ * a combined list the reader needs to see which pill belongs to whom.
+ */
+export function ModelPill({ label, source }: { label: string; source?: string }) {
+  return (
+    <span
+      title={source ? `${label} (served by ${source})` : label}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs text-cyan-300 bg-cyan-400/10 border border-cyan-400/15"
+    >
+      <span>{label}</span>
+      {source ? (
+        <span className="text-[10px] text-white/40 border-l border-white/10 pl-1.5">{source}</span>
+      ) : null}
+    </span>
+  )
+}

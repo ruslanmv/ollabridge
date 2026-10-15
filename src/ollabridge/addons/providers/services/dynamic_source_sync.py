@@ -406,11 +406,16 @@ def byok_runtime_models(registry: Any, already: list[dict] | None = None) -> lis
             for model_id in config.models:
                 if model_id and model_id not in seen:
                     seen.add(model_id)
+                    label = config.name or config.kind
                     out.append(
                         {
                             "id": model_id,
                             "object": "model",
-                            "owned_by": config.name or config.kind,
+                            "owned_by": label,
+                            # Provenance for the dashboard: ``byok:<source name>``
+                            # recovers the Sources record this runtime came from.
+                            "source": f"byok:{str(config.id)[len('byok-'):]}",
+                            "source_display_name": label,
                         }
                     )
     except Exception as exc:  # noqa: BLE001

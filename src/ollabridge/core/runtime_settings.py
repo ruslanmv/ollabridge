@@ -117,3 +117,23 @@ def set_auth_mode(mode: str) -> str:
         raise ValueError(f"invalid auth mode: {mode!r}")
     update({_AUTH_OVERRIDE_KEY: m})
     return m
+
+
+def ollama_base_url() -> str:
+    """The Ollama base URL that every Ollama call must use.
+
+    Once a value has been saved from the Local Runtimes page it wins; until
+    then the live settings.OLLAMA_BASE_URL (env / .env) applies. A blank saved
+    value counts as unset and a trailing slash is dropped.
+
+    Only "Test Connection" and the registry node used to honour the saved
+    value, while chat, embeddings, model listing and Models & Access kept
+    reading the env setting: a UI pointed at a reachable host tested green
+    and every request still went to the unreachable default (the server in
+    WSL, Ollama on the Windows host). Resolving here keeps them in step.
+    """
+    saved = _load().get("ollama_base_url") if has_saved_settings() else None
+    url = saved.strip() if isinstance(saved, str) else ""
+    if not url:
+        url = str(settings.OLLAMA_BASE_URL or "").strip()
+    return url.rstrip("/")

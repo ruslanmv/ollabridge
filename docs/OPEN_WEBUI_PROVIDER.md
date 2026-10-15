@@ -154,12 +154,23 @@ adapter preserves the upstream catalog metadata and classifies each entry:
   `action_count`, `filter_count`, and `upstream_owned_by`.
 - **`capabilities`** are read ONLY from the upstream `info.meta.capabilities`
   (vision / image_generation / tools / structured_output). They are never
-  inferred from a model name. `chat` is set to `true` only for a plain model
-  entry (no `pipe`, not a `preset`); pipes/presets/image-only entries leave
-  `chat` null.
+  inferred from a model name. In Open WebUI (0.11.x) that per-model map
+  (`vision`, `file_upload`, `web_search`, `image_generation`,
+  `code_interpreter`, `citations`, `usage`, `builtin_tools`, …) lists which
+  chat **features** the model may use — it does not say what kind of model the
+  entry is. So every flag is additive: `image_generation: true` means the model
+  may call the image-generation tool, not that the entry is an image pipe, and
+  `vision: true` means it may receive images. `chat` is set to `true` for every
+  plain model entry (no `pipe`, not a `preset`) regardless of those flags; only
+  pipes/presets leave `chat` null. A model with `capabilities: null` is a plain
+  chat model whose optional flags stay `null` (unknown).
 - **`category`** is a coarse persona-safety class:
-  `chat | tools | vision | image_generation | preset_or_workflow | unknown`,
-  and **`persona_compatible`** is `true` only when `chat` is confirmed.
+  `chat | preset_or_workflow | unknown`. Only the entry's own `pipe`/`preset`
+  markers select `preset_or_workflow`; the capability flags never pick a
+  non-chat category (there is no `image_generation` or `vision` category — read
+  `capabilities` for those). **`persona_compatible`** is `true` only when `chat`
+  is confirmed, and the dynamic-source default picker
+  (`default_model_for`) considers exactly the `category == "chat"` entries.
 
 `OpenWebUIAdapter.filter_models(models, connection_type=…, tag=…, category=…,
 persona_compatible=…)` is a pure helper that reproduces every view over the

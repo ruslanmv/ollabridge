@@ -26,9 +26,61 @@ from ollabridge.db.database import init_db, session
 from ollabridge.db.models import RequestLog
 from ollabridge.api.state import build_state
 from ollabridge.api.relay import RelayHub, build_relay_router
+from ollabridge.core.logsetup import ensure_logging_configured
+from ollabridge.core.reachability import OLLAMA as ollama_reachability
 from ollabridge.core.registry import RuntimeNodeState
 
 log = logging.getLogger("ollabridge")
+
+
+def _log_request(request: Request, *, model: str | None, latency_ms: int, ok: bool) -> None:
+    """Persist one ``RequestLog`` row. Best-effort: telemetry must never fail
+    the request it describes. A broken database (schema drift, a read-only
+    file, a library that rejects the timestamp) is logged and otherwise
+    ignored, so a successful upstream answer still reaches the client and a
+    real upstream error is not masked by a second, unrelated exception."""
+    try:
+        with session() as s:
+            s.add(
+                RequestLog(
+                    path=str(request.url.path),
+                    model=model,
+                    latency_ms=latency_ms,
+                    ok=ok,
+                    client=request.client.host if request.client else None,
+                )
+            )
+            s.commit()
+    except Exception as exc:  # noqa: BLE001 - telemetry is best-effort
+        log.warning("request log write failed (%s): %s", type(exc).__name__, exc)
+
+
+def _upstream_http_error(exc: Exception) -> HTTPException:
+    """The HTTP error a client sees for a failed upstream call.
+
+    An Ollama that could not be reached becomes a 502 whose message names the
+    URL that was tried, so a setup where the saved address is wrong (WSL or
+    Docker talking to a host Ollama) is diagnosable from the response. Every
+    other failure stays a 500 with credential-shaped text redacted, as before.
+    """
+    from ollabridge.core.redact import redact_text
+    from ollabridge.providers.ollama_client import OllamaUnreachable
+
+    if isinstance(exc, OllamaUnreachable):
+        return HTTPException(
+            status_code=502,
+            detail={
+                "error": {
+                    "message": redact_text(str(exc)),
+                    "type": "upstream_unreachable",
+                    "code": "ollama_unreachable",
+                    "base_url": redact_text(exc.base_url),
+                }
+            },
+        )
+    return HTTPException(500, redact_text(str(exc)))
+
+
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT])
 
 
@@ -398,7 +450,59 @@ async def _reconfigure_nodes(application: FastAPI, cfg: dict[str, Any]) -> None:
         await registry.remove(hp_node_id)
 
 
+#: Machine-readable origins for ``/v1/models`` entries (the ``source`` field).
+#: ``byok:<name>`` is formed from the Sources record name, e.g. ``byok:watsonx``.
+MODEL_SOURCE_OLLAMA = "ollama"
+MODEL_SOURCE_HOMEPILOT = "homepilot"
+MODEL_SOURCE_RELAY = "relay"
+MODEL_SOURCE_DIRECT = "direct_endpoint"
+MODEL_SOURCE_OPEN_WEBUI = "open_webui"
+
+
+def _stamp_model_source(
+    entry: dict[str, Any],
+    *,
+    source: str,
+    display_name: str | None = None,
+    owned_by: str | None = None,
+) -> dict[str, Any]:
+    """Give one ``/v1/models`` entry a stable provenance.
+
+    ``source`` says where *this* gateway serves the model from (``ollama`` |
+    ``homepilot`` | ``relay`` | ``direct_endpoint`` | ``open_webui`` |
+    ``byok:<name>``) and ``source_display_name`` is the human label when one
+    is known. Both are OllaBridge extras next to the OpenAI fields, which stay
+    as they were: ``owned_by`` is only filled when the upstream left it empty,
+    so a provider's own value (Open WebUI's namespace, a BYOK source's display
+    name) is preserved. Before these fields a local Ollama entry had no
+    ``owned_by`` at all, and the dashboard counted every un-prefixed model as
+    an Ollama one -- including 54 Open WebUI models while Ollama was down.
+    """
+    entry.setdefault("object", "model")
+    if owned_by and not entry.get("owned_by"):
+        entry["owned_by"] = owned_by
+    entry["source"] = source
+    if display_name and not entry.get("source_display_name"):
+        entry["source_display_name"] = display_name
+    return entry
+
+
+def _dynamic_provider_source(cfg: Any) -> tuple[str, str]:
+    """``(source, display_name)`` for a registered addon provider config."""
+    kind = str(getattr(cfg, "kind", "") or "").lower()
+    pid = str(getattr(cfg, "id", "") or "")
+    name = str(getattr(cfg, "name", "") or pid)
+    if kind == MODEL_SOURCE_OPEN_WEBUI:
+        return MODEL_SOURCE_OPEN_WEBUI, name
+    if pid.startswith("byok-"):
+        return f"byok:{pid[len('byok-'):]}", name
+    return kind or pid, name
+
+
 def create_app() -> FastAPI:
+    # Timestamps and levels on every line unless the host application
+    # already configured logging (see core/logsetup.py).
+    ensure_logging_configured()
     app = FastAPI(title=settings.APP_NAME)
     app.state.limiter = limiter
     app.state.obridge = build_state()
@@ -608,7 +712,12 @@ def create_app() -> FastAPI:
                 node_id = settings.LOCAL_NODE_ID or "local"
 
                 def _provider():
-                    yield node_id, LocalRuntimeClient(base_url=settings.OLLAMA_BASE_URL)
+                    # Resolved per tick: the URL saved on the Local Runtimes
+                    # page wins over the env default, and a disabled local
+                    # runtime is not probed at all.
+                    if not rts.get("local_runtime_enabled", True):
+                        return
+                    yield node_id, LocalRuntimeClient(base_url=rts.ollama_base_url())
 
                 scheduler = LocalCatalogScheduler(svc, _provider)
                 await scheduler.start()
@@ -696,6 +805,12 @@ def create_app() -> FastAPI:
 
     app.include_router(model_access_router)
 
+    # "Set up Ollama" wizard — detect / install / start / first pull for the
+    # local runtime from the dashboard. Additive; see ollama_setup_routes.
+    from ollabridge.api.ollama_setup_routes import router as ollama_setup_router
+
+    app.include_router(ollama_setup_router)
+
     # OpenAI-compatible image + video generation
     from ollabridge.api.media_routes import router as media_routes
 
@@ -761,6 +876,9 @@ def create_app() -> FastAPI:
             "detail": detail,
             "homepilot_enabled": cfg.get("homepilot_enabled", False),
             "local_runtime_enabled": cfg.get("local_runtime_enabled", True),
+            # Up/down state of the local runtime as the gateway last saw it,
+            # so monitoring reads it here instead of grepping the log.
+            "local_runtime": ollama_reachability.snapshot(rts.ollama_base_url()),
             **_avatar_health(),
         }
 
@@ -981,17 +1099,7 @@ def create_app() -> FastAPI:
 
             latency = int((time.time() - t0) * 1000)
 
-            with session() as s:
-                s.add(
-                    RequestLog(
-                        path=str(request.url.path),
-                        model=model,
-                        latency_ms=latency,
-                        ok=True,
-                        client=request.client.host if request.client else None,
-                    )
-                )
-                s.commit()
+            _log_request(request, model=model, latency_ms=latency, ok=True)
 
             _record_flow_event(
                 app,
@@ -1074,17 +1182,7 @@ def create_app() -> FastAPI:
 
         except Exception as e:
             latency = int((time.time() - t0) * 1000)
-            with session() as s:
-                s.add(
-                    RequestLog(
-                        path=str(request.url.path),
-                        model=model,
-                        latency_ms=latency,
-                        ok=False,
-                        client=request.client.host if request.client else None,
-                    )
-                )
-                s.commit()
+            _log_request(request, model=model, latency_ms=latency, ok=False)
 
             _record_flow_event(
                 app,
@@ -1109,10 +1207,9 @@ def create_app() -> FastAPI:
                 error_category=type(e).__name__,
             )
 
-            # Redact any credential-shaped content before it reaches the client.
-            from ollabridge.core.redact import redact_text
-
-            raise HTTPException(500, redact_text(str(e)))
+            # Redact any credential-shaped content before it reaches the client;
+            # an unreachable Ollama becomes a 502 that names the URL it tried.
+            raise _upstream_http_error(e)
 
     # ------------------------------------------------------------------
     # Persona context endpoint — read-only bridge to HomePilot memory
@@ -1191,17 +1288,7 @@ def create_app() -> FastAPI:
                 vec = await ollama_embed(model=model, text=req.input)
 
             latency = int((time.time() - t0) * 1000)
-            with session() as s:
-                s.add(
-                    RequestLog(
-                        path=str(request.url.path),
-                        model=model,
-                        latency_ms=latency,
-                        ok=True,
-                        client=request.client.host if request.client else None,
-                    )
-                )
-                s.commit()
+            _log_request(request, model=model, latency_ms=latency, ok=True)
 
             _record_flow_event(
                 app,
@@ -1231,17 +1318,7 @@ def create_app() -> FastAPI:
 
         except Exception as e:
             latency = int((time.time() - t0) * 1000)
-            with session() as s:
-                s.add(
-                    RequestLog(
-                        path=str(request.url.path),
-                        model=model,
-                        latency_ms=latency,
-                        ok=False,
-                        client=request.client.host if request.client else None,
-                    )
-                )
-                s.commit()
+            _log_request(request, model=model, latency_ms=latency, ok=False)
 
             _record_flow_event(
                 app,
@@ -1263,9 +1340,7 @@ def create_app() -> FastAPI:
                 error_category=type(e).__name__,
             )
 
-            from ollabridge.core.redact import redact_text
-
-            raise HTTPException(500, redact_text(str(e)))
+            raise _upstream_http_error(e)
 
     @app.get("/admin/recent")
     async def admin_recent(_key: str = Depends(require_api_key)) -> dict[str, Any]:
@@ -1576,22 +1651,44 @@ def create_app() -> FastAPI:
                         )
                         for m in data.get("data", []):
                             if isinstance(m, dict):
-                                m["owned_by"] = m.get("owned_by", "homepilot")
-                                all_models.append(m)
+                                all_models.append(
+                                    _stamp_model_source(
+                                        m,
+                                        source=MODEL_SOURCE_HOMEPILOT,
+                                        display_name="HomePilot",
+                                        owned_by="homepilot",
+                                    )
+                                )
 
                 elif node.connector == "relay_link":
                     frame = await app.state.relay_hub.request(
                         node.node_id, "models", {}
                     )
                     for m in (frame.get("data") or {}).get("data", []):
-                        all_models.append(m)
+                        if isinstance(m, dict):
+                            all_models.append(
+                                _stamp_model_source(
+                                    m,
+                                    source=MODEL_SOURCE_RELAY,
+                                    display_name=f"Relay node {node.node_id}",
+                                    owned_by="relay",
+                                )
+                            )
 
                 elif node.connector == "direct_endpoint":
                     data = await app.state.obridge.direct.models(
                         base=node.endpoint or ""
                     )
                     for m in data.get("data", []):
-                        all_models.append(m)
+                        if isinstance(m, dict):
+                            all_models.append(
+                                _stamp_model_source(
+                                    m,
+                                    source=MODEL_SOURCE_DIRECT,
+                                    display_name=node.endpoint or node.node_id,
+                                    owned_by="direct_endpoint",
+                                )
+                            )
 
                 else:
                     from ollabridge.providers.ollama_client import (
@@ -1600,7 +1697,14 @@ def create_app() -> FastAPI:
 
                     models = await ollama_list()
                     for m_name in models:
-                        all_models.append({"id": m_name, "object": "model"})
+                        all_models.append(
+                            _stamp_model_source(
+                                {"id": m_name, "object": "model"},
+                                source=MODEL_SOURCE_OLLAMA,
+                                display_name="Ollama",
+                                owned_by="ollama",
+                            )
+                        )
 
             except Exception as e:
                 log.warning("Failed to list models from node %s: %s", node.node_id, e)
@@ -1617,10 +1721,15 @@ def create_app() -> FastAPI:
                     adapter = registry.get_adapter(cfg.id)
                     if adapter is None:
                         continue
+                    source, source_name = _dynamic_provider_source(cfg)
                     try:
                         for m in await adapter.list_models():
                             if isinstance(m, dict):
-                                all_models.append(m)
+                                all_models.append(
+                                    _stamp_model_source(
+                                        m, source=source, display_name=source_name
+                                    )
+                                )
                     except Exception as e:  # noqa: BLE001
                         log.warning("dynamic provider %s model list failed: %s", cfg.id, e)
 

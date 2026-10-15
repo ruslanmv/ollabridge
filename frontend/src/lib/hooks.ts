@@ -170,7 +170,14 @@ export function useUpsertSource() {
   return useMutation({
     mutationFn: ({ name, body }: { name: string; body: SourceUpsertBody }) =>
       api.upsertSource(name, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: SOURCES_KEY }),
+    onSuccess: () => {
+      // Enabling/disabling a source or changing its default model changes
+      // what Models & Access lists and what the cloud manifest publishes,
+      // so the "Shared with Cloud" chips must not wait for the next poll.
+      qc.invalidateQueries({ queryKey: SOURCES_KEY })
+      qc.invalidateQueries({ queryKey: MODEL_ACCESS_KEY })
+      qc.invalidateQueries({ queryKey: CLOUD_MANIFEST_KEY })
+    },
   })
 }
 

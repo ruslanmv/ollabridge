@@ -46,6 +46,13 @@ _ALLOWED_FIELDS = frozenset({
 
 # Map upstream ``info.meta.capabilities`` keys → our normalized flags. Only
 # DECLARED capabilities are honored — never inferred from a model name.
+#
+# In Open WebUI the per-model capability map (vision, image_generation,
+# file_upload, web_search, code_interpreter, ...) lists which chat FEATURES a
+# model may use; it does not say what kind of model the entry is. Every flag
+# here is therefore additive: ``image_generation: true`` means "may call the
+# image-generation tool", not "is an image pipe". Only ``pipe``/``preset`` on
+# the entry itself change its kind.
 _CAP_KEYS = {
     "vision": "vision",
     "image_generation": "image_generation",
@@ -275,23 +282,27 @@ class OpenWebUIAdapter(BaseProviderAdapter):
                 caps[dst] = bool(declared[src])
         # A plain model entry (no pipe, not a preset) is a chat LLM; a pipe or
         # preset is a workflow/tool and is NOT auto-offered as a chat model.
-        is_workflow = bool(m.get("pipe")) or bool(m.get("preset"))
-        if not is_workflow and caps["image_generation"] is not True:
+        # Declared feature flags never demote ``chat``: an entry with
+        # ``image_generation: true`` (or ``vision: true``) is a chat model that
+        # may also use that feature.
+        if not self._is_workflow(m):
             caps["chat"] = True
         return caps
 
     @staticmethod
-    def _classify(m: dict, caps: dict) -> str:
-        """Coarse category: chat | tools | vision | image_generation |
-        preset_or_workflow | unknown."""
-        if bool(m.get("pipe")) or bool(m.get("preset")):
+    def _is_workflow(m: dict) -> bool:
+        return bool(m.get("pipe")) or bool(m.get("preset"))
+
+    @classmethod
+    def _classify(cls, m: dict, caps: dict) -> str:
+        """Coarse category: chat | preset_or_workflow | unknown.
+
+        Only the entry's own ``pipe``/``preset`` markers decide the kind. The
+        capability flags (vision, image_generation, tools, ...) are additive
+        features of a chat model and are reported in ``capabilities``; they
+        never select a non-chat category."""
+        if cls._is_workflow(m):
             return "preset_or_workflow"
-        if caps.get("image_generation") is True:
-            return "image_generation"
-        if caps.get("vision") is True:
-            return "vision"
-        if caps.get("tools") is True:
-            return "tools"
         if caps.get("chat") is True:
             return "chat"
         return "unknown"

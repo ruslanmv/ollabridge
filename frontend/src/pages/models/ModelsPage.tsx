@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { useModels, useRuntimes, useHealth, useSettings } from '../../lib/hooks'
+import { OllamaSetupWizard } from '../sources/OllamaSetupWizard'
 import { api } from '../../lib/api'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Page } from '../../App'
@@ -23,6 +24,7 @@ export function ModelsPage({ onNavigate }: { onNavigate: (page: Page) => void })
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [setupOpen, setSetupOpen] = useState(false)
 
   const isOnline = health?.status === 'ok'
   const models = modelsData?.data ?? []
@@ -158,6 +160,7 @@ export function ModelsPage({ onNavigate }: { onNavigate: (page: Page) => void })
                 to see available models.
               </p>
             </div>
+            <SetupOllamaButton onClick={() => setSetupOpen(true)} />
           </motion.div>
         )}
 
@@ -218,22 +221,24 @@ export function ModelsPage({ onNavigate }: { onNavigate: (page: Page) => void })
                     Make sure your backends are running and properly configured.
                   </p>
                 </div>
-                <motion.button
-                  onClick={() => onNavigate('settings')}
-                  className="mt-2 px-5 py-2.5 rounded-xl text-sm font-medium"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(0,229,255,0.15), rgba(139,92,246,0.15))',
-                    border: '1px solid rgba(0,229,255,0.25)',
-                    color: '#00e5ff',
-                  }}
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  Open Settings
-                </motion.button>
+                <div className="mt-2 flex items-center gap-2">
+                  <SetupOllamaButton onClick={() => setSetupOpen(true)} />
+                  <motion.button
+                    onClick={() => onNavigate('settings')}
+                    className="px-5 py-2.5 rounded-xl text-sm font-medium text-white/70 bg-white/5 border border-white/10"
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                  >
+                    Open Settings
+                  </motion.button>
+                </div>
               </motion.div>
             )}
           </>
+        )}
+
+        {setupOpen && (
+          <OllamaSetupWizard onClose={() => setSetupOpen(false)} onNavigate={onNavigate} />
         )}
       </div>
     </div>
@@ -241,6 +246,25 @@ export function ModelsPage({ onNavigate }: { onNavigate: (page: Page) => void })
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────
+
+/** Opens the few-clicks Ollama wizard (install / start / first model). */
+function SetupOllamaButton({ onClick }: { onClick: () => void }) {
+  return (
+    <motion.button
+      onClick={onClick}
+      className="px-5 py-2.5 rounded-xl text-sm font-medium"
+      style={{
+        background: 'linear-gradient(135deg, rgba(0,229,255,0.15), rgba(139,92,246,0.15))',
+        border: '1px solid rgba(0,229,255,0.25)',
+        color: '#00e5ff',
+      }}
+      whileHover={{ scale: 1.03 }}
+      whileTap={{ scale: 0.97 }}
+    >
+      Set up Ollama
+    </motion.button>
+  )
+}
 
 function BackendSection({
   title,

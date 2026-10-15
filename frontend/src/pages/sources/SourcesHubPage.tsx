@@ -21,6 +21,7 @@ import { SourceModal, type ModalTarget } from './SourceModal'
 import { RotateModal } from './RotateModal'
 import { AddSourceDialog } from './AddSourceDialog'
 import { ModelsAccessTab } from './ModelsAccessTab'
+import { hasDefaultModel, isConnected } from './sourceStatus'
 
 type Tab = 'sources' | 'models' | 'routing' | 'usage' | 'cloud'
 
@@ -76,8 +77,8 @@ function SourcesTab({
   const configured = data?.configured ?? []
   const available = data?.available ?? []
   const total = configured.length + available.length
-  const connected = configured.filter((s) => s.status === 'connected').length
-  const models = configured.filter((s) => s.default_model.trim()).length
+  const connected = configured.filter(isConnected).length
+  const models = configured.filter(hasDefaultModel).length
 
   return (
     <div className="space-y-8">

@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 log = logging.getLogger("ollabridge.model_access")
 
+from ollabridge.core import runtime_settings as rts
 from ollabridge.core.security import require_api_key
 from ollabridge.core.settings import settings
 from ollabridge import model_access as ma
@@ -39,8 +40,10 @@ class AccessPatch(BaseModel):
 
 
 def _local_ollama_models() -> list[str]:
+    # The URL saved on the Local Runtimes page, not the env default, so the
+    # inventory agrees with what "Test Connection" and /v1/models reach.
     try:
-        r = httpx.get(f"{settings.OLLAMA_BASE_URL}/api/tags", timeout=3)
+        r = httpx.get(f"{rts.ollama_base_url()}/api/tags", timeout=3)
         if r.status_code == 200:
             return [
                 m.get("name", "") for m in r.json().get("models", []) if m.get("name")
@@ -55,8 +58,6 @@ def _homepilot_models() -> list[str]:
     enabled. Sync + best-effort, mirroring ``_local_ollama_models`` so the
     manifest pipeline can see personas (previously only Ollama was enumerated,
     so personas were never offered to the cloud manifest at all)."""
-    from ollabridge.core import runtime_settings as rts
-
     if not rts.get("homepilot_enabled", getattr(settings, "HOMEPILOT_ENABLED", False)):
         return []
     base = (rts.get("homepilot_base_url", settings.HOMEPILOT_BASE_URL) or "").rstrip("/")
