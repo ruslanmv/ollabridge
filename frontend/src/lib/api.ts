@@ -49,11 +49,26 @@ export type HealthResponse = {
   local_runtime_enabled?: boolean
 }
 
+/** Where this gateway serves a listed model from (OllaBridge extension to
+ * the OpenAI model object). `byok:<name>` names the Sources record, e.g.
+ * `byok:watsonx`. */
+export type ModelSource =
+  | 'ollama'
+  | 'homepilot'
+  | 'relay'
+  | 'direct_endpoint'
+  | 'open_webui'
+  | `byok:${string}`
+
 export type Model = {
   id: string
   object: string
   created?: number
   owned_by?: string
+  /** Machine-readable provenance; absent only on a gateway build that predates it. */
+  source?: ModelSource | (string & {})
+  /** Human label for `source` when the gateway knows one, e.g. "IBM watsonx". */
+  source_display_name?: string
 }
 
 export type ModelsResponse = {
@@ -300,6 +315,23 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+  // "Set up Ollama" wizard (admin/ollama-setup). All read-only except
+  // install/start/pull, each of which the wizard runs only on a click.
+  ollamaSetupStatus: () => request<OllamaSetupStatus>('/admin/ollama-setup/status'),
+  ollamaSetupInstall: () =>
+    request<OllamaSetupJob>('/admin/ollama-setup/install', { method: 'POST' }),
+  ollamaSetupJob: (jobId: string) =>
+    request<OllamaSetupJob>(`/admin/ollama-setup/jobs/${encodeURIComponent(jobId)}`),
+  ollamaSetupStart: () =>
+    request<OllamaSetupStartResult>('/admin/ollama-setup/start', { method: 'POST' }),
+  ollamaSetupPull: (model: string) =>
+    request<OllamaPullProgress>('/admin/ollama-setup/pull', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    }),
+  ollamaSetupPullStatus: (model: string) =>
+    request<OllamaPullProgress>(`/admin/ollama-setup/pull/${encodeURIComponent(model)}`),
   consumerNodes: () => request<ConsumerNodesResponse>('/consumer-nodes'),
   createConsumerNode: (body: CreateConsumerNodeBody) =>
     request<{ ok: boolean; node: ConsumerNode }>('/consumer-nodes', {
@@ -778,4 +810,73 @@ export type ProviderTestResponse = {
     usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
     model?: string
   }
+}
+
+// ── "Set up Ollama" wizard ─────────────────────────────────────────────────
+
+export type OllamaSetupRecommendation =
+  | 'ready'
+  | 'pull'
+  | 'connect'
+  | 'start'
+  | 'install'
+  | 'manual'
+
+export type OllamaSetupCandidate = {
+  url: string
+  label: string
+  reachable: boolean
+  models: number
+  message: string
+}
+
+export type OllamaSetupStatus = {
+  platform: 'windows' | 'darwin' | 'linux' | string
+  platform_label: string
+  in_wsl: boolean
+  in_docker: boolean
+  binary: { found: boolean; path: string | null; version: string | null }
+  service: { url: string; reachable: boolean; models: number; model_names: string[]; message: string }
+  candidates: OllamaSetupCandidate[]
+  install: {
+    method: 'winget' | 'brew' | 'script' | 'download' | string
+    display_command: string
+    download_url: string
+    can_run_here: boolean
+    reason: string
+  }
+  recommended: OllamaSetupRecommendation
+  settings: { ollama_base_url: string; local_runtime_enabled: boolean; default_model: string }
+  suggested_models: Array<{ id: string; label: string; size: string; note: string }>
+}
+
+export type OllamaSetupJob = {
+  job_id: string
+  kind: string
+  command: string
+  status: 'running' | 'succeeded' | 'failed'
+  exit_code: number | null
+  error: string | null
+  started_at: string
+  finished_at: string | null
+  lines: string[]
+}
+
+export type OllamaSetupStartResult = {
+  ok: boolean
+  reachable: boolean
+  url: string
+  already_running: boolean
+  models: number
+  waited_ms: number
+  message?: string
+}
+
+export type OllamaPullProgress = {
+  model: string
+  status: string
+  progress_pct: number
+  total_bytes: number | null
+  completed_bytes: number | null
+  error: string | null
 }

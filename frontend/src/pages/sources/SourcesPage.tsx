@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, Cloud, Home, RefreshCw, Save, Server } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle, CheckCircle2, Cloud, Home, RefreshCw, Save, Server, Wand2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import {
   api,
   type GatewaySettings,
   type SourceHealthRequest,
+  type SourceHealthResponse,
 } from '../../lib/api'
 import { useModelAccess, useModels, useSetModelAccess, useSettings } from '../../lib/hooks'
+import { isHomePilotModel, isOllamaModel } from '../../lib/modelSource'
 import { ExternalRuntimes } from './ExternalRuntimes'
+import { ModelPill } from './ui'
+import { OllamaSetupWizard } from './OllamaSetupWizard'
 import type { Page } from '../../App'
 
 type SourceHealthResult = {
@@ -122,10 +126,93 @@ function Toggle({
   )
 }
 
-function ModelPill({ label }: { label: string }) {
+type OllamaProbe = {
+  data?: SourceHealthResponse
+  isError: boolean
+  isFetching: boolean
+}
+
+/**
+ * What the Ollama card says when `/v1/models` attributes nothing to Ollama.
+ *
+ * An empty list is ambiguous on its own: the runtime may be down, or up with
+ * nothing pulled yet, and the registry never marks the local node unhealthy.
+ * The probe (the same call as "Test Connection") settles it, so the card can
+ * say "not reachable" rather than borrowing another runtime's models.
+ */
+function SetupButton({ onClick, label }: { onClick: () => void; label: string }) {
   return (
-    <span className="px-2.5 py-1 rounded-full text-xs text-cyan-300 bg-cyan-400/10 border border-cyan-400/15">
-      {label}
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+      style={{
+        background: 'linear-gradient(135deg, rgba(0,229,255,0.18), rgba(139,92,246,0.14))',
+        border: '1px solid rgba(0,229,255,0.3)',
+        color: '#00e5ff',
+      }}
+    >
+      <Wand2 size={12} /> {label}
+    </button>
+  )
+}
+
+function OllamaEmptyState({
+  enabled,
+  url,
+  probe,
+  onSetup,
+}: {
+  enabled: boolean
+  url: string
+  probe: OllamaProbe
+  onSetup: () => void
+}) {
+  const where = url || 'the configured base URL'
+
+  if (!enabled) {
+    return (
+      <div className="w-full flex items-center justify-between gap-3">
+        <span className="text-xs text-white/30">
+          Ollama is switched off on this device. Enable it above and save, or let the wizard do it.
+        </span>
+        <SetupButton onClick={onSetup} label="Set up Ollama" />
+      </div>
+    )
+  }
+
+  if (probe.data?.reachable) {
+    return (
+      <div className="w-full rounded-xl px-3 py-2 text-xs border text-amber-200 bg-amber-500/10 border-amber-500/20 flex items-center justify-between gap-3">
+        <span>
+          Ollama is reachable at <span className="font-mono">{where}</span> but has no models
+          pulled yet.
+        </span>
+        <SetupButton onClick={onSetup} label="Pull a first model" />
+      </div>
+    )
+  }
+
+  if (probe.data || probe.isError) {
+    return (
+      <div className="w-full rounded-xl px-3 py-2 text-xs border text-red-300 bg-red-500/10 border-red-500/20">
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={14} className="shrink-0" />
+          <span className="flex-1">
+            Ollama not reachable at <span className="font-mono">{where}</span>
+          </span>
+          <SetupButton onClick={onSetup} label="Set up Ollama" />
+        </div>
+        {probe.data?.message ? (
+          <div className="text-red-200/70 mt-1 ml-6">{probe.data.message}</div>
+        ) : null}
+      </div>
+    )
+  }
+
+  return (
+    <span className="text-xs text-white/30">
+      {probe.isFetching ? `Checking Ollama at ${where}…` : 'No Ollama models discovered yet.'}
     </span>
   )
 }
@@ -143,6 +230,7 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
   const [error, setError] = useState<string | null>(null)
 
   const [testingSource, setTestingSource] = useState<'ollama' | 'homepilot' | null>(null)
+  const [setupOpen, setSetupOpen] = useState(false)
   const [sourceResults, setSourceResults] = useState<Record<string, SourceHealthResult | null>>({
     ollama: null,
     homepilot: null,
@@ -157,17 +245,29 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
     })
   }, [settings])
 
-  const ollamaModels = useMemo(() => {
-    return (modelsData?.data ?? []).filter(
-      (m) => !m.id.startsWith('persona:') && !m.id.startsWith('personality:')
-    )
-  }, [modelsData])
+  // Only what the gateway attributes to Ollama. Filtering by id prefix used
+  // to count every Open WebUI and BYOK model here while Ollama was down.
+  const ollamaModels = useMemo(
+    () => (modelsData?.data ?? []).filter(isOllamaModel),
+    [modelsData],
+  )
 
-  const homepilotModels = useMemo(() => {
-    return (modelsData?.data ?? []).filter(
-      (m) => m.id.startsWith('persona:') || m.id.startsWith('personality:')
-    )
-  }, [modelsData])
+  const homepilotModels = useMemo(
+    () => (modelsData?.data ?? []).filter(isHomePilotModel),
+    [modelsData],
+  )
+
+  // Probe the saved URL (not the one being typed) only while the list is
+  // empty, to tell "down" from "nothing pulled". See OllamaEmptyState.
+  const savedOllamaUrl = settings?.ollama_base_url ?? ''
+  const ollamaEnabled = settings?.local_runtime_enabled ?? true
+  const ollamaProbe = useQuery({
+    queryKey: ['sourceHealth', 'ollama', savedOllamaUrl],
+    queryFn: () => api.sourceHealth({ source: 'ollama', base_url: savedOllamaUrl }),
+    enabled: ollamaEnabled && !!savedOllamaUrl && !modelsLoading && ollamaModels.length === 0,
+    refetchInterval: 30_000,
+    retry: false,
+  })
 
   const ollamaAccessModels = useMemo(() => {
     return modelAccess.data?.sources.find((src) => src.source_id === 'ollama')?.models ?? []
@@ -425,7 +525,7 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
               <div className="text-xs text-white/40">
                 {modelsLoading
                   ? 'Checking Ollama models…'
-                  : `${ollamaModels.length} Ollama model(s) discovered`}
+                  : `${ollamaModels.length} Ollama model${ollamaModels.length === 1 ? '' : 's'} discovered`}
               </div>
               <button
                 type="button"
@@ -452,10 +552,15 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
             <div className="mt-4 flex flex-wrap gap-2">
               {ollamaModels.length > 0 ? (
                 ollamaModels.map((m) => <ModelPill key={m.id} label={m.id} />)
+              ) : modelsLoading ? (
+                <span className="text-xs text-white/30">Checking Ollama models…</span>
               ) : (
-                <span className="text-xs text-white/30">
-                  No Ollama models discovered yet.
-                </span>
+                <OllamaEmptyState
+                  enabled={ollamaEnabled}
+                  url={savedOllamaUrl}
+                  probe={ollamaProbe}
+                  onSetup={() => setSetupOpen(true)}
+                />
               )}
             </div>
           </SectionCard>
@@ -543,7 +648,7 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
               <div className="text-xs text-white/40">
                 {modelsLoading
                   ? 'Checking HomePilot personas…'
-                  : `${homepilotModels.length} HomePilot persona model(s) discovered`}
+                  : `${homepilotModels.length} HomePilot persona model${homepilotModels.length === 1 ? '' : 's'} discovered`}
               </div>
               <button
                 type="button"
@@ -583,6 +688,12 @@ export function SourcesPage({ onNavigate }: SourcesPageProps) {
             here because a routing-enabled source serves requests exactly like
             a local backend does, and is published to Cloud alongside them. */}
         <ExternalRuntimes onNavigate={onNavigate} />
+
+        {/* Few-clicks path to a working local runtime; opens on the step
+            that matters (install / start / connect / first model). */}
+        {setupOpen && (
+          <OllamaSetupWizard onClose={() => setSetupOpen(false)} onNavigate={onNavigate} />
+        )}
 
         <div className="flex justify-end">
           <button

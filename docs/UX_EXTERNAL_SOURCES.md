@@ -67,6 +67,34 @@ Error · Disabled`), default model, **storage** (Local / Cloud metadata / Vault)
 **sharing** (Private / Account / Workspace / Org), **routing** (On/Off), last
 test. Actions: Configure · Test · Rotate key · Enable/Disable · Remove.
 
+### Status definitions (shared by Sources and Runtimes)
+
+The header counts on the Sources tab and on the External Runtimes card of the
+Runtimes page are computed by one helper,
+`frontend/src/pages/sources/sourceStatus.ts`, so the two can no longer
+disagree (they once read "1 of 15" and "2 of 15" connected for the same two
+sources). The frontend has no unit-test runner, so the definitions are
+recorded here instead:
+
+| Reading | Definition |
+|---|---|
+| **Connected** | `status === "connected"`. The backend (`_source_view` in `src/ollabridge/api/sources_routes.py`) reports `connected` only when a key is stored, the last test did not fail, no required extra field is missing **and** `enabled` is true. A disabled source reports `disabled` whatever its key says, and counts as not connected on every page. |
+| **Default model** | `default_model.trim()` is non-empty. |
+| **Shared with Cloud** | The source is enabled, connected and has a default model, **and** the cloud manifest publishes that model. Once `/admin/model-access` has loaded, the per-model record decides: `enabled && visible_cloud`, the exact filter `cloud_manifest()` in `src/ollabridge/model_access.py` applies. Before it loads, or for a model nobody has decided about yet, the chip falls back to the source-level default the backend would assign (`allow_routing`, see `_default_access()`). |
+
+Consequences worth knowing:
+
+- A disabled source is dropped from the model-access inventory and from the
+  manifest, so it is never "Shared with Cloud", even with `allow_routing` on.
+  The Runtimes row shows it dimmed with a `Disabled` badge instead.
+- A source whose key is missing or whose last test failed is not connected
+  and is shown as not shared even if the manifest still lists its model: it
+  cannot serve a request anyway. The row carries the same status badge as its
+  Sources card (`Missing key`, `Needs config`, `Error`).
+- Saving a source invalidates the model-access and cloud-manifest queries, so
+  the chips follow an enable/disable toggle immediately rather than on the
+  next 15-second poll.
+
 ### Add / Configure modal
 
 ```

@@ -22,7 +22,10 @@ from typing import Optional
 
 import yaml
 
-from ollabridge.addons.local_catalog.client import LocalRuntimeClient
+from ollabridge.addons.local_catalog.client import (
+    LocalRuntimeClient,
+    LocalRuntimeUnreachable,
+)
 from ollabridge.addons.local_catalog.parser import normalize
 from ollabridge.addons.local_catalog.repository import LocalCatalogRepository
 from ollabridge.addons.local_catalog.schemas import (
@@ -34,6 +37,14 @@ from ollabridge.addons.local_catalog.schemas import (
 from ollabridge.addons.local_catalog.scoring import pick_top_n, score_models
 
 logger = logging.getLogger(__name__)
+
+#: ``LocalSyncResult.error`` prefix for "the runtime did not answer". The
+#: scheduler backs off on it; the UI can tell it from a real sync failure.
+UNREACHABLE_ERROR_PREFIX = "runtime_unreachable"
+
+
+def is_unreachable_error(error: Optional[str]) -> bool:
+    return bool(error) and error.startswith(UNREACHABLE_ERROR_PREFIX)
 
 
 def _default_alias_path() -> Path:
@@ -124,6 +135,11 @@ class LocalCatalogSyncService:
 
                 result.aliases_written = self._write_managed_aliases()
 
+            except LocalRuntimeUnreachable as exc:
+                # Downtime says nothing about which models exist: no upsert,
+                # no "missing" bump, no promotion. The reachability monitor
+                # has already logged the outage once.
+                result.error = f"{UNREACHABLE_ERROR_PREFIX}: {exc}"
             except Exception as exc:
                 logger.exception("local catalog sync failed for node=%s", node_id)
                 result.error = f"{exc.__class__.__name__}: {exc}"
@@ -132,7 +148,10 @@ class LocalCatalogSyncService:
             await self.repository.set_last_sync(node_id, result)
             await self.repository.save()
 
-            logger.info(
+            # A per-minute "fetched=0 ... error=runtime_unreachable" line would
+            # be the same spam under another name; keep it at DEBUG.
+            logger.log(
+                logging.DEBUG if is_unreachable_error(result.error) else logging.INFO,
                 "local catalog sync node=%s fetched=%d upserted=%d promoted=%d demoted=%d removed=%d (%.1fs)%s",
                 node_id, result.fetched, result.upserted, result.promoted_to_top,
                 result.demoted_from_top, result.marked_removed, result.duration_s,

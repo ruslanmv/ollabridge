@@ -486,6 +486,11 @@ def start(
         else:
             console.print("[yellow]⚠️  Could not detect LAN IP address[/yellow]")
 
+    # Application loggers get the same level as uvicorn, with timestamps.
+    from ollabridge.core.logsetup import configure_logging
+
+    configure_logging(log_level)
+
     uvicorn.run(
         "ollabridge.api.main:app",
         host=host,

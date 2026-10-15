@@ -11,6 +11,9 @@ Environment:
 - ``OBRIDGE_LOCAL_SYNC_INTERVAL_S`` (default ``60``)
 - ``OBRIDGE_LOCAL_SYNC_INITIAL_S``  (default ``5``)
 - ``OBRIDGE_LOCAL_AUTO_ENABLE``     (default ``3``)
+- ``OBRIDGE_LOCAL_SYNC_MAX_BACKOFF_S`` (default ``600``): while the runtime is
+  unreachable the wait between ticks doubles, up to this cap, and snaps back
+  to ``interval_s`` on the first successful sync.
 """
 
 from __future__ import annotations
@@ -21,7 +24,11 @@ import os
 from typing import Callable, Iterable
 
 from ollabridge.addons.local_catalog.client import LocalRuntimeClient
-from ollabridge.addons.local_catalog.sync_service import LocalCatalogSyncService
+from ollabridge.addons.local_catalog.schemas import LocalSyncResult
+from ollabridge.addons.local_catalog.sync_service import (
+    LocalCatalogSyncService,
+    is_unreachable_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +61,7 @@ class LocalCatalogScheduler:
         initial_delay_s: int | None = None,
         auto_enable: int | None = None,
         enabled: bool | None = None,
+        max_backoff_s: int | None = None,
     ) -> None:
         self.service = service
         self.node_provider = node_provider
@@ -61,6 +69,11 @@ class LocalCatalogScheduler:
         self.initial_delay_s = initial_delay_s if initial_delay_s is not None else _envint("OBRIDGE_LOCAL_SYNC_INITIAL_S", 5)
         self.auto_enable = auto_enable if auto_enable is not None else _envint("OBRIDGE_LOCAL_AUTO_ENABLE", 3)
         self.enabled = enabled if enabled is not None else _envbool("OBRIDGE_LOCAL_SYNC_ENABLED", True)
+        self.max_backoff_s = (
+            max_backoff_s if max_backoff_s is not None
+            else _envint("OBRIDGE_LOCAL_SYNC_MAX_BACKOFF_S", 600)
+        )
+        self._delay_s = self.interval_s
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
 
@@ -100,18 +113,37 @@ class LocalCatalogScheduler:
                 logger.exception("local node provider raised")
                 pairs = []
 
+            results: list[LocalSyncResult] = []
             for node_id, client in pairs:
                 try:
-                    await self.service.sync_node(
-                        node_id=node_id,
-                        client=client,
-                        auto_enable_top=self.auto_enable,
+                    results.append(
+                        await self.service.sync_node(
+                            node_id=node_id,
+                            client=client,
+                            auto_enable_top=self.auto_enable,
+                        )
                     )
                 except Exception:
                     logger.exception("scheduled local sync raised for node=%s", node_id)
 
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=self.interval_s)
+                await asyncio.wait_for(self._stop.wait(), timeout=self._after_tick(results))
                 return
             except asyncio.TimeoutError:
                 continue
+
+    @property
+    def next_delay_s(self) -> int:
+        """Seconds the loop will wait after the last tick."""
+        return self._delay_s
+
+    def _after_tick(self, results: list[LocalSyncResult]) -> int:
+        """Pick the next wait: exponential backoff while every node is
+        unreachable (there is nothing to discover from a runtime that is
+        down), the normal interval as soon as one answers."""
+        if results and all(is_unreachable_error(r.error) for r in results):
+            self._delay_s = min(max(self._delay_s * 2, self.interval_s), self.max_backoff_s)
+            logger.debug("local runtime unreachable; next catalog sync in %ds", self._delay_s)
+        else:
+            self._delay_s = self.interval_s
+        return self._delay_s

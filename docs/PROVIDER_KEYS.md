@@ -13,6 +13,10 @@ storage modes, `providers.yaml`), `src/ollabridge/provider_ops.py`
 
 ---
 
+> Looking for the dashboard walkthrough (which fields to fill for each
+> provider, Open WebUI and OpenAI-compatible gateway examples, which switch
+> makes a source servable)? See [Setting up AI sources](SOURCES_SETUP.md).
+
 ## 1. Where keys live
 
 | File | Contents | Protection |

@@ -129,9 +129,35 @@ def _rich_catalog():
          "info": {"meta": {"description": "A local model", "capabilities": {"vision": True}}}},
         {"id": "gpt-ext", "name": "GPT", "owned_by": "openai",
          "connection_type": "external", "tags": ["papaki-legal"]},
+        # A plain chat model whose Open WebUI capability map allows the
+        # image-generation tool (the editor's defaults) — still a chat model.
+        {"id": "gemma-imggen", "name": "Gemma", "owned_by": "openai",
+         "connection_type": "external", "tags": [{"name": "internal"}],
+         "info": {"meta": {"capabilities": {
+             "vision": True, "file_upload": True, "web_search": True,
+             "image_generation": True, "code_interpreter": True,
+             "citations": True, "usage": False}}}},
         {"id": "img-pipe", "name": "Image", "connection_type": "local",
          "tags": [{"name": "image"}], "pipe": {"type": "image"}},
         {"id": "preset-x", "name": "Preset", "preset": True, "tags": []},
+    ]}
+
+
+def _openwebui_0_11_catalog():
+    """Shape observed on a real Open WebUI 0.11.4 server: plain chat models
+    carrying ``image_generation: true`` next to ones with ``capabilities: null``."""
+    def _plain(mid, caps):
+        return {"id": mid, "name": mid, "owned_by": "openai",
+                "connection_type": "external", "tags": [{"name": "internal"}],
+                "info": {"meta": {"capabilities": caps}}}
+    allowed = {"vision": True, "file_upload": True, "web_search": True,
+               "image_generation": True, "code_interpreter": True,
+               "citations": True, "usage": False, "builtin_tools": True}
+    return {"data": [
+        _plain("internal-gemma4-31b", allowed),
+        _plain("internal-gpt-oss-120b", allowed),
+        _plain("internal-qwen3-8-27b", None),
+        _plain("internal-muse-glimmer-30b", None),
     ]}
 
 
@@ -145,7 +171,9 @@ async def test_preserves_catalog_metadata_and_normalizes_tags(make_adapter):
     assert local["tags"] == [{"name": "internal"}]
     assert local["description"] == "A local model"
     assert local["upstream_owned_by"] == "ollama"
-    assert local["capabilities"]["vision"] is True and local["category"] == "vision"
+    # vision is an additive feature flag; the entry is still a chat model.
+    assert local["capabilities"]["vision"] is True
+    assert local["category"] == "chat" and local["persona_compatible"] is True
 
     # Bare-string tags are normalized to {"name": ...} form.
     assert models["gpt-ext"]["tags"] == [{"name": "papaki-legal"}]
@@ -163,6 +191,37 @@ async def test_classifies_non_chat_entries_and_flags_persona_safety(make_adapter
     assert models["preset-x"]["persona_compatible"] is False
     # A plain external model is chat-capable.
     assert models["gpt-ext"]["category"] == "chat" and models["gpt-ext"]["persona_compatible"] is True
+    # ``image_generation: true`` means "may call the image tool", not "is an
+    # image pipe": the flag is reported but never demotes chat.
+    gemma = models["gemma-imggen"]
+    assert gemma["capabilities"]["image_generation"] is True
+    assert gemma["capabilities"]["vision"] is True
+    assert gemma["capabilities"]["chat"] is True
+    assert gemma["category"] == "chat" and gemma["persona_compatible"] is True
+
+
+@pytest.mark.asyncio
+async def test_image_generation_flag_does_not_demote_chat_models(make_adapter):
+    """Regression for Open WebUI 0.11.x: the per-model capability map lists
+    the chat features a model may use. Plain models with
+    ``image_generation: true`` used to be classified ``image_generation`` and
+    dropped from every chat picker; only the ``capabilities: null`` ones
+    counted as chat."""
+    adapter = make_adapter(lambda req: httpx.Response(200, json=_openwebui_0_11_catalog()))
+    models = {m["upstream_model_id"]: m for m in await adapter.list_models()}
+    assert len(models) == 4
+    for mid, m in models.items():
+        assert m["category"] == "chat", mid
+        assert m["persona_compatible"] is True, mid
+        assert m["capabilities"]["chat"] is True, mid
+    # The declared flags are still surfaced, additively.
+    assert models["internal-gemma4-31b"]["capabilities"]["image_generation"] is True
+    assert models["internal-gpt-oss-120b"]["capabilities"]["vision"] is True
+    # ``capabilities: null`` leaves the optional flags honestly unknown.
+    assert models["internal-qwen3-8-27b"]["capabilities"]["image_generation"] is None
+    assert models["internal-qwen3-8-27b"]["capabilities"]["vision"] is None
+    chat = OpenWebUIAdapter.filter_models(list(models.values()), category="chat")
+    assert {m["upstream_model_id"] for m in chat} == set(models)
 
 
 @pytest.mark.asyncio
@@ -171,11 +230,14 @@ async def test_filter_reproduces_openwebui_views(make_adapter):
     models = await adapter.list_models()
     f = OpenWebUIAdapter.filter_models
     assert {m["upstream_model_id"] for m in f(models, connection_type="local")} == {"llama-local", "img-pipe"}
-    assert {m["upstream_model_id"] for m in f(models, connection_type="external")} == {"gpt-ext"}
+    assert {m["upstream_model_id"] for m in f(models, connection_type="external")} == {"gpt-ext", "gemma-imggen"}
     assert {m["upstream_model_id"] for m in f(models, tag="papaki-legal")} == {"gpt-ext"}
     assert {m["upstream_model_id"] for m in f(models, tag="image")} == {"img-pipe"}
-    # Persona-compatible view excludes the pipe + preset workflows.
-    assert {m["upstream_model_id"] for m in f(models, persona_compatible=True)} == {"llama-local", "gpt-ext"}
+    # Persona-compatible view excludes only the pipe + preset workflows; a chat
+    # model allowed to use the image tool stays in.
+    assert {m["upstream_model_id"] for m in f(models, persona_compatible=True)} == {
+        "llama-local", "gpt-ext", "gemma-imggen"}
+    assert {m["upstream_model_id"] for m in f(models, category="preset_or_workflow")} == {"img-pipe", "preset-x"}
 
 
 # --- chat: prefix strip + full response --------------------------------------
