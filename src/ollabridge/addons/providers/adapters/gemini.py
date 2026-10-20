@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from ollabridge.addons.providers.base import BaseProviderAdapter
+from ollabridge.core import message_content
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,9 @@ class GeminiAdapter(BaseProviderAdapter):
             gemini_role = "model" if role == "assistant" else "user"
             contents.append({
                 "role": gemini_role,
-                "parts": [{"text": msg.get("content", "")}],
+                # Plain text stays one text part, exactly as before; a message with images
+                # adds each one as inline data, which is how Gemini receives pictures.
+                "parts": message_content.gemini_parts(msg.get("content", "")),
             })
         return contents
 

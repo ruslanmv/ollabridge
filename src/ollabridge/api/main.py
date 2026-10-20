@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from ollabridge.core.settings import settings
 from ollabridge.core.security import require_api_key, set_pairing_manager
@@ -29,6 +29,7 @@ from ollabridge.api.relay import RelayHub, build_relay_router
 from ollabridge.core.logsetup import ensure_logging_configured
 from ollabridge.core.reachability import OLLAMA as ollama_reachability
 from ollabridge.core.registry import RuntimeNodeState
+from ollabridge.core import message_content
 
 log = logging.getLogger("ollabridge")
 
@@ -66,6 +67,11 @@ def _upstream_http_error(exc: Exception) -> HTTPException:
     from ollabridge.core.redact import redact_text
     from ollabridge.providers.ollama_client import OllamaUnreachable
 
+    # A refusal the route raised on purpose (``501 unsupported_capability`` for tools or
+    # images the chosen route cannot carry) is already the answer; wrapping it made every
+    # one of them a 500 whose body was the refusal stringified.
+    if isinstance(exc, HTTPException):
+        return exc
     if isinstance(exc, OllamaUnreachable):
         return HTTPException(
             status_code=502,
@@ -99,6 +105,18 @@ class ChatMessage(BaseModel):
     tool_calls: list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
     name: str | None = None
+    # Ollama's shape for pictures: bare base64 beside the text. OllaBridge Cloud relays
+    # requests here in that shape (and Ollama-native clients send it); without the field the
+    # images were silently dropped on arrival. Folded into ``content`` below, so every route
+    # reads images from one place.
+    images: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _fold_images(self) -> "ChatMessage":
+        if self.images:
+            self.content = message_content.with_images(self.content, self.images)
+            self.images = None
+        return self
 
 
 class ChatReq(BaseModel):
@@ -115,30 +133,22 @@ def _content_to_text(content: str | list[dict[str, Any]] | None) -> str:
     """Reduce any accepted content shape to the plain text Ollama expects.
 
     A string passes through untouched. A list of content parts is joined on
-    its text segments; non-text parts (images and such) are skipped here
-    rather than guessed at.
+    its text segments; non-text parts (images and such) are skipped here —
+    the routes that can carry images take them from the message itself (see
+    ``core/message_content.py``).
     """
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    parts: list[str] = []
-    for block in content:
-        if isinstance(block, dict) and block.get("type") == "text":
-            parts.append(str(block.get("text", "")))
-        elif isinstance(block, str):
-            parts.append(block)
-    return "".join(parts)
+    return message_content.text_of(content)
 
 
 def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
-    """Flatten a ChatMessage for an upstream runtime.
+    """Flatten a ChatMessage for an OpenAI-compatible upstream.
 
     For a message carrying no tool fields and plain string content the result
     is identical to the previous ``{"role": ..., "content": ...}`` flattening,
-    so existing traffic is unaffected.
+    so existing traffic is unaffected. A message that carries images keeps
+    its content parts, so a vision model upstream actually receives them.
     """
-    wire: dict[str, Any] = {"role": m.role, "content": _content_to_text(m.content)}
+    wire: dict[str, Any] = {"role": m.role, "content": message_content.openai_content(m.content)}
     if m.tool_calls:
         wire["tool_calls"] = m.tool_calls
     if m.tool_call_id:
@@ -165,6 +175,10 @@ def _message_to_ollama(m: ChatMessage) -> dict[str, Any]:
         "role": m.role,
         "content": _content_to_text(m.content),
     }
+    # Ollama carries images beside the text, as base64, never inside it.
+    images = message_content.ollama_images(m.content)
+    if images:
+        wire["images"] = images
     if m.tool_calls:
         native_calls: list[dict[str, Any]] = []
         for call in m.tool_calls:
@@ -899,6 +913,7 @@ def create_app() -> FastAPI:
 
         try:
             payload_messages = [_message_to_wire(m) for m in req.messages]
+            wants_images = any(message_content.has_images(m.content) for m in req.messages)
             decision = await app.state.obridge.router.choose_node(
                 model=model, require_tools=bool(req.tools)
             )
@@ -948,10 +963,39 @@ def create_app() -> FastAPI:
                         },
                     )
 
+            # Images, the same rule as tools: a route that cannot deliver them must say so
+            # rather than answer as if the picture had never been sent. Direct endpoints and the
+            # HomePilot persona connector carry text only today; the provider add-ons (Open
+            # WebUI and the other OpenAI-compatible upstreams), local Ollama and paired devices
+            # (in Ollama's shape, which a node passes straight to its Ollama) carry images.
+            # Text-only requests never reach this branch.
+            if wants_images and node.connector in ("direct_endpoint", "homepilot"):
+                raise HTTPException(
+                    status_code=501,
+                    detail={
+                        "error": {
+                            "message": (
+                                f"Model '{model}' is served through the '{node.connector}' "
+                                f"route, which cannot carry images yet. Choose a model served "
+                                f"by a provider (e.g. Open WebUI) or by local Ollama for "
+                                f"image input."
+                            ),
+                            "type": "unsupported_capability",
+                            "param": "messages.content.image_url",
+                        }
+                    },
+                )
+
             if node.connector == "relay_link":
                 relay_payload: dict[str, Any] = {
                     "model": model,
-                    "messages": payload_messages,
+                    # A node hands `messages` to its Ollama as they are, so pictures travel in
+                    # Ollama's shape (text + `images`); text-only payloads are unchanged.
+                    "messages": (
+                        [_message_to_ollama(m) for m in req.messages]
+                        if wants_images and not req.tools
+                        else payload_messages
+                    ),
                 }
                 # Extra key only when present, so an older node sees the exact
                 # payload it saw before.
@@ -1085,13 +1129,20 @@ def create_app() -> FastAPI:
                             message.get("tool_calls") or []
                         )
                     else:
-                        # Unchanged pre-existing path.
+                        # Unchanged pre-existing path — except that a message with
+                        # images is sent in Ollama's own shape (text + `images`),
+                        # since Ollama does not read OpenAI content parts.
                         from ollabridge.providers.ollama_client import (
                             chat as ollama_chat,
                         )
 
                         content = await ollama_chat(
-                            model=model, messages=payload_messages
+                            model=model,
+                            messages=(
+                                [_message_to_ollama(m) for m in req.messages]
+                                if wants_images
+                                else payload_messages
+                            ),
                         )
 
             if node.connector == "homepilot":
