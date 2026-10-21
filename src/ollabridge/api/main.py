@@ -202,6 +202,119 @@ def _message_to_ollama(m: ChatMessage) -> dict[str, Any]:
     return wire
 
 
+def _provider_namespaced(model: str, candidates: list) -> bool:
+    """``<provider_id>/<model>``: a name that only that provider can serve. Local Ollama has
+    no such model, so a failure here must be reported, never retried locally."""
+    prefix, sep, _ = model.partition("/")
+    if not sep:
+        return False
+    ids = {str(getattr(c, "provider_id", c)) for c in candidates or []}
+    return prefix in ids or prefix.replace("-", "") in {i.replace("-", "") for i in ids}
+
+
+def _local_ollama_failure(exc: Exception, model: str) -> dict[str, Any] | None:
+    """An OpenAI-style error for local Ollama's answer to a tool-bearing request, or ``None``
+    when it is not one this code knows (re-raised as before)."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    try:
+        body = response.json() if response is not None else {}
+        reason = str((body or {}).get("error") or "") if isinstance(body, dict) else ""
+    except Exception:  # noqa: BLE001 - a non-JSON body
+        reason = (getattr(response, "text", "") or "").strip()
+    lowered = reason.lower()
+    if status == 400 and ("tool" in lowered or "function" in lowered):
+        return {"status": 400, "error": {
+            "message": f"{model} does not support tools on local Ollama ({reason or 'HTTP 400'}).",
+            "type": "invalid_request_error", "param": "tools", "code": "tools_unsupported",
+        }}
+    if status == 404:
+        return {"status": 404, "error": {
+            "message": f"{model} is not installed in local Ollama ({reason or 'HTTP 404'}).",
+            "type": "invalid_request_error", "param": "model", "code": "model_not_found",
+        }}
+    if isinstance(status, int) and 400 <= status < 500:
+        return {"status": status, "error": {
+            "message": f"Local Ollama rejected the request for {model}: {reason or f'HTTP {status}'}",
+            "type": "invalid_request_error", "code": "local_bad_request",
+        }}
+    return None
+
+
+def _upstream_reason(text: str) -> str:
+    """The provider's own sentence inside an adapter error — ``bad request (HTTP 400):
+    {"detail":"Rate limit exceeded. Please try again later."}`` → ``Rate limit exceeded. Please
+    try again later.`` — so a client shows words, not a fragment of JSON."""
+    m = re.search(r'"(?:detail|message)"\s*:\s*"([^"]{1,200})"', text or "")
+    if m:
+        return m.group(1).strip()
+    return (text or "").split("Last error:")[-1].strip()[:160]
+
+
+def _provider_failure(exc: Exception, model: str, *, has_tools: bool) -> dict[str, Any] | None:
+    """What to tell the client about a provider failure, as an OpenAI-style error
+    (``status``, ``code``, ``message``), or ``None`` for an error this code does not know.
+
+    The upstream's own words decide: Open WebUI answers a rate limit with HTTP 400 and
+    ``{"detail": "Rate limit exceeded..."}``, which the adapter maps to a bad request — read
+    as a bad request it used to end in a 500 wrapping a 404 from local Ollama."""
+    try:
+        from ollabridge.addons.providers.errors import (
+            ProviderAuthError,
+            ProviderBadRequest,
+            ProviderError,
+            ProviderQuotaExceeded,
+            ProviderTimeout,
+            ProviderUnavailable,
+        )
+    except Exception:  # pragma: no cover - the addon is optional
+        return None
+    if not isinstance(exc, ProviderError):
+        # The router wraps the last provider's error ("All providers failed …"): judge by it.
+        inner = getattr(exc, "last_error", None) or exc.__cause__
+        if isinstance(inner, ProviderError):
+            exc = inner
+        elif "rate limit" in str(exc).lower():
+            return {
+                "status": 429,
+                "code": "rate_limited",
+                "message": f"{model}'s provider is rate limiting requests right now ({_upstream_reason(str(exc))}). Try again in a moment.",
+            }
+        else:
+            return {"status": 502, "code": "provider_error", "message": f"{model}'s provider failed: {exc}"}
+    text = str(exc)
+    lowered = text.lower()
+    status = getattr(exc, "upstream_status", None)
+    if (
+        isinstance(exc, ProviderQuotaExceeded)
+        or status == 429
+        or "rate limit" in lowered
+        or "rate_limit" in lowered
+        or "too many requests" in lowered
+    ):
+        return {
+            "status": 429,
+            "code": "rate_limited",
+            "message": f"{model}'s provider is rate limiting requests right now ({_upstream_reason(text)}). Try again in a moment.",
+        }
+    if has_tools and isinstance(exc, ProviderBadRequest) and ("tool" in lowered or "function" in lowered):
+        return {
+            "status": 400,
+            "code": "tools_unsupported",
+            "param": "tools",
+            "message": f"{model} does not support tools on its provider: {text}",
+        }
+    if isinstance(exc, ProviderAuthError):
+        return {"status": 502, "code": "provider_auth", "message": f"{model}'s provider refused the credentials: {text}"}
+    if isinstance(exc, ProviderBadRequest):
+        return {"status": 400, "code": "provider_bad_request", "message": f"{model}'s provider rejected the request: {text}"}
+    if isinstance(exc, ProviderTimeout):
+        return {"status": 504, "code": "provider_timeout", "message": f"{model}'s provider did not answer in time: {text}"}
+    if isinstance(exc, ProviderUnavailable):
+        return {"status": 502, "code": "provider_unavailable", "message": f"{model}'s provider is unavailable: {text}"}
+    return {"status": 502, "code": "provider_error", "message": f"{model}'s provider failed: {text}"}
+
+
 def _tool_calls_to_openai(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert Ollama's tool_calls into the OpenAI wire shape.
 
@@ -1083,26 +1196,70 @@ def create_app() -> FastAPI:
                 # Try the additive provider layer before falling back to local Ollama.
                 provider_router = getattr(app.state, "provider_router", None)
                 addon_handled = False
-                # Provider addon chat doesn't yet carry OpenAI tool schemas.
-                # Keep tool loops on the tool-capable runtime selected above
-                # rather than silently converting the request to plain chat.
-                if provider_router and not req.tools:
+                # Tool-bearing requests reach the provider too: the OpenAI-compatible
+                # adapters forward `tools` / `tool_choice` upstream and hand back the
+                # assistant's `tool_calls`. They used to be kept on local Ollama, which
+                # cannot serve a provider-namespaced model at all — the client saw an
+                # HTTP 500 wrapping a 404 from /api/chat whenever it offered tools.
+                provider_candidates = provider_router.resolve(model) if provider_router else []
+                if provider_router and provider_candidates:
                     try:
-                        candidates = provider_router.resolve(model)
-                        if candidates:
-                            result_data = await provider_router.route_chat(
-                                model,
-                                payload_messages,
-                                temperature=req.temperature,
-                                max_tokens=req.max_tokens,
-                            )
-                            choices = result_data.get("choices", [])
-                            if choices:
-                                content = (
-                                    choices[0].get("message", {}).get("content", "")
-                                )
-                                addon_handled = True
+                        extra: dict[str, Any] = {}
+                        if req.tools:
+                            extra["tools"] = req.tools
+                        if req.tool_choice is not None:
+                            extra["tool_choice"] = req.tool_choice
+                        result_data = await provider_router.route_chat(
+                            model,
+                            payload_messages,
+                            temperature=req.temperature,
+                            max_tokens=req.max_tokens,
+                            **extra,
+                        )
+                        choices = result_data.get("choices", [])
+                        if choices:
+                            message_data = choices[0].get("message", {}) or {}
+                            content = message_data.get("content") or ""
+                            tool_calls = [
+                                c for c in (message_data.get("tool_calls") or []) if isinstance(c, dict)
+                            ]
+                            addon_handled = True
                     except Exception as addon_exc:
+                        failure = _provider_failure(addon_exc, model, has_tools=bool(req.tools))
+                        if failure is not None and (
+                            failure["code"] == "tools_unsupported"
+                            or _provider_namespaced(model, provider_candidates)
+                        ):
+                            # The provider serves this model and said no (rate limit, bad
+                            # request, credentials, outage): report that, with its status,
+                            # instead of re-sending the request to local Ollama, which has no
+                            # such model and would turn it into a 500 wrapping a 404.
+                            log.warning(
+                                "Provider failure for model=%s reported to the client as HTTP %s (%s): %s",
+                                model,
+                                failure["status"],
+                                failure["code"],
+                                addon_exc,
+                            )
+                            error_body = {
+                                "message": failure["message"],
+                                "type": (
+                                    "rate_limit_error"
+                                    if failure["code"] == "rate_limited"
+                                    else "invalid_request_error"
+                                    if failure["status"] == 400
+                                    else "provider_error"
+                                ),
+                                "code": failure["code"],
+                            }
+                            if failure.get("param"):
+                                error_body["param"] = failure["param"]
+                            raise HTTPException(
+                                status_code=failure["status"],
+                                detail={"error": error_body},
+                                # Tell well-behaved clients how long to back off.
+                                headers={"Retry-After": "5"} if failure["code"] == "rate_limited" else None,
+                            ) from addon_exc
                         log.debug(
                             "Addon providers exhausted for model=%s, falling back to Ollama: %s",
                             model,
@@ -1117,13 +1274,27 @@ def create_app() -> FastAPI:
                     if req.tools:
                         # Tool-aware path. Ollama's /api/chat carries `tools`
                         # and returns message.tool_calls.
+                        import httpx as _httpx
+
                         from ollabridge.providers.ollama_client import chat_message
 
-                        message = await chat_message(
-                            model=model,
-                            messages=[_message_to_ollama(m) for m in req.messages],
-                            tools=req.tools,
-                        )
+                        try:
+                            message = await chat_message(
+                                model=model,
+                                messages=[_message_to_ollama(m) for m in req.messages],
+                                tools=req.tools,
+                            )
+                        except _httpx.HTTPStatusError as local_exc:
+                            # Ollama's own words, as the client's status: a model without tool
+                            # support (400 "… does not support tools") must read as
+                            # tools_unsupported so the client retries without tools, and a
+                            # model that is not installed as 404 — not both as a bare 500.
+                            local_failure = _local_ollama_failure(local_exc, model)
+                            if local_failure is None:
+                                raise
+                            raise HTTPException(
+                                status_code=local_failure["status"], detail={"error": local_failure["error"]}
+                            ) from local_exc
                         content = message.get("content", "") or ""
                         tool_calls = _tool_calls_to_openai(
                             message.get("tool_calls") or []

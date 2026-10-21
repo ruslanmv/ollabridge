@@ -31,6 +31,16 @@ from ollabridge.addons.providers.scoring import compute_score
 logger = logging.getLogger(__name__)
 
 
+class ProvidersExhausted(RuntimeError):
+    """Every candidate failed. Still a ``RuntimeError`` (what callers caught before), and it
+    keeps the last provider's own error — a rate limit, a refusal, an outage — so the API can
+    answer with what actually went wrong instead of guessing."""
+
+    def __init__(self, message: str, *, last_error: Exception | None = None) -> None:
+        super().__init__(message)
+        self.last_error = last_error
+
+
 class ProviderRouter:
     """Routes chat requests to the best available provider."""
 
@@ -293,6 +303,7 @@ class ProviderRouter:
                 )
                 last_error = exc
 
-        raise RuntimeError(
-            f"All providers failed for '{model_or_alias}'. Last error: {last_error}"
-        )
+        raise ProvidersExhausted(
+            f"All providers failed for '{model_or_alias}'. Last error: {last_error}",
+            last_error=last_error,
+        ) from last_error

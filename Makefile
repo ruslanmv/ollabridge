@@ -140,6 +140,8 @@ help: ## Show this help message
 	@echo "$(COLOR_BOLD)New here? Two commands:$(COLOR_RESET)"
 	@echo "  $(COLOR_GREEN)make install$(COLOR_RESET)   # installs backend + frontend into .venv (never touches system Python)"
 	@echo "  $(COLOR_GREEN)make run$(COLOR_RESET)       # starts backend + dashboard at http://localhost:11435/ui"
+	@echo "  $(COLOR_GREEN)make stop$(COLOR_RESET)      # stops the gateway on its port (OLLABRIDGE_PORT, default 11435)"
+	@echo "  $(COLOR_GREEN)make restart$(COLOR_RESET)   # stop, then start on the same port (a busy port makes start move on)"
 	@echo ""
 	@echo "$(COLOR_BOLD)Usage:$(COLOR_RESET)"
 	@echo "  make $(COLOR_GREEN)<target>$(COLOR_RESET)"
@@ -431,23 +433,33 @@ run: env ## Start everything: backend + frontend dashboard (always fresh build)
 	@$(MAKE) start
 
 .PHONY: start
-start: env ui-build ## Start OllaBridge (backend + frontend, configure from UI)
-	@echo ""
-	@echo "$(COLOR_BOLD)$(COLOR_CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
-	@echo "$(COLOR_BOLD)$(COLOR_GREEN)  OllaBridge — AI Pipeline Builder + Control Tower$(COLOR_RESET)"
-	@echo "$(COLOR_BOLD)$(COLOR_CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
-	@echo ""
-	@echo "$(COLOR_GREEN)  Dashboard UI:$(COLOR_RESET)  http://localhost:11435/ui"
-	@echo "$(COLOR_GREEN)  Backend API:$(COLOR_RESET)   http://localhost:11435/v1"
-	@echo "$(COLOR_GREEN)  Health:$(COLOR_RESET)        http://localhost:11435/health"
-	@echo ""
-	@echo "$(COLOR_CYAN)  Configure models, backends, and auth from the dashboard.$(COLOR_RESET)"
-	@echo "$(COLOR_CYAN)  The dashboard opens in your browser automatically once ready.$(COLOR_RESET)"
-	@echo "$(COLOR_CYAN)  Press Ctrl+C to stop$(COLOR_RESET)"
-	@echo ""
-	@# The gateway opens the dashboard itself once /health is ready
-	@# (cross-platform, opt out with OLLABRIDGE_NO_BROWSER=1 or --no-open).
-	@$(PYTHON) -m ollabridge.cli.main start --no-setup --auth-mode local-trust --log-level info
+start: env ui-build ## Start OllaBridge (backend + frontend, configure from UI); a busy port moves to the next free one
+	@# OLLABRIDGE_PORT picks the port (default 11435). When it is taken, the gateway starts on
+	@# the next free port and says who holds it; `make stop` frees it, `make restart` takes it back.
+	@PORT=$$($(PYTHON) scripts/gateway_port.py pick $${OLLABRIDGE_PORT:-11435}) || exit 1; \
+	echo ""; \
+	echo "$(COLOR_BOLD)$(COLOR_CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"; \
+	echo "$(COLOR_BOLD)$(COLOR_GREEN)  OllaBridge — AI Pipeline Builder + Control Tower$(COLOR_RESET)"; \
+	echo "$(COLOR_BOLD)$(COLOR_CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"; \
+	echo ""; \
+	echo "$(COLOR_GREEN)  Dashboard UI:$(COLOR_RESET)  http://localhost:$$PORT/ui"; \
+	echo "$(COLOR_GREEN)  Backend API:$(COLOR_RESET)   http://localhost:$$PORT/v1"; \
+	echo "$(COLOR_GREEN)  Health:$(COLOR_RESET)        http://localhost:$$PORT/health"; \
+	echo ""; \
+	echo "$(COLOR_CYAN)  Configure models, backends, and auth from the dashboard.$(COLOR_RESET)"; \
+	echo "$(COLOR_CYAN)  The dashboard opens in your browser automatically once ready.$(COLOR_RESET)"; \
+	echo "$(COLOR_CYAN)  Press Ctrl+C to stop, or run make stop from another terminal$(COLOR_RESET)"; \
+	echo ""; \
+	exec $(PYTHON) -m ollabridge.cli.main start --no-setup --auth-mode local-trust --log-level info --port $$PORT
+
+.PHONY: stop
+stop: ## Stop the OllaBridge gateway on its port (OLLABRIDGE_PORT, default 11435); never another program
+	@$(PYTHON) scripts/gateway_port.py stop $${OLLABRIDGE_PORT:-11435}
+
+.PHONY: restart
+restart: ## Stop the gateway on its port, then start it there again
+	@$(MAKE) --no-print-directory stop
+	@$(MAKE) --no-print-directory start
 
 .PHONY: start-cli
 start-cli: env ## Start OllaBridge with full CLI setup (installs Ollama + pulls model)

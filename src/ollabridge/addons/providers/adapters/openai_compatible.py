@@ -106,6 +106,12 @@ class OpenAICompatibleAdapter(BaseProviderAdapter):
             payload["temperature"] = kwargs["temperature"]
         if kwargs.get("max_tokens") is not None:
             payload["max_tokens"] = kwargs["max_tokens"]
+        # Function calling and structured output pass straight through: the
+        # upstream speaks the same OpenAI chat schema, so its `tool_calls`
+        # come back in the response untouched.
+        for key in ("tools", "tool_choice", "parallel_tool_calls", "response_format"):
+            if kwargs.get(key) is not None:
+                payload[key] = kwargs[key]
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
