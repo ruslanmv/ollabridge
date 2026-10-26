@@ -44,6 +44,19 @@ def default_node_id() -> str:
     return os.environ.get("OBRIDGE_NODE_ID") or f"node-{socket.gethostname()}-{uuid.uuid4().hex[:6]}"
 
 
+def runtime_options(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Ollama options for a chat frame: the gateway sends them as ``options`` (the output cap as
+    ``num_predict``); an OpenAI-shaped payload carries the cap as ``max_completion_tokens`` or
+    ``max_tokens``. None when the frame sets none, so the runtime sees exactly what it saw before."""
+    options = dict(payload.get("options") or {})
+    cap = payload.get("max_completion_tokens")
+    if cap is None:
+        cap = payload.get("max_tokens")
+    if isinstance(cap, int) and not isinstance(cap, bool) and "num_predict" not in options:
+        options["num_predict"] = cap
+    return options or None
+
+
 async def run_node(config: NodeConfig) -> None:
     """Connect to the Local Control Plane and serve inference over the relay link."""
     runtime = LocalRuntime(config.runtime_base_url)
@@ -82,13 +95,15 @@ async def run_node(config: NodeConfig) -> None:
                             model=payload["model"],
                             messages=payload["messages"],
                             tools=payload["tools"],
+                            options=runtime_options(payload),
                         )
                         data = {"content": message.get("content", "") or ""}
                         if message.get("tool_calls"):
                             data["tool_calls"] = message["tool_calls"]
                         res = {"type": "res", "id": req_id, "ok": True, "data": data}
                     else:
-                        content = await runtime.chat(model=payload["model"], messages=payload["messages"])
+                        content = await runtime.chat(model=payload["model"], messages=payload["messages"],
+                                                     options=runtime_options(payload))
                         res = {"type": "res", "id": req_id, "ok": True, "data": {"content": content}}
                 elif op == "embeddings":
                     emb = await runtime.embeddings(model=payload["model"], text=payload.get("input") or "")
@@ -259,7 +274,7 @@ async def run_cloud_device(config: CloudDeviceConfig) -> None:
                         stream = bool(payload.get("stream") is True)
 
                         if not stream:
-                            content = await runtime.chat(model=model, messages=messages)
+                            content = await runtime.chat(model=model, messages=messages, options=runtime_options(payload))
                             res = {
                                 "type": "res",
                                 "id": req_id,
@@ -270,7 +285,7 @@ async def run_cloud_device(config: CloudDeviceConfig) -> None:
                             continue
 
                         # Streaming: send delta chunks + done
-                        async for chunk in runtime.chat_stream(model=model, messages=messages):
+                        async for chunk in runtime.chat_stream(model=model, messages=messages, options=runtime_options(payload)):
                             await ws.send(json.dumps({"type": "delta", "id": req_id, "content": chunk}))
                         await ws.send(json.dumps({"type": "done", "id": req_id}))
                         continue

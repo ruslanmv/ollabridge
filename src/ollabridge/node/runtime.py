@@ -23,8 +23,10 @@ class LocalRuntime:
         model: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Return Ollama's full assistant message, including any tool_calls."""
+        """Return Ollama's full assistant message, including any tool_calls. ``options`` are
+        Ollama's (``num_predict`` is the output cap); sent only when given."""
         body: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -32,17 +34,21 @@ class LocalRuntime:
         }
         if tools:
             body["tools"] = tools
+        if options:
+            body["options"] = options
         r = await self._client.post(_join(self.base_url, "/api/chat"), json=body)
         r.raise_for_status()
         data = r.json()
         return data.get("message", {}) or {}
 
-    async def chat(self, *, model: str, messages: list[dict[str, Any]]) -> str:
-        """Text-only chat. Signature and return type unchanged for callers."""
-        message = await self.chat_message(model=model, messages=messages)
+    async def chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any] | None = None) -> str:
+        """Text-only chat. Return type unchanged for callers; ``options`` optional."""
+        message = await self.chat_message(model=model, messages=messages, options=options)
         return message.get("content", "") or ""
 
-    async def chat_stream(self, *, model: str, messages: list[dict[str, Any]]) -> AsyncIterator[str]:
+    async def chat_stream(
+        self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any] | None = None
+    ) -> AsyncIterator[str]:
         """
         Stream chat tokens/chunks from Ollama.
 
@@ -52,10 +58,13 @@ class LocalRuntime:
           - done: true when complete
         """
         url = _join(self.base_url, "/api/chat")
+        body: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
+        if options:
+            body["options"] = options
         async with self._client.stream(
             "POST",
             url,
-            json={"model": model, "messages": messages, "stream": True},
+            json=body,
         ) as r:
             r.raise_for_status()
             async for line in r.aiter_lines():

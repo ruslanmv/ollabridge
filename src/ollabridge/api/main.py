@@ -124,9 +124,26 @@ class ChatReq(BaseModel):
     messages: list[ChatMessage]
     temperature: float | None = None
     max_tokens: int | None = None
+    # OpenAI's newer name for the output cap, and the only one LangChain's ChatOpenAI sends
+    # (langchain-openai >= 0.3). Without the field it was dropped on arrival, so every cap a
+    # LangChain client set was ignored: asked for 20 tokens, a model wrote 300 numbers. Folded
+    # into ``max_tokens`` below, so every route reads the cap from one place.
+    max_completion_tokens: int | None = None
     # Optional. When absent, the request follows exactly the pre-existing path.
     tools: list[dict[str, Any]] | None = None
     tool_choice: Any | None = None
+
+    @model_validator(mode="after")
+    def _fold_max_completion_tokens(self) -> "ChatReq":
+        # Both sent: the newer field wins, as in OpenAI's API and vLLM.
+        if self.max_completion_tokens is not None:
+            self.max_tokens = self.max_completion_tokens
+        return self
+
+
+def _ollama_options(req: ChatReq) -> dict[str, Any] | None:
+    """Ollama's spelling of the output cap, ``num_predict``; None (nothing sent) when uncapped."""
+    return {"num_predict": req.max_tokens} if req.max_tokens is not None else None
 
 
 def _content_to_text(content: str | list[dict[str, Any]] | None) -> str:
@@ -1114,6 +1131,10 @@ def create_app() -> FastAPI:
                 # payload it saw before.
                 if req.tools:
                     relay_payload["tools"] = req.tools
+                # The output cap, in the Ollama shape the node hands to its runtime. A node
+                # older than this ignores the key, which is what it did with the cap before.
+                if req.max_tokens is not None:
+                    relay_payload["options"] = _ollama_options(req)
                 frame = await app.state.relay_hub.request(
                     node.node_id,
                     "chat",
@@ -1126,9 +1147,12 @@ def create_app() -> FastAPI:
                 tool_calls = _tool_calls_to_openai(frame_data.get("tool_calls") or [])
 
             elif node.connector == "direct_endpoint":
+                direct_payload: dict[str, Any] = {"model": model, "messages": payload_messages}
+                if req.max_tokens is not None:  # only when capped: the payload is otherwise unchanged
+                    direct_payload["max_tokens"] = req.max_tokens
                 data = await app.state.obridge.direct.chat(
                     base=node.endpoint or "",
-                    payload={"model": model, "messages": payload_messages},
+                    payload=direct_payload,
                 )
                 content = data.get("content", "")
 
@@ -1283,6 +1307,7 @@ def create_app() -> FastAPI:
                                 model=model,
                                 messages=[_message_to_ollama(m) for m in req.messages],
                                 tools=req.tools,
+                                options=_ollama_options(req),
                             )
                         except _httpx.HTTPStatusError as local_exc:
                             # Ollama's own words, as the client's status: a model without tool
@@ -1314,6 +1339,9 @@ def create_app() -> FastAPI:
                                 if wants_images
                                 else payload_messages
                             ),
+                            # The output cap as num_predict; None when uncapped, which
+                            # leaves Ollama's payload exactly as it was.
+                            options=_ollama_options(req),
                         )
 
             if node.connector == "homepilot":
