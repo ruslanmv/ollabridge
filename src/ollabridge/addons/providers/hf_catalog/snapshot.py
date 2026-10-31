@@ -25,12 +25,18 @@ from ollabridge.addons.providers.hf_catalog.schemas import (
     HFInferenceModelRow,
     SnapshotEntry,
 )
+from ollabridge.core import paths
 
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_SNAPSHOT_PATH = Path("~/.ollabridge/hf_catalog.yaml").expanduser()
 MAX_MISSING_SYNCS_BEFORE_DROP = 5
+
+
+def default_snapshot_path() -> Path:
+    """``hf_catalog.yaml`` in the gateway's data directory, resolved at call time
+    (``OLLABRIDGE_HOME``, else ``DATA_DIR``, else ``~/.ollabridge``)."""
+    return paths.data_dir() / "hf_catalog.yaml"
 
 
 class CatalogSnapshot:
@@ -42,7 +48,7 @@ class CatalogSnapshot:
     """
 
     def __init__(self, path: Path | str | None = None) -> None:
-        self.path = Path(path).expanduser() if path else DEFAULT_SNAPSHOT_PATH
+        self.path = Path(path).expanduser() if path else default_snapshot_path()
         self._entries: dict[str, SnapshotEntry] = {}
 
     # ── I/O ────────────────────────────────────────────────

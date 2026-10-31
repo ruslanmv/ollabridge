@@ -117,6 +117,10 @@ class LocalModel(BaseModel):
     # Admin state
     enabled: bool = False
     pinned: bool = False                 # admin pin (always promoted)
+    # Set the first time the model is top-recommended. Auto-enable happens
+    # only then, so a model the admin disables stays disabled, also when it
+    # drops out of the top list and comes back later.
+    ever_top_recommended: bool = False
     manually_added: bool = False
     setup_status: LocalSetupStatus = LocalSetupStatus.AUTO
 

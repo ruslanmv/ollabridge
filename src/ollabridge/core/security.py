@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 
 from fastapi import Header, HTTPException, Request
+from ollabridge.core.logsetup.request_facts import note as note_request
 from ollabridge.core.settings import settings
 
 
@@ -57,6 +58,20 @@ def _is_loopback(request: Request) -> bool:
     return host in ("127.0.0.1", "::1", "localhost")
 
 
+def _missing_key_detail(mode: str, request: Request) -> str:
+    """The 401 detail. Under local-trust it says why a keyless client on this
+    machine was still refused: a Docker container or WSL guest arrives from a
+    bridge address, not loopback, so it has to send a key."""
+    if mode != "local-trust":
+        return "Invalid or missing API key"
+    host = request.client.host if request.client else "an unknown address"
+    return (
+        "Invalid or missing API key: local-trust waives the key for loopback "
+        f"clients only (127.0.0.1, ::1) and this request came from {host}. "
+        "Send one of API_KEYS as X-API-Key or Authorization: Bearer."
+    )
+
+
 def require_api_key(
     request: Request,
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
@@ -93,9 +108,20 @@ def require_api_key(
         # Loopback fallback for pairing mode too
         if _is_loopback(request):
             return "__local_trust__"
+        note_request(reason=_refusal_reason(mode, key))
         raise HTTPException(status_code=401, detail="Invalid or missing API key / pairing token")
 
     # ── required mode (default) ────────────────────────────────────────
     if not key or key not in _keys():
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+        note_request(reason=_refusal_reason(mode, key))
+        raise HTTPException(status_code=401, detail=_missing_key_detail(mode, request))
     return key
+
+
+def _refusal_reason(mode: str, key: str | None) -> str:
+    """Why a request was refused, for its access log line (never the key itself)."""
+    what = "API key or pairing token" if mode == "pairing" else "API key"
+    reason = f"no {what} sent" if not key else f"{what} not accepted"
+    if mode == "local-trust":
+        reason += " (local-trust exempts loopback clients only)"
+    return reason

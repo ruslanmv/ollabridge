@@ -6,7 +6,8 @@ Per-node. Designed to be cheap enough to run on a timer (defaults to every
 invocations against the same node coalesce via a per-node lock so a chatty
 client can't trigger overlapping syncs.
 
-Managed aliases live in ``~/.ollabridge/local_aliases.yaml`` separately
+Managed aliases live in ``local_aliases.yaml`` in the gateway's data
+directory (``OBRIDGE_LOCAL_ALIAS_PATH`` overrides it) separately
 from any operator-defined alias file. The cloud heartbeat reads from this
 file to share the recommended set with cloud Admin.
 """
@@ -35,6 +36,7 @@ from ollabridge.addons.local_catalog.schemas import (
     LocalSyncResult,
 )
 from ollabridge.addons.local_catalog.scoring import pick_top_n, score_models
+from ollabridge.core import paths
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +50,11 @@ def is_unreachable_error(error: Optional[str]) -> bool:
 
 
 def _default_alias_path() -> Path:
+    """Resolved when the service is created, so a later override applies."""
     override = os.environ.get("OBRIDGE_LOCAL_ALIAS_PATH")
     if override:
         return Path(override)
-    return Path.home() / ".ollabridge" / "local_aliases.yaml"
+    return paths.data_dir() / "local_aliases.yaml"
 
 
 class LocalCatalogSyncService:
@@ -93,6 +96,7 @@ class LocalCatalogSyncService:
         async with lock:
             started = dt.datetime.now(dt.timezone.utc)
             result = LocalSyncResult(node_id=node_id, started_at=started, finished_at=started)
+            new = 0
 
             try:
                 tags = await client.list_tags()
@@ -148,15 +152,32 @@ class LocalCatalogSyncService:
             await self.repository.set_last_sync(node_id, result)
             await self.repository.save()
 
-            # A per-minute "fetched=0 ... error=runtime_unreachable" line would
-            # be the same spam under another name; keep it at DEBUG.
-            logger.log(
-                logging.DEBUG if is_unreachable_error(result.error) else logging.INFO,
-                "local catalog sync node=%s fetched=%d upserted=%d promoted=%d demoted=%d removed=%d (%.1fs)%s",
-                node_id, result.fetched, result.upserted, result.promoted_to_top,
-                result.demoted_from_top, result.marked_removed, result.duration_s,
-                f" error={result.error}" if result.error else "",
-            )
+            # The sync runs every minute. Only a change to the catalog is worth
+            # an INFO line; an unchanged run, or one that could not reach the
+            # runtime (the reachability monitor reports outages), is DEBUG.
+            # Real failures were already logged above with their traceback.
+            changes = [
+                f"{count} {label}"
+                for count, label in (
+                    (new, "added"),
+                    (result.marked_removed, "removed"),
+                    (result.promoted_to_top, "promoted to top"),
+                    (result.demoted_from_top, "dropped from top"),
+                )
+                if count
+            ]
+            if changes and not result.error:
+                logger.info(
+                    "Local catalog changed on node %s: %s (%d models, %.1fs)",
+                    node_id, ", ".join(changes), result.fetched, result.duration_s,
+                )
+            else:
+                logger.debug(
+                    "local catalog sync node=%s fetched=%d upserted=%d promoted=%d demoted=%d removed=%d (%.1fs)%s",
+                    node_id, result.fetched, result.upserted, result.promoted_to_top,
+                    result.demoted_from_top, result.marked_removed, result.duration_s,
+                    f" error={result.error}" if result.error else "",
+                )
             return result
 
     # ── Manual add ──────────────────────────────────────────

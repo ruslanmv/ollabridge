@@ -35,19 +35,18 @@ import stat
 from pathlib import Path
 from typing import Optional
 
+from ollabridge.core import paths
+
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_STORE_PATH = Path("~/.ollabridge/secrets.enc").expanduser()
 _VERSION = 1
 
 
 def _default_store_path() -> Path:
-    """Default store location, honoring the OLLABRIDGE_HOME override."""
-    home = os.environ.get("OLLABRIDGE_HOME", "").strip()
-    if home:
-        return Path(home).expanduser() / "secrets.enc"
-    return DEFAULT_STORE_PATH
+    """``secrets.enc`` in the gateway's data directory, resolved at call time
+    (``OLLABRIDGE_HOME``, else ``DATA_DIR``, else ``~/.ollabridge``)."""
+    return paths.data_dir() / "secrets.enc"
 
 
 def _derive_fernet_key(secret: str) -> bytes:

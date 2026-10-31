@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
 import socket
 from pathlib import Path
+from typing import List, Optional
 
 import httpx
 import secrets
@@ -12,6 +14,13 @@ from rich.console import Console
 from rich.panel import Panel
 
 from ollabridge.core.enrollment import create_join_token
+from ollabridge.core.logsetup import (
+    FORMATS as LOG_FORMATS,
+    configure_logging,
+    export_to_environ,
+    log_session_header,
+    validate_cli_levels,
+)
 from ollabridge.core.security import generate_pairing_code
 from ollabridge.core.settings import settings
 from ollabridge.utils.installer import (
@@ -32,6 +41,7 @@ from ollabridge.cli.traces import traces_app
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
+log = logging.getLogger("ollabridge.cli")
 
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(sync_app, name="sync")
@@ -290,10 +300,24 @@ def start(
     reload: bool = typer.Option(
         False, "--reload", help="Auto-reload on code changes (dev mode)"
     ),
-    log_level: str = typer.Option(
-        "warning",
+    log_level: Optional[List[str]] = typer.Option(
+        None,
         "--log-level",
-        help="Uvicorn log level (debug, info, warning, error, critical)",
+        help="Log level (debug, info, warning, error), or component=level for one "
+        "component (catalog=debug). Repeatable. Default: OLLABRIDGE_LOG_LEVEL, else info.",
+    ),
+    log_format: str = typer.Option(
+        "",
+        "--log-format",
+        help="Log format: auto (pretty on a terminal, plain otherwise), pretty, plain, "
+        "or json. Default: OLLABRIDGE_LOG_FORMAT, else auto.",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Log everything, including health checks, dashboard polls and routing "
+        "detail. Shorthand for --log-level debug; an explicit --log-level wins.",
     ),
     write_env: bool = typer.Option(
         False,
@@ -323,6 +347,27 @@ def start(
     Use --no-setup to skip and configure backends from the UI instead.
     """
 
+    # Logging first, so every line below, uvicorn's records and the Ready line
+    # render through the same handler and format.
+    global_level, level_rules, bad_levels = validate_cli_levels(log_level)
+    if bad_levels:
+        raise typer.BadParameter(
+            f"{', '.join(bad_levels)}: use a level (debug, info, warning, error) "
+            "or component=level",
+            param_hint="--log-level",
+        )
+    if verbose and global_level is None:
+        global_level = "debug"
+    if log_format.strip() and log_format.strip().lower() not in LOG_FORMATS:
+        raise typer.BadParameter(
+            f"{log_format!r}: use one of {', '.join(LOG_FORMATS)}",
+            param_hint="--log-format",
+        )
+    configure_logging(
+        global_level, levels=level_rules or None, fmt=log_format.strip() or None
+    )
+    log_session_header(role="gateway")
+
     # Resolve bind host: explicit CLI flag counts as confirmation; otherwise
     # fall back to env/.env/settings (historic default 0.0.0.0) with a clear
     # warning so exposure is never silent.
@@ -330,11 +375,12 @@ def start(
     if not host_explicit:
         host = (os.getenv("HOST") or "").strip() or settings.HOST or "0.0.0.0"
     if host in ("0.0.0.0", "::") and not host_explicit:
-        console.print(
-            "[yellow]⚠ Binding to all interfaces (0.0.0.0): other machines on your "
-            "network can reach this API (an API key is still required).\n"
-            "  Use `ollabridge start --host 127.0.0.1` to keep it private to this "
-            "machine, or pass --host 0.0.0.0 explicitly to silence this warning.[/yellow]"
+        log.warning(
+            "Listening on all interfaces (%s): other machines on your network can "
+            "reach this API, an API key is still required. Use --host 127.0.0.1 to "
+            "keep it private, or pass --host %s to silence this warning.",
+            host,
+            host,
         )
 
     # Resolve model: CLI flag → env → settings → default
@@ -362,9 +408,7 @@ def start(
         # 3) Ensure model exists
         ensure_model(model)
     else:
-        console.print(
-            "[dim]Skipping Ollama setup (--no-setup). Configure backends from the UI.[/dim]"
-        )
+        log.info("Ollama setup skipped (--no-setup); configure backends from the dashboard")
         # When --no-setup, don't auto-register local Ollama unless the user
         # has already saved settings from the UI (runtime_settings.json exists).
         from ollabridge.core.runtime_settings import has_saved_settings
@@ -439,10 +483,19 @@ def start(
 
     # Dev convenience: Uvicorn reload cannot be combined with multiple workers
     if reload and workers != 1:
-        console.print(
-            "[yellow]⚠️  --reload forces --workers 1 (Uvicorn limitation).[/yellow]"
-        )
+        log.warning("--reload runs a single worker; ignoring --workers %d", workers)
         workers = 1
+
+    log.info(
+        "Starting gateway",
+        extra={
+            "bind": f"{host}:{port}",
+            "auth": auth_mode,
+            "model": model,
+            "workers": workers,
+            "reload": True if reload else None,
+        },
+    )
 
     ui_available = _ui_available()
     _dashboard(
@@ -465,7 +518,7 @@ def start(
             health_url=f"http://localhost:{port}/health",
         )
     elif ui_available and open_browser and reload:
-        console.print("[dim]Dashboard auto-open is skipped under --reload.[/dim]")
+        log.info("Dashboard auto-open is skipped under --reload")
 
     # LAN mode: print URLs for other devices on the network
     if lan:
@@ -486,18 +539,20 @@ def start(
         else:
             console.print("[yellow]⚠️  Could not detect LAN IP address[/yellow]")
 
-    # Application loggers get the same level as uvicorn, with timestamps.
-    from ollabridge.core.logsetup import configure_logging
-
-    configure_logging(log_level)
+    # Reload and worker processes re-import the app without running this
+    # command; the environment carries the same logging configuration to them.
+    export_to_environ()
 
     uvicorn.run(
         "ollabridge.api.main:app",
         host=host,
         port=port,
         workers=workers,
-        log_level=log_level,
         reload=reload,
+        # No uvicorn handlers or levels: its records go through the gateway's
+        # handler, and OLLABRIDGE_LOG_* thresholds decide what shows.
+        log_config=None,
+        log_level=None,
     )
 
 

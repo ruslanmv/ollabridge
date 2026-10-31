@@ -119,12 +119,15 @@ python -m ollabridge.addons.local_catalog test local:qwen2.5:14b
 
 | Env var | Default | Effect |
 |---------|---------|--------|
-| `OBRIDGE_LOCAL_CATALOG_PATH` | `~/.ollabridge/local_models.yaml` | YAML path |
-| `OBRIDGE_LOCAL_ALIAS_PATH`   | `~/.ollabridge/local_aliases.yaml` | managed aliases |
+| `OBRIDGE_LOCAL_CATALOG_PATH` | `local_models.yaml` in the data directory | YAML path |
+| `OBRIDGE_LOCAL_ALIAS_PATH`   | `local_aliases.yaml` in the data directory | managed aliases |
 | `OBRIDGE_LOCAL_SYNC_ENABLED` | `true` | background scheduler |
 | `OBRIDGE_LOCAL_SYNC_INTERVAL_S` | `60` | scheduler cadence |
 | `OBRIDGE_LOCAL_SYNC_INITIAL_S` | `5` | first-tick delay |
 | `OBRIDGE_LOCAL_AUTO_ENABLE` | `3` | how many to auto-promote |
+
+The data directory is `OLLABRIDGE_HOME` when set, else `DATA_DIR`, else
+`~/.ollabridge`.
 
 ## Cloud integration
 

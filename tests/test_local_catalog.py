@@ -237,6 +237,35 @@ def test_repository_apply_top_recommendation(tmp_path: Path):
     assert repo.get("n:b").enabled is True
 
 
+def test_auto_enable_happens_once_so_an_admin_disable_sticks(tmp_path: Path):
+    """Regression (2026-10-29): every sync re-enabled a top model the admin had
+    disabled, within a minute, because auto-enable ran for every top model on
+    every pass."""
+    repo = LocalCatalogRepository(path=tmp_path / "cat.yaml")
+    asyncio.run(repo.upsert_many("n", [_persisted("n:a"), _persisted("n:b")]))
+    asyncio.run(repo.apply_top_recommendation("n", ["n:a"]))
+    assert repo.get("n:a").enabled is True  # first promotion: auto-enabled
+
+    asyncio.run(repo.set_enabled("n:a", False))
+    asyncio.run(repo.apply_top_recommendation("n", ["n:a"]))  # an unchanged sync
+    assert repo.get("n:a").enabled is False
+
+    asyncio.run(repo.apply_top_recommendation("n", ["n:b"]))  # drops out of the top list
+    asyncio.run(repo.apply_top_recommendation("n", ["n:a", "n:b"]))  # and comes back
+    assert repo.get("n:a").is_top_recommended is True
+    assert repo.get("n:a").enabled is False
+
+
+def test_rows_saved_before_the_marker_existed_keep_a_disable(tmp_path: Path):
+    # An older local_models.yaml: already top, disabled by the admin, no marker.
+    repo = LocalCatalogRepository(path=tmp_path / "cat.yaml")
+    asyncio.run(repo.upsert_many("n", [_persisted("n:a", is_top_recommended=True, enabled=False)]))
+    assert repo.get("n:a").ever_top_recommended is False
+    asyncio.run(repo.apply_top_recommendation("n", ["n:a"]))
+    assert repo.get("n:a").enabled is False
+    assert repo.get("n:a").ever_top_recommended is True
+
+
 def test_repository_record_check_flips_status(tmp_path: Path):
     repo = LocalCatalogRepository(path=tmp_path / "cat.yaml")
     asyncio.run(repo.upsert_many("n", [_persisted("n:a", setup_status=LocalSetupStatus.AUTO)]))
@@ -313,6 +342,31 @@ def test_sync_service_preserves_pinned_through_resync(tmp_path: Path):
     asyncio.run(svc.sync_node(node_id="n", client=client, auto_enable_top=1))
     # Pin survives.
     assert repo.get("n:llama3.1:8b").pinned is True
+
+
+def test_sync_keeps_a_disabled_top_model_disabled_across_syncs_and_restarts(tmp_path: Path):
+    path = tmp_path / "cat.yaml"
+    tags = [_tag("qwen2.5:14b"), _tag("llama3.1:8b"), _tag("phi3:mini")]
+
+    def service(repo):
+        return LocalCatalogSyncService(repository=repo, alias_path=tmp_path / "aliases.yaml", enrich_with_show=False)
+
+    repo = LocalCatalogRepository(path=path)
+    svc = service(repo)
+    asyncio.run(svc.sync_node(node_id="n", client=_StubClient(tags), auto_enable_top=3))
+    target = repo.list_top("n")[0].router_model_id
+    assert repo.get(target).enabled is True
+
+    asyncio.run(repo.set_enabled(target, False))
+    for _ in range(2):
+        asyncio.run(svc.sync_node(node_id="n", client=_StubClient(tags), auto_enable_top=3))
+    assert repo.get(target).enabled is False
+
+    restarted = LocalCatalogRepository(path=path)  # the gateway restarts
+    restarted.load()
+    asyncio.run(service(restarted).sync_node(node_id="n", client=_StubClient(tags), auto_enable_top=3))
+    assert restarted.get(target).enabled is False
+    assert restarted.get(target).is_top_recommended is True
 
 
 def test_sync_service_marks_disappeared_models_removed(tmp_path: Path):

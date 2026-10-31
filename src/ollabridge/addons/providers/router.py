@@ -27,6 +27,7 @@ from ollabridge.addons.providers.models import (
 )
 from ollabridge.addons.providers.registry import ProviderRegistry
 from ollabridge.addons.providers.scoring import compute_score
+from ollabridge.core.logsetup.request_facts import note as note_request
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +214,10 @@ class ProviderRouter:
 
             start = time.monotonic()
             try:
-                logger.info(
+                # Per-attempt detail: DEBUG. The request's own access line
+                # names the provider that answered (see api/request_log.py);
+                # a failover below is still a WARNING.
+                logger.debug(
                     "Routing to %s (model=%s score=%.3f)",
                     route.provider_id,
                     route.model,
@@ -232,12 +236,13 @@ class ProviderRouter:
                     success=True,
                 )
 
-                logger.info(
+                logger.debug(
                     "Provider %s responded in %.0fms (tokens=%d)",
                     route.provider_id,
                     latency_ms,
                     total_tokens,
                 )
+                note_request(route=route.provider_id, tokens=total_tokens or None)
                 return result
 
             except ProviderQuotaExceeded as exc:

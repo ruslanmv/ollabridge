@@ -82,4 +82,8 @@ async def run_stdio() -> None:
 
 
 def main() -> None:
+    # stdout carries the MCP protocol; logs go to stderr in the gateway's format.
+    from ollabridge.core.logsetup import configure_logging
+
+    configure_logging()
     asyncio.run(run_stdio())

@@ -10,6 +10,7 @@ from rich.status import Status
 
 from ollabridge.cloud.api_client import CloudApiClient
 from ollabridge.cloud.device_config import CloudDeviceCredentials, load_cloud_device_credentials, save_cloud_device_credentials
+from ollabridge.core.logsetup import bind, configure_logging, log_session_header
 from ollabridge.node.agent import (
     CloudDeviceConfig,
     NodeConfig,
@@ -27,6 +28,15 @@ from ollabridge.utils.installer import (
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
+
+
+@app.callback()
+def _main() -> None:
+    """OllaBridge compute node: serve local models to a control plane or OllaBridge Cloud.
+
+    Logging follows OLLABRIDGE_LOG_LEVEL / OLLABRIDGE_LOG_FORMAT, like the gateway.
+    """
+    configure_logging()
 
 
 @app.command()
@@ -62,6 +72,9 @@ def join(
         )
     )
 
+    # asyncio.run copies this context, so every agent line carries node=<id>.
+    bind(node_id=nid)
+    log_session_header(role="node", control=control)
     asyncio.run(run_node(cfg))
 
 
@@ -178,6 +191,9 @@ def cloud_connect(
             title="☁️  OllaBridge Cloud Device",
         )
     )
+
+    bind(device_id=did)
+    log_session_header(role="cloud device", cloud=cloud_url)
 
     # Auto-reconnect with backoff so a sleeping PC / flaky link / Cloud restart
     # self-heals instead of leaving the node offline. Ctrl-C still exits cleanly.

@@ -103,6 +103,20 @@ def test_local_trust_requires_key_for_remote():
     assert _call(_remote(), VALID_KEY) == VALID_KEY
 
 
+def test_local_trust_401_names_the_address_it_did_not_trust():
+    # A container on a Docker bridge reaches host.docker.internal from 172.x, not loopback.
+    rts.set_auth_mode("local-trust")
+    with pytest.raises(HTTPException) as ei:
+        _call(_FakeRequest("172.18.0.1"), None)
+    assert ei.value.status_code == 401
+    assert ei.value.detail.startswith("Invalid or missing API key")
+    assert "loopback clients only" in ei.value.detail and "172.18.0.1" in ei.value.detail
+    rts.set_auth_mode("required")
+    with pytest.raises(HTTPException) as ei:
+        _call(_remote(), None)
+    assert ei.value.detail == "Invalid or missing API key"
+
+
 # ── pairing ──────────────────────────────────────────────────────────────────
 
 def test_pairing_accepts_static_key_and_loopback():

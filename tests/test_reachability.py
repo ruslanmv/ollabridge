@@ -12,6 +12,7 @@ shared by every caller.
 from __future__ import annotations
 
 import logging
+import re
 from contextlib import contextmanager
 
 import httpx
@@ -213,7 +214,13 @@ def test_configure_logging_is_idempotent_and_timestamps_lines():
         assert root.level == logging.WARNING
         fmt = first.formatter
         assert fmt is not None
-        assert "%(asctime)s" in fmt._fmt and "%(levelname)" in fmt._fmt and "%(name)s" in fmt._fmt
+        line = fmt.format(
+            logging.LogRecord("ollabridge.reachability", logging.WARNING, __file__, 1, "Ollama down", (), None)
+        )
+        # Timestamped (ISO in plain mode, clock time in pretty mode), with the
+        # level and the component the logger maps to.
+        assert re.match(r"^(\d{4}-\d\d-\d\dT)?\d\d:\d\d:\d\d\.\d{3}", line)
+        assert "WARN" in line and "runtime" in line and "Ollama down" in line
 
 
 def test_noisy_http_loggers_never_go_below_warning():

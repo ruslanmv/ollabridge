@@ -175,6 +175,26 @@ ollabridge start --share
 
 **Use case:** Remote access, connecting nodes from anywhere.
 
+#### Logging flags
+Choose how much the gateway logs and in which format:
+
+```bash
+ollabridge start -v
+ollabridge start --log-level http=debug
+ollabridge start --log-level info --log-level catalog=debug
+ollabridge start --log-format json
+```
+
+By default only real work, problems and changes are logged; health checks,
+dashboard polls and other successful reads are not. `-v` / `--verbose` logs
+everything (it is `--log-level debug`); from make, use `make start VERBOSE=1`.
+`--log-level` takes a level (`debug`, `info`, `warning`, `error`) or
+`component=level` for one component, and can be repeated; it wins over `-v`. `--log-format` is
+`auto` (coloured on a terminal, plain otherwise), `pretty`, `plain` or `json`.
+Both default to `OLLABRIDGE_LOG_LEVEL` and `OLLABRIDGE_LOG_FORMAT`; see
+[CONFIGURATION.md](CONFIGURATION.md#logging). `ollabridge-node` and
+`ollabridge-mcp` read the same environment variables.
+
 #### `ollabridge enroll-create`
 Create enrollment tokens for nodes:
 

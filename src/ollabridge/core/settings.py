@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -60,9 +63,20 @@ class Settings(BaseSettings):
     PAIRING_CODE_TTL_SECONDS: int = 300
     PAIRING_TOKEN_PREFIX: str = "mtx_"
 
-    # Database
+    # Data directory for every store: runtime settings, the request database,
+    # pairing tokens, sessions, consumer nodes, catalogs, secrets, traces.
+    # OLLABRIDGE_HOME wins over DATA_DIR (see _resolve_data_dir), matching
+    # ollabridge.core.paths.data_dir(), so one variable relocates all state.
     DATA_DIR: Path = Path.home() / ".ollabridge"
     DATABASE_URL: str | None = None
+
+    @model_validator(mode="after")
+    def _resolve_data_dir(self) -> "Settings":
+        # Read from the process environment only, like core/paths.py; an empty
+        # value counts as unset.
+        home = os.environ.get("OLLABRIDGE_HOME", "").strip()
+        self.DATA_DIR = Path(home).expanduser() if home else Path(self.DATA_DIR).expanduser()
+        return self
 
 
 settings = Settings()

@@ -1,8 +1,10 @@
 """
 YAML-backed repository for the local model fleet.
 
-State lives under ``~/.ollabridge/local_models.yaml`` (override via the
-``OBRIDGE_LOCAL_CATALOG_PATH`` env var). The on-disk schema is multi-node:
+State lives in ``local_models.yaml`` in the gateway's data directory
+(``OLLABRIDGE_HOME``, else ``DATA_DIR``, else ``~/.ollabridge``); the
+``OBRIDGE_LOCAL_CATALOG_PATH`` env var points it at a specific file instead.
+The on-disk schema is multi-node:
 
 ::
 
@@ -34,15 +36,17 @@ from ollabridge.addons.local_catalog.schemas import (
     LocalSetupStatus,
     LocalSyncResult,
 )
+from ollabridge.core import paths
 
 logger = logging.getLogger(__name__)
 
 
 def _default_path() -> Path:
+    """Resolved when the repository is created, so a later override applies."""
     override = os.environ.get("OBRIDGE_LOCAL_CATALOG_PATH")
     if override:
         return Path(override)
-    return Path.home() / ".ollabridge" / "local_models.yaml"
+    return paths.data_dir() / "local_models.yaml"
 
 
 class LocalCatalogRepository:
@@ -209,8 +213,11 @@ class LocalCatalogRepository:
                 existing.capabilities = incoming.capabilities
                 existing.modified_at = incoming.modified_at or existing.modified_at
                 existing.score = incoming.score
-                existing.rank = incoming.rank
-                existing.is_top_recommended = incoming.is_top_recommended
+                # rank and is_top_recommended are not discovery fields: they
+                # belong to apply_top_recommendation(). Copying them from a
+                # freshly listed row (always 0/False) demoted the top models
+                # on every sync and re-promoted them a moment later, so each
+                # unchanged sync reported "promoted=N".
                 existing.last_seen_at = now
                 existing.missing_sync_count = 0
                 existing.raw_metadata = incoming.raw_metadata or existing.raw_metadata
@@ -260,7 +267,13 @@ class LocalCatalogRepository:
         *,
         auto_enable: bool = True,
     ) -> tuple[int, int]:
-        """Mark ``top_router_ids`` top-recommended; optionally auto-enable."""
+        """Mark ``top_router_ids`` top-recommended.
+
+        With ``auto_enable``, a model is enabled the first time it is
+        promoted, and never again: enabling is then the admin's call. This
+        used to run on every sync for every top model, so a top model the
+        admin disabled was re-enabled within a minute.
+        """
         target = set(top_router_ids)
         rank_map = {rid: idx + 1 for idx, rid in enumerate(top_router_ids)}
         promoted = 0
@@ -270,13 +283,18 @@ class LocalCatalogRepository:
             for m in bucket.values():
                 was_top = m.is_top_recommended
                 should_top = m.router_model_id in target
+                first_promotion = should_top and not was_top and not m.ever_top_recommended
                 if should_top and not was_top:
                     promoted += 1
                 elif was_top and not should_top:
                     demoted += 1
                 m.is_top_recommended = should_top
                 m.rank = rank_map.get(m.router_model_id, 0)
-                if should_top and auto_enable and not m.enabled:
+                if should_top:
+                    # Also marks rows saved before this field existed that are
+                    # already top, without enabling them.
+                    m.ever_top_recommended = True
+                if first_promotion and auto_enable and not m.enabled:
                     m.enabled = True
         return promoted, demoted
 

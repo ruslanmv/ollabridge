@@ -110,9 +110,10 @@ Rules of thumb:
 - Pin the image by tag or digest; rebuild for base-image security updates.
 - Pass secrets via environment/secret store, never `COPY` a `.env` into
   the image.
-- Set `OLLABRIDGE_HOME` (or mount the default home) to a volume so
-  `secrets.enc` and `cloud_device.json` survive restarts — and protect that
-  volume like the secrets it contains.
+- Set `OLLABRIDGE_HOME` (or mount the default home) to a volume so all
+  state survives restarts: `secrets.enc`, `cloud_device.json`, runtime
+  settings, the request database, pairing tokens, sessions, traces and
+  catalogs. Protect that volume like the secrets it contains.
 
 ## Environment variables reference
 
@@ -127,7 +128,8 @@ Rules of thumb:
 | `OLLA_SECRET` | unset (plaintext secret fallback, `0o600`) | **Always set** — long random string; enables Fernet encryption of `secrets.enc`. Rotating it invalidates stored provider keys |
 | `ENROLLMENT_SECRET` | `dev-enroll-change-me` | Set a real secret if you use multi-node enrollment |
 | `OLLABRIDGE_CLOUD_URL` | unset | Point `ollabridge login` at your cloud instance (or use `--cloud`) |
-| `OLLABRIDGE_HOME` | `~/.ollabridge` | Relocate state (e.g. to a dedicated volume); all `0o600` handling follows it |
+| `OLLABRIDGE_HOME` | `~/.ollabridge` | Relocate all state (e.g. to a dedicated volume); all `0o600` handling follows it. Read from the process environment at startup |
+| `DATA_DIR` | `~/.ollabridge` | Older name for the same directory, also accepted from `.env`; `OLLABRIDGE_HOME` wins when both are set |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Keep Ollama loopback-only |
 
 Settings load from the environment and an optional `.env` file
@@ -168,14 +170,19 @@ tokens (`AUTH_MODE=pairing`) are revocable per device via `/pair/revoke`.
   (`~/.ollabridge/ollabridge.sqlite`) nor the trace store
   (`~/.ollabridge/traces.db`) has columns for prompt/response content.
   Prompt logging is an explicit opt-in flag in `sync.yaml`, default `false`.
-- **Redaction filter.** `ollabridge.core.redact.install_redaction_filter()`
-  attaches a `logging.Filter` that scrubs credential shapes
-  (`sk-*`, `dvt_*`, `mtx_*`, `hf_*`, `Bearer …`, …) from log records.
+- **Redaction on every line.** The gateway's log handler scrubs credential
+  shapes (`sk-*`, `dvt_*`, `mtx_*`, `hf_*`, `Bearer …`, …) from the rendered
+  message, the fields and exception text of every record, including uvicorn's
+  and third-party libraries'. It works on the final text, so an exception
+  object passed as an argument is covered too. Nothing needs installing.
   CLI/doctor output shows keys only as 4-character hints.
-- If you ship gateway logs to a central system, treat them as low-sensitivity
-  metadata, but keep the redaction filter installed as defense in depth —
-  upstream error bodies pass through `redact_text` but may still contain
-  non-credential internals.
+- **Shipping logs.** Set `OLLABRIDGE_LOG_FORMAT=json` for one JSON object per
+  line with stable keys (`ts`, `level`, `component`, `logger`, `msg`,
+  `request_id`, …); see [CONFIGURATION.md](CONFIGURATION.md#logging). Treat
+  the logs as low-sensitivity metadata: upstream error bodies are redacted
+  but may still contain non-credential internals.
+- `ollabridge.core.redact.install_redaction_filter()` remains available for
+  an embedding application that installs its own handlers.
 
 ## Monitoring
 

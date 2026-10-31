@@ -7,6 +7,7 @@ import re
 import time
 import uuid
 from collections import deque
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +27,14 @@ from ollabridge.db.database import init_db, session
 from ollabridge.db.models import RequestLog
 from ollabridge.api.state import build_state
 from ollabridge.api.relay import RelayHub, build_relay_router
-from ollabridge.core.logsetup import ensure_logging_configured
+from ollabridge.core.logsetup import (
+    ensure_logging_configured,
+    format_duration,
+    is_child_process,
+    log_context,
+    log_session_header,
+)
+from ollabridge.core.logsetup.request_facts import note as note_request
 from ollabridge.core.reachability import OLLAMA as ollama_reachability
 from ollabridge.core.registry import RuntimeNodeState
 from ollabridge.core import message_content
@@ -85,6 +93,20 @@ def _upstream_http_error(exc: Exception) -> HTTPException:
             },
         )
     return HTTPException(500, redact_text(str(exc)))
+
+
+_ROUTE_PREFIX = {
+    "local_ollama": "ollama",
+    "relay_link": "relay",
+    "direct_endpoint": "direct",
+    "homepilot": "homepilot",
+}
+
+
+def _route_label(node: Any) -> str:
+    """``ollama/local``, ``relay/laptop``…: what served a request, for its log line."""
+    connector = str(getattr(node, "connector", "") or "")
+    return f"{_ROUTE_PREFIX.get(connector, connector or 'node')}/{getattr(node, 'node_id', '?')}"
 
 
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT])
@@ -644,10 +666,27 @@ def _dynamic_provider_source(cfg: Any) -> tuple[str, str]:
 
 
 def create_app() -> FastAPI:
-    # Timestamps and levels on every line unless the host application
-    # already configured logging (see core/logsetup.py).
-    ensure_logging_configured()
-    app = FastAPI(title=settings.APP_NAME)
+    # One format for every line unless the host application already configured
+    # logging (see core/logsetup). A bare `uvicorn ollabridge.api.main:app`
+    # (the Docker image) is configured here from OLLABRIDGE_LOG_*; uvicorn's
+    # reload and worker children inherit the CLI's settings the same way and
+    # skip the header the parent already printed.
+    announce = ensure_logging_configured() and not is_child_process()
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        started = time.monotonic()
+        if announce:
+            log_session_header(role="gateway")
+        # `_startup` is defined further down, once the routes and state it
+        # wires up exist; it is looked up when the server starts.
+        _startup()
+        try:
+            yield
+        finally:
+            log.info("Shutting down", extra={"uptime": format_duration(time.monotonic() - started)})
+
+    app = FastAPI(title=settings.APP_NAME, lifespan=_lifespan)
     app.state.limiter = limiter
     app.state.obridge = build_state()
     app.state.relay_hub = RelayHub(app.state.obridge.registry)
@@ -670,7 +709,10 @@ def create_app() -> FastAPI:
     async def _request_id_middleware(request: Request, call_next):
         rid = (request.headers.get("x-request-id") or "").strip() or new_request_id()
         request.state.request_id = rid
-        response = await call_next(request)
+        # Every line logged while this request runs carries req=<id>, so a
+        # failover warning deep in the router joins up with its request.
+        with log_context(request_id=rid):
+            response = await call_next(request)
         response.headers["X-Request-ID"] = rid
         return response
 
@@ -689,8 +731,26 @@ def create_app() -> FastAPI:
                 )
         return await call_next(request)
 
+    # One access line per request, at the level it deserves (see
+    # api/request_log.py). Added after the other middleware, so it is the
+    # outermost one: it times the whole request and sees the final status.
+    from ollabridge.api.request_log import RequestLogMiddleware
+
+    app.add_middleware(RequestLogMiddleware)
+
     def _record_trace(request: Request, **fields: Any) -> None:
         """Best-effort metadata-only trace; failures never affect the request."""
+        requested, resolved = fields.get("requested_model"), fields.get("resolved_model")
+        # Not fallback_used: the trace sets it whenever the provider add-on is
+        # loaded and local Ollama answered, even if no provider was a candidate.
+        # The chat handler notes fallback itself when providers really failed.
+        note_request(
+            model=resolved or requested,
+            requested=requested if requested and requested != resolved else None,
+            tokens_in=fields.get("tokens_in"),
+            tokens_out=fields.get("tokens_out"),
+            error=fields.get("error_category"),
+        )
         try:
             from ollabridge.tracing import TraceRecord, get_trace_store
 
@@ -709,7 +769,6 @@ def create_app() -> FastAPI:
 
     app.state.record_trace = _record_trace
 
-    @app.on_event("startup")
     def _startup() -> None:
         init_db()
         app.state.flow_events = deque(maxlen=512)
@@ -1049,6 +1108,8 @@ def create_app() -> FastAPI:
             )
             node = decision.node
             trace_device = node.node_id
+            # The provider router overrides this when one of its providers answers.
+            note_request(route=_route_label(node))
 
             # A tools request must never be answered by a backend that cannot
             # carry tool calls: silently dropping the field returns a confident
@@ -1289,6 +1350,8 @@ def create_app() -> FastAPI:
                             model,
                             addon_exc,
                         )
+                        # Only here was a provider really tried and abandoned.
+                        note_request(fallback=True)
 
                 if addon_handled:
                     trace_provider = "provider-addon"
@@ -1512,6 +1575,7 @@ def create_app() -> FastAPI:
         try:
             decision = await app.state.obridge.router.choose_node(model=model)
             node = decision.node
+            note_request(route=_route_label(node))
 
             if node.connector == "relay_link":
                 frame = await app.state.relay_hub.request(

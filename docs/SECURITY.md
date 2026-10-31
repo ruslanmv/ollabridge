@@ -120,6 +120,13 @@ Note: in both `local-trust` and `pairing` modes, **any process on the same
 machine can call the API without credentials**. Use `required` on shared
 machines.
 
+Docker containers are not loopback clients, even on the same machine. A
+container that reaches the gateway through `host.docker.internal` arrives
+from its bridge address (for example `172.18.0.1`), so it must send one of
+`API_KEYS`. `/health` stays open, which can make the gateway look reachable
+while every `/v1/*` call returns 401. Under `local-trust`, the 401 detail
+names the address that was not trusted.
+
 ### API keys
 
 - `API_KEYS` is a comma-separated list. The shipped default is the

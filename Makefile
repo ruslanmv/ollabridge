@@ -54,6 +54,11 @@ endif
 # cmd.exe before any recipe even ran.
 PYTHON := $(if $(wildcard $(VENV_PYTHON)),$(VENV_PYTHON),$(SYS_PYTHON))
 UV := uv
+# Logging for the start/dev targets. `make start VERBOSE=1` logs everything
+# (health checks, dashboard polls, routing detail). Otherwise the gateway's
+# own default applies (OLLABRIDGE_LOG_LEVEL, else info), so the environment
+# variables work with make too; no level is hardcoded here.
+LOG_FLAGS := $(if $(VERBOSE),--verbose,)
 PIP := pip
 PYTEST := pytest
 BLACK := black
@@ -228,13 +233,46 @@ install-dev: ## Install with development dependencies (testing, linting)
 else
 # ── POSIX shell recipes (Linux, macOS, Git Bash / WSL on Windows) ──────
 
+# Make sure ./.venv exists and its Python can start; rebuild it when it cannot.
+# A venv whose base interpreter is gone (a deleted uv or pyenv Python, a
+# Windows-built .venv opened from WSL) keeps its folder and dangling links;
+# running `python -m venv` over it keeps those links and fails with
+# "No such file or directory: .venv/bin/python3".
+# Such a .venv is removed first, but only when it is an empty directory or
+# really is a virtualenv (it has pyvenv.cfg); anything else is left alone
+# with a message. An activated virtualenv (VIRTUAL_ENV) is used as is.
+# Usage: @$(call ENSURE_VENV,uv) prefers uv; any other argument uses only
+# the standard library venv module. One logical line on purpose: make joins
+# the continuation lines below with spaces, so no part may contain a hash.
+ENSURE_VENV = \
+	if [ -z "$$VIRTUAL_ENV" ]; then \
+		if { [ -e .venv ] || [ -L .venv ]; } && ! $(VENV_PYTHON) -c "import sys" >/dev/null 2>&1; then \
+			if [ -d .venv ] && [ ! -L .venv ] && [ -z "$$(ls -A .venv)" ]; then \
+				rmdir .venv; \
+			elif [ -f .venv/pyvenv.cfg ]; then \
+				echo "$(COLOR_YELLOW)⚠ .venv is broken: $(VENV_PYTHON) cannot start, usually because the Python it was built from is gone. Recreating it...$(COLOR_RESET)"; \
+				rm -rf ./.venv; \
+			else \
+				echo "$(COLOR_YELLOW)⚠ .venv exists but is not a virtual environment (no pyvenv.cfg), so it was left alone.$(COLOR_RESET)"; \
+				echo "$(COLOR_YELLOW)  Move or delete it yourself, then run this target again.$(COLOR_RESET)"; \
+				exit 1; \
+			fi; \
+		fi; \
+		if [ ! -e .venv ] && [ ! -L .venv ]; then \
+			echo "$(COLOR_CYAN)Creating virtual environment (.venv)...$(COLOR_RESET)"; \
+			{ [ "$(1)" = uv ] && command -v $(UV) >/dev/null 2>&1 && $(UV) venv .venv; } || $(SYS_PYTHON) -m venv .venv; \
+		fi; \
+		if ! $(VENV_PYTHON) -c "import sys" >/dev/null 2>&1; then \
+			echo "$(COLOR_YELLOW)✗ Could not build a working .venv with $(SYS_PYTHON).$(COLOR_RESET)"; \
+			echo "$(COLOR_YELLOW)  Install uv (make install-uv), or on Debian/Ubuntu the venv module (sudo apt install python3-venv), then run this target again.$(COLOR_RESET)"; \
+			exit 1; \
+		fi; \
+	fi
+
 .PHONY: install
 install: ## Install OllaBridge (ultra-fast with uv)
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Installing OllaBridge...$(COLOR_RESET)"
-	@if [ -z "$$VIRTUAL_ENV" ] && [ ! -f $(VENV_PYTHON) ]; then \
-		echo "$(COLOR_CYAN)Creating virtual environment (.venv)...$(COLOR_RESET)"; \
-		{ command -v $(UV) >/dev/null 2>&1 && $(UV) venv .venv; } || $(SYS_PYTHON) -m venv .venv; \
-	fi
+	@$(call ENSURE_VENV,uv)
 	@if command -v $(UV) >/dev/null 2>&1; then \
 		echo "$(COLOR_CYAN)✓ Using uv (ultra-fast installation)$(COLOR_RESET)"; \
 		if [ -n "$$VIRTUAL_ENV" ]; then $(UV) pip install -e .; \
@@ -278,10 +316,7 @@ install: ## Install OllaBridge (ultra-fast with uv)
 .PHONY: install-dev
 install-dev: ## Install with development dependencies (testing, linting)
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Installing OllaBridge with dev dependencies...$(COLOR_RESET)"
-	@if [ -z "$$VIRTUAL_ENV" ] && [ ! -f $(VENV_PYTHON) ]; then \
-		echo "$(COLOR_CYAN)Creating virtual environment (.venv)...$(COLOR_RESET)"; \
-		{ command -v $(UV) >/dev/null 2>&1 && $(UV) venv .venv; } || $(SYS_PYTHON) -m venv .venv; \
-	fi
+	@$(call ENSURE_VENV,uv)
 	@if command -v $(UV) >/dev/null 2>&1; then \
 		echo "$(COLOR_CYAN)✓ Using uv (ultra-fast installation)$(COLOR_RESET)"; \
 		if [ -n "$$VIRTUAL_ENV" ]; then $(UV) pip install -e ".[dev]"; \
@@ -320,7 +355,7 @@ run: env ## Start everything: backend + frontend dashboard (recommended)
 	@if exist frontend\package.json if exist frontend\dist rmdir /s /q frontend\dist
 	@if exist frontend\package.json $(MAKE) ui-build
 	@echo Dashboard: http://localhost:11435/ui    API: http://localhost:11435/v1
-	@$(VENV_PY_CMD) -m ollabridge.cli.main start --no-setup --auth-mode local-trust --log-level info
+	@$(VENV_PY_CMD) -m ollabridge.cli.main start --no-setup --auth-mode local-trust $(LOG_FLAGS)
 
 .PHONY: start
 start: env ## Start OllaBridge (auto-setup Ollama + model)
@@ -335,7 +370,7 @@ start-cli: env ## Start OllaBridge with full CLI setup
 .PHONY: dev
 dev: env ## Start backend in dev mode (auto-reload)
 	@if not exist $(VENV_PY_CMD) (echo Run "make install" first. && exit /b 1)
-	@$(VENV_PY_CMD) -m ollabridge.cli.main start --host 127.0.0.1 --port 11435 --reload --log-level info
+	@$(VENV_PY_CMD) -m ollabridge.cli.main start --host 127.0.0.1 --port 11435 --reload $(LOG_FLAGS)
 
 .PHONY: doctor
 doctor: ## Diagnose local setup (gateway, Ollama, security)
@@ -383,10 +418,7 @@ else
 .PHONY: install-pip
 install-pip: ## Install with pip (fallback if uv unavailable)
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Installing OllaBridge with pip...$(COLOR_RESET)"
-	@if [ -z "$$VIRTUAL_ENV" ] && [ ! -f $(VENV_PYTHON) ]; then \
-		echo "$(COLOR_CYAN)Creating virtual environment (.venv)...$(COLOR_RESET)"; \
-		$(SYS_PYTHON) -m venv .venv; \
-	fi
+	@$(call ENSURE_VENV,pip)
 	@if [ -n "$$VIRTUAL_ENV" ]; then python -m pip install -e .; \
 	else $(VENV_PYTHON) -m pip install -e .; fi
 	@# Fix empty .pth file for editable installs (common issue with uv/pip + src layout)
@@ -450,7 +482,7 @@ start: env ui-build ## Start OllaBridge (backend + frontend, configure from UI);
 	echo "$(COLOR_CYAN)  The dashboard opens in your browser automatically once ready.$(COLOR_RESET)"; \
 	echo "$(COLOR_CYAN)  Press Ctrl+C to stop, or run make stop from another terminal$(COLOR_RESET)"; \
 	echo ""; \
-	exec $(PYTHON) -m ollabridge.cli.main start --no-setup --auth-mode local-trust --log-level info --port $$PORT
+	exec $(PYTHON) -m ollabridge.cli.main start --no-setup --auth-mode local-trust $(LOG_FLAGS) --port $$PORT
 
 .PHONY: stop
 stop: ## Stop the OllaBridge gateway on its port (OLLABRIDGE_PORT, default 11435); never another program
@@ -484,7 +516,7 @@ start-share: env ## Start OllaBridge with public URL (ngrok tunnel)
 dev: env ## Start backend in dev mode (auto-reload, no frontend build)
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)Starting OllaBridge in development mode...$(COLOR_RESET)"
 	@echo "$(COLOR_CYAN)Auto-reload enabled. Edit code and see changes instantly.$(COLOR_RESET)"
-	$(PYTHON) -m ollabridge.cli.main start --host 0.0.0.0 --port 11435 --reload --log-level info
+	$(PYTHON) -m ollabridge.cli.main start --host 0.0.0.0 --port 11435 --reload $(LOG_FLAGS)
 
 .PHONY: dev-full
 dev-full: env ## Start backend (dev mode) + frontend (hot reload) concurrently
@@ -502,7 +534,7 @@ dev-full: env ## Start backend (dev mode) + frontend (hot reload) concurrently
 	@echo ""
 	@# Run backend and frontend concurrently; kill both on Ctrl+C
 	@trap 'kill 0' INT TERM; \
-	$(PYTHON) -m ollabridge.cli.main start --host 0.0.0.0 --port 11435 --reload --log-level info & \
+	$(PYTHON) -m ollabridge.cli.main start --host 0.0.0.0 --port 11435 --reload $(LOG_FLAGS) & \
 	(cd frontend && pnpm dev) & \
 	wait
 
