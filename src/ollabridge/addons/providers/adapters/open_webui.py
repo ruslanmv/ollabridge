@@ -26,12 +26,15 @@ import httpx
 from ollabridge.addons.providers.adapters.oauth import OAuthClientCredentials
 from ollabridge.addons.providers.base import BaseProviderAdapter
 from ollabridge.addons.providers.errors import (
+    RATE_LIMIT_TEXT,
     ProviderAuthError,
     ProviderBadRequest,
     ProviderError,
     ProviderQuotaExceeded,
+    ProviderRateLimited,
     ProviderTimeout,
     ProviderUnavailable,
+    parse_retry_after,
 )
 
 logger = logging.getLogger(__name__)
@@ -163,11 +166,20 @@ class OpenWebUIAdapter(BaseProviderAdapter):
             out = out.replace(self.api_key, "***")
         return out
 
-    def _map_status(self, status: int, body: str) -> ProviderError:
+    def _map_status(self, status: int, body: str, headers: Any = None) -> ProviderError:
         detail = self._redact(body)[:200]
         if status in (401, 403):
             return ProviderAuthError(f"authentication failed (HTTP {status})")
-        if status in (402, 429):
+        # A rate limit is temporary and is retried or cooled down by
+        # addons.providers.pacing. Open WebUI answers it with HTTP 400 and
+        # {"detail": "Rate limit exceeded. Please try again later."}.
+        if status == 429 or (status == 400 and RATE_LIMIT_TEXT.search(body or "")):
+            return ProviderRateLimited(
+                f"rate limited (HTTP {status}): {detail}",
+                retry_after=parse_retry_after((headers or {}).get("retry-after")),
+                upstream_status=status,
+            )
+        if status == 402:
             return ProviderQuotaExceeded(f"quota or rate limit (HTTP {status})")
         if status in (400, 404, 422):
             return ProviderBadRequest(f"bad request (HTTP {status}): {detail}")
@@ -201,9 +213,9 @@ class OpenWebUIAdapter(BaseProviderAdapter):
                     if resp.status_code in (401, 403):
                         # A real auth failure must NOT surface stale models.
                         self._on_auth_failure()
-                        raise self._map_status(resp.status_code, resp.text)
+                        raise self._map_status(resp.status_code, resp.text, resp.headers)
                     if resp.status_code != 200:
-                        raise self._map_status(resp.status_code, resp.text)
+                        raise self._map_status(resp.status_code, resp.text, resp.headers)
                     self._models_endpoint = path
                     return self._normalize_models(resp.json())
         except httpx.TimeoutException as exc:
@@ -356,9 +368,9 @@ class OpenWebUIAdapter(BaseProviderAdapter):
                         continue
                     if resp.status_code in (401, 403):
                         self._on_auth_failure()
-                        raise self._map_status(resp.status_code, resp.text)
+                        raise self._map_status(resp.status_code, resp.text, resp.headers)
                     if resp.status_code != 200:
-                        raise self._map_status(resp.status_code, resp.text)
+                        raise self._map_status(resp.status_code, resp.text, resp.headers)
                     self._chat_endpoint = path
                     data = resp.json()
                     # Preserve the full OpenAI response; only re-label the public

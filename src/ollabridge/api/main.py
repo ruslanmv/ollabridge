@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -15,8 +16,6 @@ import httpx
 from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from pydantic import BaseModel, model_validator
 
 from ollabridge.core.settings import settings
@@ -107,9 +106,6 @@ def _route_label(node: Any) -> str:
     """``ollama/local``, ``relay/laptop``…: what served a request, for its log line."""
     connector = str(getattr(node, "connector", "") or "")
     return f"{_ROUTE_PREFIX.get(connector, connector or 'node')}/{getattr(node, 'node_id', '?')}"
-
-
-limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT])
 
 
 class ChatMessage(BaseModel):
@@ -331,10 +327,15 @@ def _provider_failure(exc: Exception, model: str, *, has_tools: bool) -> dict[st
         or "rate_limit" in lowered
         or "too many requests" in lowered
     ):
+        # How long to back off: the provider's Retry-After, or the cooldown /
+        # queue estimate from OllaBridge's own limits (addons/providers/pacing).
+        retry_after = getattr(exc, "retry_after", None)
+        when = f"Try again in {math.ceil(retry_after)}s." if retry_after else "Try again in a moment."
         return {
             "status": 429,
             "code": "rate_limited",
-            "message": f"{model}'s provider is rate limiting requests right now ({_upstream_reason(text)}). Try again in a moment.",
+            "message": f"{model}'s provider is rate limiting requests right now ({_upstream_reason(text)}). {when}",
+            "retry_after": retry_after,
         }
     if has_tools and isinstance(exc, ProviderBadRequest) and ("tool" in lowered or "function" in lowered):
         return {
@@ -687,9 +688,52 @@ def create_app() -> FastAPI:
             log.info("Shutting down", extra={"uptime": format_duration(time.monotonic() - started)})
 
     app = FastAPI(title=settings.APP_NAME, lifespan=_lifespan)
-    app.state.limiter = limiter
     app.state.obridge = build_state()
     app.state.relay_hub = RelayHub(app.state.obridge.registry)
+
+    # OllaBridge's own request limit (Settings → Rate limits; off by default).
+    # It counts model calls only (POST /v1/...), per client address and API
+    # key, so the dashboard's own polling never spends a client's budget.
+    # Added before CORS, so it runs inside it and a refused browser call still
+    # carries the CORS headers that let the page read the 429.
+    from ollabridge.core import rate_limits
+
+    @app.middleware("http")
+    async def _inbound_rate_limit(request: Request, call_next):
+        if request.method == "POST" and request.url.path.startswith("/v1/"):
+            limit = rate_limits.current().inbound
+            if limit.enabled:
+                bucket, label = rate_limits.client_identity(
+                    request.client.host if request.client else None,
+                    request.headers.get("x-api-key"),
+                    request.headers.get("authorization"),
+                )
+                wait = rate_limits.INBOUND.hit(bucket, limit.requests_per_minute, label=label)
+                if wait is not None:
+                    retry_after = max(1, math.ceil(wait))
+                    note_request(reason=f"inbound rate limit ({limit.requests_per_minute}/minute)")
+                    return JSONResponse(
+                        status_code=429,
+                        content={
+                            "detail": {
+                                "error": {
+                                    "message": (
+                                        f"OllaBridge's own request limit for this client "
+                                        f"({limit.requests_per_minute}/minute) was reached. "
+                                        f"Try again in {retry_after}s."
+                                    ),
+                                    "type": "rate_limit_error",
+                                    "code": "rate_limited",
+                                }
+                            }
+                        },
+                        headers={
+                            "Retry-After": str(retry_after),
+                            "X-RateLimit-Limit": str(limit.requests_per_minute),
+                            "X-RateLimit-Remaining": "0",
+                        },
+                    )
+        return await call_next(request)
 
     origins = _parse_origins(settings.CORS_ORIGINS)
     app.add_middleware(
@@ -1019,6 +1063,12 @@ def create_app() -> FastAPI:
 
     app.include_router(media_routes)
 
+    # Settings → Rate limits: the inbound limit and per-provider pacing,
+    # retry and cooldown (core/rate_limits.py, addons/providers/pacing.py).
+    from ollabridge.api.rate_limit_routes import router as rate_limit_router
+
+    app.include_router(rate_limit_router)
+
     # Create the PairingManager at startup when pairing is the effective mode —
     # from the env default OR a persisted UI override — so paired tokens
     # validate immediately after a restart.
@@ -1343,7 +1393,11 @@ def create_app() -> FastAPI:
                                 status_code=failure["status"],
                                 detail={"error": error_body},
                                 # Tell well-behaved clients how long to back off.
-                                headers={"Retry-After": "5"} if failure["code"] == "rate_limited" else None,
+                                headers=(
+                                    {"Retry-After": str(max(1, math.ceil(failure.get("retry_after") or 5)))}
+                                    if failure["code"] == "rate_limited"
+                                    else None
+                                ),
                             ) from addon_exc
                         log.debug(
                             "Addon providers exhausted for model=%s, falling back to Ollama: %s",

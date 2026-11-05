@@ -282,6 +282,78 @@ export type FlowMetricsResponse = {
   est_tokens_per_sec: number
 }
 
+// ── Rate limits (Settings → Rate limits, /admin/rate-limits) ────────────
+
+export type OnRateLimit = 'fail_fast' | 'wait_retry'
+
+/** Outbound limits toward one provider. 0 means "no limit" for the two caps. */
+export type ProviderLimit = {
+  requests_per_minute: number
+  max_concurrent: number
+  on_rate_limit: OnRateLimit
+  max_wait_seconds: number
+  cooldown_seconds: number
+}
+
+/** OllaBridge's own limit on model calls, per client address and API key. */
+export type InboundLimit = { enabled: boolean; requests_per_minute: number }
+
+export type RateLimitSettings = {
+  inbound: InboundLimit
+  providers: Record<string, ProviderLimit>
+}
+
+export type RateLimitEvent = {
+  at: string
+  status: number | null
+  retry_after: number | null
+  message: string
+  outcome: string
+  cooldown_until: string | null
+}
+
+export type ProviderRateState = {
+  in_flight: number
+  waiting: number
+  cooling_down_until: string | null
+  cooldown_remaining_s: number
+  rate_limited_last_hour: number
+  retries: number
+  recovered: number
+  refused_in_cooldown: number
+  refused_queue_full: number
+  recent: RateLimitEvent[]
+}
+
+export type ProviderRateRow = {
+  id: string
+  name: string
+  kind: string
+  enabled: boolean
+  registered: boolean
+  /** Calls routed to this provider since the gateway started. */
+  requests: number
+  configured: boolean
+  limits: ProviderLimit
+  state: ProviderRateState
+}
+
+export type InboundRateState = {
+  enabled: boolean
+  requests_per_minute: number
+  active_clients: number
+  refused_last_hour: number
+  recent: { at: string; client: string; retry_after: number }[]
+}
+
+export type RateLimitsResponse = {
+  settings: RateLimitSettings
+  /** `suggested`: a cautious starting point for any provider whose limit is unknown. */
+  defaults: { inbound: InboundLimit; provider: ProviderLimit; suggested: ProviderLimit }
+  providers: ProviderRateRow[]
+  inbound: InboundRateState
+}
+
 export const api = {
   health: () => request<HealthResponse>('/health'),
   models: () => request<ModelsResponse>('/v1/models'),
@@ -308,6 +380,13 @@ export const api = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sanitizeSettingsPatch(patch as Partial<GatewaySettings>)),
+    }),
+  rateLimits: () => request<RateLimitsResponse>('/admin/rate-limits'),
+  updateRateLimits: (body: RateLimitSettings) =>
+    request<RateLimitsResponse & { ok: boolean }>('/admin/rate-limits', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     }),
   sourceHealth: (body: SourceHealthRequest) =>
     request<SourceHealthResponse>('/admin/source-health', {

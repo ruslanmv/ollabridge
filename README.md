@@ -119,6 +119,10 @@ Connect **OpenAI, Anthropic, Google Gemini, IBM watsonx.ai, Azure OpenAI, AWS Be
 
 </div>
 
+### ⏱️ Rate limits that wait instead of fail
+
+A provider that rate-limits you no longer breaks a long agent run. **Settings → Rate limits** paces calls per provider (requests per minute, calls at once), and on a rate-limit answer either fails fast or waits and retries with backoff, honouring `Retry-After`, with a cooldown so the provider is not hammered. An optional limit on OllaBridge's own clients sits beside it. Everything is off until you set it, and applies without a restart. See [Rate limits](docs/CONFIGURATION.md#rate-limits).
+
 ### ☁️ Pair once, reach your models anywhere
 
 | Cloud Relay | Device Pairing |

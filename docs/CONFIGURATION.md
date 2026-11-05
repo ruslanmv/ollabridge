@@ -39,7 +39,8 @@ PORT=11435
 DEFAULT_MODEL=deepseek-r1
 DEFAULT_EMBED_MODEL=nomic-embed-text
 
-# Rate limiting
+# Inbound rate limit: the starting value for Settings → Rate limits.
+# The limit itself is off until you turn it on there (see "Rate limits").
 RATE_LIMIT=60/minute
 
 # Security
@@ -104,6 +105,63 @@ then carries `ts`, `level`, `component`, `logger`, `msg`, `pid`, `version`,
 any fields, and `request_id` for lines written while a request runs. Credential
 shapes are scrubbed from every line in every format. The full design is in
 [LOGGING_DESIGN.md](LOGGING_DESIGN.md).
+
+### Rate limits
+
+**Dashboard → Settings → Rate limits** (`http://localhost:11435/ui`). Changes
+apply at once, without a restart, and are saved in `runtime_settings.json` in
+the data directory, beside the dashboard's other settings. The defaults change
+nothing: the inbound limit is off, and a provider left at the defaults is not
+paced and answers a rate limit with a 429 at once, as before.
+
+**OllaBridge's own limit (inbound).** Turn on *Limit incoming model calls* and
+set *Requests per minute*. It counts model calls (`POST /v1/...`) in a sliding
+60-second window per client address, and per API key when the client sends
+one; the dashboard and reads such as `GET /v1/models` are never counted. Past
+the limit a call gets HTTP 429 with `Retry-After`, `X-RateLimit-Limit` and
+`X-RateLimit-Remaining: 0`. `RATE_LIMIT` only sets the starting value shown in
+the dashboard.
+
+**Per provider (outbound).** Some providers enforce a per-user limit whose
+numbers are not published and that lasts minutes once tripped (an Open WebUI
+server answers it with HTTP 400 `{"detail": "Rate limit exceeded. Please try
+again later."}`). A heavy agent run trips it and fails. Set limits for that
+provider and its calls wait their turn inside OllaBridge instead:
+
+| Setting | Meaning |
+|---|---|
+| Requests / minute | Calls start evenly spaced, at most one every 60/N seconds. `0` = no pacing. |
+| Max concurrent | At most this many calls to the provider at once. `0` = no cap. |
+| On a rate limit | **Fail fast**: answer the client with a 429 at once. **Wait and retry**: wait and try again, first after the cooldown (or 5 s when it is 0), then doubling; a longer `Retry-After` from the provider wins. Other calls to that provider wait meanwhile. |
+| Max wait (s) | The longest one call waits inside OllaBridge (queue, pacing, cooldown and retries together) before it is answered with a 429. Your client's own timeout must be longer than this plus the model's answer time. |
+| Cooldown (s) | After a rate-limit answer the provider is left alone this long. In fail-fast mode, calls meanwhile get a 429 without reaching the provider. `0` = none. |
+
+The provider list shows every provider that is limited, in use, or was just
+rate limited; add any other from *Add a provider…*. Each card shows calls
+running and waiting, *cooling down until …*, and the recent rate-limited
+answers with what OllaBridge did about each. *Use suggested* fills in a
+cautious starting point for a provider whose limit you do not know:
+12 requests/minute, 2 at a time, wait and retry, max wait 180 s, cooldown
+60 s. Lower the rate if it still trips, raise it if calls wait too long.
+
+A 429 that OllaBridge hands back always carries `Retry-After`: the provider's
+own value, the remaining cooldown, or 5 seconds when neither is known.
+
+The same settings over the API (`GET`/`PUT /admin/rate-limits`, admin auth):
+
+```bash
+curl -s -X PUT http://127.0.0.1:11435/admin/rate-limits \
+  -H 'Content-Type: application/json' \
+  -d '{"inbound": {"enabled": false, "requests_per_minute": 60},
+       "providers": {"openwebui": {"requests_per_minute": 12, "max_concurrent": 2,
+                                   "on_rate_limit": "wait_retry",
+                                   "max_wait_seconds": 180, "cooldown_seconds": 60}}}'
+```
+
+Provider ids are the ones the dashboard lists (`openwebui` for an Open WebUI
+source, `byok-<name>` for a BYOK source, `groq-free` and the like for the
+built-in catalog). A `PUT` replaces the whole object; an unknown field or an
+out-of-range value is refused with HTTP 422.
 
 ### Enrollment Tokens
 

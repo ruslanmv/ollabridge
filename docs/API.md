@@ -40,6 +40,12 @@ that only know the OpenAI shape can ignore the extras.
 | `/admin/ollama-setup/jobs/{id}` | GET | Install job status and log lines |
 | `/admin/ollama-setup/start` | POST | Launch `ollama serve` detached and wait for it to answer |
 | `/admin/ollama-setup/pull` | POST | Pull a first model against the runtime's URL (`{"model": "llama3.2:3b"}`); `GET /pull/{model}` reports progress |
+| `/admin/rate-limits` | GET | Rate-limit settings, every provider they can apply to, and live state (running, waiting, recent rate-limited answers, cooldowns, refused clients) |
+| `/admin/rate-limits` | PUT | Replace the rate-limit settings; applied at once. See [Rate limits](CONFIGURATION.md#rate-limits) |
+
+A rate-limited call, whether by a provider or by OllaBridge's own limits, is
+answered with HTTP 429, `code: "rate_limited"` and a `Retry-After` header that
+says how long to back off.
 
 ### Example: Check Connected Nodes
 

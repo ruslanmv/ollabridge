@@ -335,16 +335,20 @@ Used for secure node registration.
 
 ### Rate Limiting
 
-**Location:** `src/ollabridge/api/main.py`
+**Location:** `src/ollabridge/core/rate_limits.py` (settings, inbound limiter),
+`src/ollabridge/addons/providers/pacing.py` (per-provider pacing, concurrency,
+retry and cooldown, applied by `ProviderRouter.route_chat`),
+`src/ollabridge/api/rate_limit_routes.py` (`/admin/rate-limits`).
 
-```python
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=[settings.RATE_LIMIT]
-)
-```
+- **Inbound:** a middleware in `create_app` counts `POST /v1/...` per client
+  address and API key in a sliding 60-second window. Off by default.
+- **Outbound:** every provider call goes through that provider's gate. With
+  no settings it passes straight through and a rate limit fails fast. A
+  rate-limit answer (`ProviderRateLimited`) is not marked quota-exhausted, so
+  the provider stays routable once its limit lifts.
 
-Default: 60 requests/minute per IP
+Configured from Settings → Rate limits; see
+[CONFIGURATION.md](CONFIGURATION.md#rate-limits).
 
 ---
 

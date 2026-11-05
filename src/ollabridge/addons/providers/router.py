@@ -14,11 +14,13 @@ import logging
 import time
 from typing import Any
 
+from ollabridge.addons.providers import pacing
 from ollabridge.addons.providers.errors import (
     ProviderAuthError,
     ProviderBadRequest,
     ProviderError,
     ProviderQuotaExceeded,
+    ProviderRateLimited,
 )
 from ollabridge.addons.providers.models import (
     HealthStatus,
@@ -213,6 +215,14 @@ class ProviderRouter:
                 continue
 
             start = time.monotonic()
+
+            async def _attempt(adapter=adapter, route=route) -> dict:
+                # Timed from the call itself, not from the time it spent
+                # waiting for its turn, so pacing does not skew latency scores.
+                nonlocal start
+                start = time.monotonic()
+                return await adapter.chat(route.model, messages, **kwargs)
+
             try:
                 # Per-attempt detail: DEBUG. The request's own access line
                 # names the provider that answered (see api/request_log.py);
@@ -223,7 +233,9 @@ class ProviderRouter:
                     route.model,
                     route.score,
                 )
-                result = await adapter.chat(route.model, messages, **kwargs)
+                # Within the provider's rate limits (Settings → Rate limits):
+                # paced, capped, and retried on a rate limit when so set.
+                result = await pacing.call(route.provider_id, _attempt)
                 latency_ms = (time.monotonic() - start) * 1000
 
                 # Extract token usage for quota tracking
@@ -244,6 +256,25 @@ class ProviderRouter:
                 )
                 note_request(route=route.provider_id, tokens=total_tokens or None)
                 return result
+
+            except ProviderRateLimited as exc:
+                # Temporary: the provider said "slow down", its budget is not
+                # spent. Marking it quota-exhausted would take it out of
+                # routing until a restart (every later request for its models
+                # fell through to local Ollama); the cooldown in pacing keeps
+                # it from being hammered instead.
+                latency_ms = (time.monotonic() - start) * 1000
+                if not exc.local:
+                    await self.registry.record_request(
+                        route.provider_id, latency_ms=latency_ms, success=False
+                    )
+                logger.warning(
+                    "Provider %s is rate limiting%s: %s — failing over",
+                    route.provider_id,
+                    "" if exc.local else f" ({latency_ms:.0f}ms)",
+                    exc,
+                )
+                last_error = exc
 
             except ProviderQuotaExceeded as exc:
                 latency_ms = (time.monotonic() - start) * 1000

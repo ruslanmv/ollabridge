@@ -83,6 +83,16 @@ export function useSettings() {
   })
 }
 
+/** Rate-limit settings plus live state (cooldowns, recent 429s), polled. */
+export function useRateLimits() {
+  return useQuery({
+    queryKey: ['rateLimits'],
+    queryFn: api.rateLimits,
+    refetchInterval: 5_000,
+    retry: false,
+  })
+}
+
 export function useConsumerNodes() {
   return useQuery({
     queryKey: ['consumerNodes'],

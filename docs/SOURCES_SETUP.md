@@ -29,7 +29,7 @@ all of them. Only the hints and the required fields differ.
 | Field | What to enter | Notes |
 |---|---|---|
 | **Provider** | Pre-selected from the catalog | Fixed after creation. One record per provider kind. |
-| **Display name** | Any label, e.g. `BlueChat`, `Work OpenAI` | Cosmetic. Shown on the card and as `owned_by` for models the source serves. |
+| **Display name** | Any label, e.g. `Team chat`, `Work OpenAI` | Cosmetic. Shown on the card and as `owned_by` for models the source serves. |
 | **API key** | The provider credential | Write-only. After saving only a redacted hint (`sk-4…`) is shown. |
 | **Server / Base URL** | The API root | Pre-filled for hosted providers. **Required** for Open WebUI, Generic OpenAI-compatible and Azure OpenAI. A trailing slash is fine. |
 | **Default model** | A model id this source should answer with | Leave blank on providers that support discovery and the best reachable chat model is picked. Required for a Generic OpenAI-compatible source to serve anything. |
@@ -59,25 +59,25 @@ source really answers.
 
 ## 2. Worked examples
 
-### 2.1 Open WebUI (compatible) — e.g. a company BlueChat server
+### 2.1 Open WebUI (compatible) — e.g. a company chat server
 
 Any Open WebUI server (self-hosted or company-run) can be a source. The
-example below is a team.blue BlueChat instance; replace the host with yours.
+example below uses a placeholder host; replace it with yours.
 
 1. In Open WebUI: **Settings → Account → API keys → Create new key**. Copy the `sk-…` key.
 2. In OllaBridge: **Sources → Add Source → Open WebUI (compatible)**.
 3. **Provider**: leave as `Open WebUI (compatible)`.
-4. **Display name**: anything you like, for example `BlueChat`. It is only a label.
+4. **Display name**: anything you like, for example `Team chat`. It is only a label.
 5. **API key**: paste the key. It stays on this machine and is only ever sent to that server.
-6. **Server URL**: the server's `/api` root, e.g. `https://chat.ai.team.blue/api`. A trailing slash is fine, the adapter strips it.
-7. **Default model**: leave blank, or type the upstream id you want, e.g. `internal-gemma4-31b`. Blank lets discovery pick a plain chat model; typing it pins the choice.
+6. **Server URL**: the server's `/api` root, e.g. `https://chat.example.com/api`. A trailing slash is fine, the adapter strips it.
+7. **Default model**: leave blank, or type the upstream id you want, e.g. `gemma-3-27b`. Blank lets discovery pick a plain chat model; typing it pins the choice.
 8. **Storage mode**: `Local only`.
-9. Click **Connect and discover**. The save lists the models your key may use and shows a discovery summary (for the example server: 54 models, split into plain chat models, `ext-*` gateway presets and workspace presets).
+9. Click **Connect and discover**. The save lists the models your key may use and shows a discovery summary: how many models it found, split into plain chat models and presets or workflows.
 
 What you get:
 
 - Models are namespaced `openwebui/<upstream-id>` so they never collide with
-  local Ollama or other providers, e.g. `openwebui/internal-gemma4-31b`.
+  local Ollama or other providers, e.g. `openwebui/gemma-3-27b`.
   OllaBridge strips the prefix before calling the server.
 - The list is exactly what *your* Open WebUI user may access: plain models,
   presets and pipes alike. Presets and workflows are tagged
@@ -92,7 +92,7 @@ Use this for vLLM, LiteLLM, llama.cpp server, text-generation-inference, or
 any internal gateway that speaks `/v1/chat/completions`.
 
 1. **Sources → Add Source → Generic OpenAI-compatible**.
-2. **Display name**: e.g. `BlueCode`.
+2. **Display name**: e.g. `Inference gateway`.
 3. **API key**: the gateway's key.
 4. **Base URL**: the OpenAI root *including* `/v1`, e.g. `https://inference.example.com/v1`.
    The test probes `<base>/models`, so `https://inference.example.com/v1/models` must answer.
@@ -213,7 +213,7 @@ curl -s http://localhost:11435/v1/models | jq '.data[].id'
 ```
 
 ```bash
-curl -s http://localhost:11435/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"openwebui/internal-gemma4-31b","messages":[{"role":"user","content":"Reply with the single word pong."}],"max_tokens":20}'
+curl -s http://localhost:11435/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"openwebui/gemma-3-27b","messages":[{"role":"user","content":"Reply with the single word pong."}],"max_tokens":20}'
 ```
 
 A JSON `choices[0].message.content` of `pong` proves the whole path: client →
@@ -264,7 +264,7 @@ then `ollabridge providers test <kind>`. Full reference in
 **API** (what the form calls), for the Open WebUI example above:
 
 ```bash
-curl -s -X POST http://localhost:11435/admin/sources/open_webui -H 'Content-Type: application/json' -d '{"api_key":"<paste-your-key>","display_name":"BlueChat","base_url":"https://chat.ai.team.blue/api","default_model":"internal-gemma4-31b","storage_mode":"local_only"}'
+curl -s -X POST http://localhost:11435/admin/sources/open_webui -H 'Content-Type: application/json' -d '{"api_key":"<paste-your-key>","display_name":"Team chat","base_url":"https://chat.example.com/api","default_model":"gemma-3-27b","storage_mode":"local_only"}'
 ```
 
 The response carries the saved record (key redacted), the test outcome and
