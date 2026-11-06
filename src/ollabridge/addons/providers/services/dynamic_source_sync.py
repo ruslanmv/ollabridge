@@ -26,6 +26,9 @@ from typing import Any
 
 from ollabridge.addons.providers import model_defaults
 from ollabridge.addons.providers.adapters.open_webui import OpenWebUIAdapter
+from ollabridge.addons.providers.adapters.openai_compatible import (
+    OpenAICompatibleAdapter,
+)
 from ollabridge.addons.providers.base import BaseProviderAdapter
 from ollabridge.addons.providers.models import (
     ProviderCategory,
@@ -38,6 +41,7 @@ from ollabridge.providers_meta import (
     get_extra,
     get_record,
     load_providers,
+    request_headers,
 )
 
 log = logging.getLogger(__name__)
@@ -93,9 +97,6 @@ def _openai_adapter_for(kind: str) -> type[BaseProviderAdapter]:
     from ollabridge.addons.providers.adapters.deepseek import DeepSeekAdapter
     from ollabridge.addons.providers.adapters.groq import GroqAdapter
     from ollabridge.addons.providers.adapters.huggingface import HuggingFaceAdapter
-    from ollabridge.addons.providers.adapters.openai_compatible import (
-        OpenAICompatibleAdapter,
-    )
     from ollabridge.addons.providers.adapters.openrouter import OpenRouterAdapter
 
     return {
@@ -149,7 +150,24 @@ def build_adapter(
             project_id=get_extra(rec, "project_id"),
             space_id=get_extra(rec, "space_id"),
         )
-    return _openai_adapter_for(kind)(base_url=base_url, api_key=secret or None)
+    adapter_cls = _openai_adapter_for(kind)
+    headers = _request_headers(rec)
+    if headers and issubclass(adapter_cls, OpenAICompatibleAdapter):
+        return adapter_cls(base_url=base_url, api_key=secret or None, extra_headers=headers)
+    return adapter_cls(base_url=base_url, api_key=secret or None)
+
+
+def _request_headers(rec: ProviderRecord) -> dict[str, str]:
+    """The source's extra headers, or none when its saved value is malformed.
+
+    The Sources API refuses a bad line on save, so this only trips on a
+    hand-edited providers.yaml — where a warning beats failing every call.
+    """
+    try:
+        return request_headers(rec)
+    except ValueError as exc:
+        log.warning("ignoring extra headers for source %s: %s", rec.name, exc)
+        return {}
 
 
 def normalize_models(rec: ProviderRecord, models: list[dict]) -> list[dict]:

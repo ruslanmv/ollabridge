@@ -154,10 +154,10 @@ def _openwebui_0_11_catalog():
                "image_generation": True, "code_interpreter": True,
                "citations": True, "usage": False, "builtin_tools": True}
     return {"data": [
-        _plain("internal-gemma4-31b", allowed),
-        _plain("internal-gpt-oss-120b", allowed),
-        _plain("internal-qwen3-8-27b", None),
-        _plain("internal-muse-glimmer-30b", None),
+        _plain("gemma-3-27b", allowed),
+        _plain("gpt-oss-120b", allowed),
+        _plain("qwen3-32b", None),
+        _plain("mistral-small-24b", None),
     ]}
 
 
@@ -215,11 +215,11 @@ async def test_image_generation_flag_does_not_demote_chat_models(make_adapter):
         assert m["persona_compatible"] is True, mid
         assert m["capabilities"]["chat"] is True, mid
     # The declared flags are still surfaced, additively.
-    assert models["internal-gemma4-31b"]["capabilities"]["image_generation"] is True
-    assert models["internal-gpt-oss-120b"]["capabilities"]["vision"] is True
+    assert models["gemma-3-27b"]["capabilities"]["image_generation"] is True
+    assert models["gpt-oss-120b"]["capabilities"]["vision"] is True
     # ``capabilities: null`` leaves the optional flags honestly unknown.
-    assert models["internal-qwen3-8-27b"]["capabilities"]["image_generation"] is None
-    assert models["internal-qwen3-8-27b"]["capabilities"]["vision"] is None
+    assert models["qwen3-32b"]["capabilities"]["image_generation"] is None
+    assert models["qwen3-32b"]["capabilities"]["vision"] is None
     chat = OpenWebUIAdapter.filter_models(list(models.values()), category="chat")
     assert {m["upstream_model_id"] for m in chat} == set(models)
 

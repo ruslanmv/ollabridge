@@ -21,7 +21,7 @@ from ollabridge.core.settings import settings
 
 AUTH = {"Authorization": "Bearer test-key-abc"}
 TOOLS = [{"type": "function", "function": {"name": "ping", "parameters": {"type": "object", "properties": {}}}}]
-BODY = {"model": "openwebui/internal-gemma4-31b", "messages": [{"role": "user", "content": "call ping"}], "tools": TOOLS,
+BODY = {"model": "openwebui/gemma-3-27b", "messages": [{"role": "user", "content": "call ping"}], "tools": TOOLS,
         "tool_choice": "auto"}
 
 
@@ -120,7 +120,7 @@ def FailingRouter(make_exc, provider_id="openwebui"):
             return None
 
     router = ProviderRouter(_Registry())
-    route = SimpleNamespace(provider_id=provider_id, model="openwebui/internal-gemma4-31b", score=0.9)
+    route = SimpleNamespace(provider_id=provider_id, model="openwebui/gemma-3-27b", score=0.9)
     router.resolve = lambda model: [route]  # type: ignore[method-assign]
     return router
 
@@ -155,7 +155,7 @@ def test_an_unavailable_provider_for_a_namespaced_model_answers_502(app_client):
     local = AsyncMock()
     with patch("ollabridge.providers.ollama_client.chat_message", new=local):
         r = client.post("/v1/chat/completions", headers=AUTH,
-                        json={"model": "openwebui/internal-gemma4-31b", "messages": [{"role": "user", "content": "hi"}]})
+                        json={"model": "openwebui/gemma-3-27b", "messages": [{"role": "user", "content": "hi"}]})
     assert r.status_code == 502, r.text
     assert r.json()["detail"]["error"]["code"] == "provider_unavailable"
     local.assert_not_called()
@@ -186,7 +186,7 @@ def test_text_only_requests_to_a_provider_are_unchanged(app_client):
     router.route_chat = plain  # type: ignore[method-assign]
     app.state.provider_router = router
     r = client.post("/v1/chat/completions", headers=AUTH,
-                    json={"model": "openwebui/internal-gemma4-31b", "messages": [{"role": "user", "content": "hi"}]})
+                    json={"model": "openwebui/gemma-3-27b", "messages": [{"role": "user", "content": "hi"}]})
     assert r.status_code == 200, r.text
     assert r.json()["choices"][0]["message"]["content"] == "hello back"
     assert "tools" not in router.kwargs and "tool_choice" not in router.kwargs

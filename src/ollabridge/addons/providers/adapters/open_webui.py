@@ -35,6 +35,7 @@ from ollabridge.addons.providers.errors import (
     ProviderTimeout,
     ProviderUnavailable,
     parse_retry_after,
+    upstream_reason,
 )
 
 logger = logging.getLogger(__name__)
@@ -169,7 +170,9 @@ class OpenWebUIAdapter(BaseProviderAdapter):
     def _map_status(self, status: int, body: str, headers: Any = None) -> ProviderError:
         detail = self._redact(body)[:200]
         if status in (401, 403):
-            return ProviderAuthError(f"authentication failed (HTTP {status})")
+            err = ProviderAuthError(f"authentication failed (HTTP {status})")
+            err.upstream_detail = upstream_reason(self._redact(body))
+            return err
         # A rate limit is temporary and is retried or cooled down by
         # addons.providers.pacing. Open WebUI answers it with HTTP 400 and
         # {"detail": "Rate limit exceeded. Please try again later."}.

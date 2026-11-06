@@ -106,12 +106,14 @@ Default model   [ gpt-4o-mini               ]
 Storage mode    (●) Local only  ( ) Sync metadata  ( ) Encrypted vault
 Sharing         (●) Private  ( ) Account  ( ) Workspace  ( ) Org
 Routing         [ ] Allow this source in routing
-                                              [ Cancel ]  [ Save & Test ]
+                                              [ Cancel ] [ Test connection ] [ Save ]
 ```
 
-Defaults are pre-selected to the safe values. After **Save & Test**:
-`✓ Key accepted · ✓ Reachable` (or the exact error), and the key field is
-cleared — only the redacted hint shows thereafter.
+Defaults are pre-selected to the safe values. **Save** stores the settings
+and clears the key field — only the redacted hint shows thereafter — and
+reports `✓ Key accepted · ✓ Reachable` (or the exact error). **Test
+connection** re-checks the *saved* settings and reloads the model list; it
+is disabled while the form has unsaved edits.
 
 ## Routing tab (opt-in)
 

@@ -333,6 +333,62 @@ def test_groq_discovers_live_models_and_flags_free_ones(client, monkeypatch):
     }
 
 
+def test_models_endpoint_says_why_the_key_was_rejected(client, monkeypatch):
+    """A bare "rejected this API key" cannot tell a revoked key from one
+    issued by another server; the upstream's reason, redacted, can."""
+    key = "sk-custom1234567890"
+    _patch_openai_compatible_upstream(
+        monkeypatch,
+        lambda _r: httpx.Response(
+            401,
+            json={"error": {
+                "message": f"Invalid proxy server token passed. Received API Key = {key}. "
+                "Unable to find token in cache",
+                "type": "token_not_found_in_db",
+            }},
+        ),
+    )
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        client.post(
+            "/admin/sources/custom",
+            headers=AUTH,
+            json={"api_key": key, "base_url": "https://llm.example.com/v1"},
+        )
+    r = client.get("/admin/sources/custom/models", headers=AUTH)
+    assert r.status_code == 401
+    detail = r.json()["detail"]
+    assert detail.startswith("the server rejected this API key: Invalid proxy server token")
+    assert "Unable to find token in cache" in detail
+    assert key not in r.text
+
+
+def test_test_button_says_why_the_key_was_rejected(client):
+    """The form's Test connection reports the provider's reason too, so a
+    revoked key is told apart from a typo without leaving the dialog."""
+    key = "sk-custom1234567890"
+    with patch("ollabridge.provider_ops.httpx.get", _ok_get):
+        client.post(
+            "/admin/sources/custom",
+            headers=AUTH,
+            json={"api_key": key, "base_url": "https://llm.example.com/v1"},
+        )
+
+    def rejected(url, headers=None, timeout=None):
+        return httpx.Response(
+            401,
+            json={"error": {"message": f"Invalid token {key}. Unable to find token in cache"}},
+            request=httpx.Request("GET", url),
+        )
+
+    with patch("ollabridge.provider_ops.httpx.get", rejected):
+        r = client.post("/admin/sources/custom/test", headers=AUTH)
+    body = r.json()
+    assert body["ok"] is False
+    assert body["detail"].startswith("key rejected (HTTP 401): Invalid token")
+    assert "Unable to find token in cache" in body["detail"]
+    assert key not in r.text
+
+
 def test_source_defaults_to_a_free_model(client, monkeypatch):
     """A source saved without a model gets the preferred free one, not blank."""
     _patch_openai_compatible_upstream(monkeypatch)

@@ -26,6 +26,7 @@ from ollabridge.addons.providers.errors import (
     ProviderQuotaExceeded,
     ProviderTimeout,
     ProviderUnavailable,
+    upstream_reason,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,18 @@ class OpenAICompatibleAdapter(BaseProviderAdapter):
     #: Path segment(s) between the host and the OpenAI-style resources.
     #: Groq serves them under ``/openai/v1``; most others under ``/v1``.
     api_root: str = "v1"
+
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str | None = None,
+        timeout: float = 120.0,
+        extra_headers: dict[str, str] | None = None,
+    ):
+        super().__init__(base_url, api_key=api_key, timeout=timeout)
+        #: Headers the source asks for on every request (identity,
+        #: attribution). Validated on save, so none of them is a credential.
+        self.extra_headers = dict(extra_headers or {})
 
     def _api_base(self) -> str:
         """``base_url`` joined with :attr:`api_root`, without duplicating it.
@@ -57,7 +70,9 @@ class OpenAICompatibleAdapter(BaseProviderAdapter):
         return "/".join([base, *segments]) if segments else base
 
     def _headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json"}
+        # The source's own headers go first, so they can never displace the
+        # content type or the credential set below.
+        headers = {**self.extra_headers, "Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
@@ -92,6 +107,7 @@ class OpenAICompatibleAdapter(BaseProviderAdapter):
         else:
             exc = ProviderUnavailable(f"HTTP {status}: {detail}")
         exc.upstream_status = status
+        exc.upstream_detail = upstream_reason(self._redact(body or ""))
         return exc
 
     # ── Calls ────────────────────────────────────────────────────────

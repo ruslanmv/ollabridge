@@ -8,12 +8,17 @@ HTTP status codes or string-matching error messages.
 from __future__ import annotations
 
 import email.utils
+import json
 import re
 import time
 
 # How providers word a rate limit when they do not use HTTP 429: Open WebUI
 # answers HTTP 400 {"detail": "Rate limit exceeded. Please try again later."}.
 RATE_LIMIT_TEXT = re.compile(r"rate[ _-]?limit|too many requests", re.IGNORECASE)
+
+# A key hash or request id some gateways echo in their error text: noise in a
+# one-line reason, and nothing the user can act on.
+_LONG_HEX = re.compile(r"\b[0-9a-fA-F]{32,}\b")
 
 
 class ProviderError(Exception):
@@ -24,6 +29,48 @@ class ProviderError(Exception):
     upstream_status: int | None = None
     # Seconds the provider (or OllaBridge's own limits) asked the client to wait.
     retry_after: float | None = None
+    # The provider's own words for what went wrong, already redacted — what a
+    # settings form shows next to "the server rejected this API key".
+    upstream_detail: str | None = None
+
+
+def upstream_reason(body: str | None, limit: int = 240) -> str | None:
+    """A short, human-readable reason from an upstream error body.
+
+    Providers disagree on the shape: OpenAI and LiteLLM send
+    ``{"error": {"message": ...}}``, Open WebUI ``{"detail": ...}``, watsonx
+    ``{"errors": [{"message": ...}]}`` and IBM IAM ``{"errorMessage": ...}``.
+    Plain text is used as-is; an HTML error page says nothing useful and
+    yields None. The caller redacts the key before passing the body in.
+    """
+    text = (body or "").strip()
+    if not text or text.startswith("<"):
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if data is not None:
+        text = _message_in(data) or ""
+    text = _LONG_HEX.sub("…", " ".join(text.split())).rstrip(" .")
+    if not text:
+        return None
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _message_in(data: object) -> str | None:
+    """The message string inside a decoded error body, if there is one."""
+    if isinstance(data, str):
+        return data
+    if isinstance(data, list):
+        return next((m for m in map(_message_in, data) if m), None)
+    if not isinstance(data, dict):
+        return None
+    for key in ("error", "detail", "errors", "message", "errorMessage"):
+        found = _message_in(data.get(key))
+        if found:
+            return found
+    return None
 
 
 class ProviderUnavailable(ProviderError):

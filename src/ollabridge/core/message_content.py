@@ -9,7 +9,7 @@ OpenAI-style clients send an image as a content part::
 
 The gateway used to flatten every message to its text before routing it, so the image was
 dropped on the floor and a vision model answered as if it had been sent text alone — asked
-for the colour of a red square, ``internal-gemma4-31b`` replied "NO IMAGE". These helpers let
+for the colour of a red square, ``gemma-3-27b`` replied "NO IMAGE". These helpers let
 each route keep what it can carry: the OpenAI shape for OpenAI-compatible upstreams, Ollama's
 ``images`` field for Ollama, Gemini's ``inline_data`` for Gemini.
 

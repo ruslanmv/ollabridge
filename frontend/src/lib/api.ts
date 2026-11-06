@@ -2,17 +2,32 @@
 
 const BASE = ''
 
+/** A non-2xx answer from the gateway. `message` keeps the full
+ * "METHOD path: status — detail" form for logs and toasts; `status` and
+ * `detail` let a UI show a short summary and keep the rest one click away. */
+export class ApiError extends Error {
+  readonly status: number
+  readonly detail: string
+
+  constructor(method: string, path: string, status: number, detail: string) {
+    super(`${method} ${path}: ${status}${detail ? ` — ${detail}` : ''}`)
+    this.name = 'ApiError'
+    this.status = status
+    this.detail = detail
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, init)
   if (!res.ok) {
     let detail = ''
     try {
       const data = await res.json()
-      detail = data?.detail ? ` — ${typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)}` : ''
+      detail = data?.detail ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : ''
     } catch {
       // ignore
     }
-    throw new Error(`${init?.method || 'GET'} ${path}: ${res.status}${detail}`)
+    throw new ApiError(init?.method || 'GET', path, res.status, detail)
   }
   return res.json()
 }
@@ -583,6 +598,11 @@ export type SourceExtraField = {
   env_var: string
   placeholder: string
   help: string
+  /** How the form edits it: a plain input, or the name/value header editor
+   * (stored as one `Name: value` per line). */
+  widget?: 'text' | 'headers'
+  /** Optional and rarely needed: kept behind a collapsed disclosure. */
+  advanced?: boolean
   /** Resolved current value (own value, else the env_var fallback). */
   value: string
 }

@@ -175,18 +175,24 @@ export function useSources() {
   })
 }
 
+/** Prefix of every {@link useSourceModels} query for one source. */
+const sourceModelsKey = (name: string | null) => ['sourceModels', name] as const
+
 export function useUpsertSource() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ name, body }: { name: string; body: SourceUpsertBody }) =>
       api.upsertSource(name, body),
-    onSuccess: () => {
+    onSuccess: (_res, { name }) => {
       // Enabling/disabling a source or changing its default model changes
       // what Models & Access lists and what the cloud manifest publishes,
       // so the "Shared with Cloud" chips must not wait for the next poll.
       qc.invalidateQueries({ queryKey: SOURCES_KEY })
       qc.invalidateQueries({ queryKey: MODEL_ACCESS_KEY })
       qc.invalidateQueries({ queryKey: CLOUD_MANIFEST_KEY })
+      // A new key, URL or header set reaches a different catalog; without
+      // this the picker keeps showing the list (or the 401) of the old one.
+      qc.invalidateQueries({ queryKey: sourceModelsKey(name) })
     },
   })
 }
@@ -205,7 +211,7 @@ export function useSourceModels(
 ) {
   const { enabled = true, filters } = options
   return useQuery({
-    queryKey: ['sourceModels', name, filters ?? {}] as const,
+    queryKey: [...sourceModelsKey(name), filters ?? {}] as const,
     queryFn: () => api.getSourceModels(name as string, filters),
     enabled: Boolean(name) && enabled,
     staleTime: 60_000,
@@ -217,7 +223,12 @@ export function useTestSource() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (name: string) => api.testSource(name),
-    onSuccess: () => qc.invalidateQueries({ queryKey: SOURCES_KEY }),
+    // A test is how the user asks "does it work now?" — answer it for the
+    // model list too, rather than leaving a cached failure on screen.
+    onSuccess: (_res, name) => {
+      qc.invalidateQueries({ queryKey: SOURCES_KEY })
+      qc.invalidateQueries({ queryKey: sourceModelsKey(name) })
+    },
   })
 }
 

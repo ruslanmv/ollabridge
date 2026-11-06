@@ -37,17 +37,27 @@ all of them. Only the hints and the required fields differ.
 | **Sharing** | `Private` / `Account` / `Workspace` / `Org` | Who may see this source's models once published. Start with `Private`. |
 | **Allow routing** | Checkbox, off by default | When on, routing profiles may pick this source. For most non-discovery providers this switch is also what registers the source as a runtime, see §3. |
 
-The primary button is **Connect and discover** (providers that can list their
-models) or **Save & Test**. Saving always probes the provider's model-list
-endpoint with your key: it validates the key and reachability and costs no
-tokens. The result is stamped on the card as **Connected** or an exact error.
+The form has two buttons, used in that order:
+
+1. **Save** (**Connect and discover** when adding a provider that can list its
+   models) stores the settings. They are kept even when the connection check
+   that runs with the save fails — the dialog says so and shows why.
+2. **Test connection** re-checks the *saved* settings and reloads the model
+   list from them. It is greyed out until there is a saved key and while the
+   form has unsaved edits, so it never tests something other than what is
+   stored: save first, then test.
+
+The check probes the provider's model-list endpoint with your key: it
+validates the key and reachability and costs no tokens. The result is
+stamped on the card as **Connected** or an exact error, including the
+provider's own reason when it gives one.
 
 ### Status badges
 
 | Badge | Meaning |
 |---|---|
 | **Connected** | Key present, last test passed, required config present, source enabled. |
-| **Error** | Last test failed (`key rejected (HTTP 401)`, timeout, …). Fix the key or URL and save again. |
+| **Error** | Last test failed (`key rejected (HTTP 401)`, timeout, …). Fix the key or URL, save, then **Test connection**. |
 | **Missing key** / **Missing config** | No key stored, or a required extra field (e.g. watsonx Project ID) is empty. |
 | **Disabled** | You switched the source off. Its models are not served. |
 
@@ -96,18 +106,35 @@ any internal gateway that speaks `/v1/chat/completions`.
 3. **API key**: the gateway's key.
 4. **Base URL**: the OpenAI root *including* `/v1`, e.g. `https://inference.example.com/v1`.
    The test probes `<base>/models`, so `https://inference.example.com/v1/models` must answer.
-5. **Default model**: the exact model id the gateway serves, e.g. `Gemma-4-31B`. **Required**: this is the model OllaBridge exposes for the source.
-6. **Storage mode**: `Local only`. Click **Save & Test**.
-7. Tick **Allow routing** and keep the source **Enabled**. For this kind the source is registered as a runtime only when it is enabled, has a key, has a default model **and** routing is on. With routing off it shows **Connected** but serves nothing.
+5. **Custom headers** (optional — skip unless the gateway asks for them): open
+   the collapsed **Custom headers** section under the Server URL and add one
+   row per header, e.g. `x-client-app-id` → `ollabridge`. To copy a list from
+   the gateway's docs, paste the whole block into a **Name** cell: `Name: value`
+   lines and the JSON form (`"Name": "value",`) both split into rows.
+   **Edit as text** switches to one `Name: value` per line. When collapsed,
+   the section shows how many headers are set.
+   They go out with the key probe, model discovery and every chat request.
+   They are stored in plain text in `providers.yaml`, so OllaBridge refuses
+   `Authorization`, `x-api-key` and the other headers it sets itself — the key
+   belongs in the **API key** field, where it is encrypted.
+6. **Default model**: the exact model id the gateway serves, e.g. `Gemma-4-31B`. **Required**: this is the model OllaBridge exposes for the source.
+7. **Storage mode**: `Local only`. Click **Save**, then **Test connection**.
+8. Tick **Allow routing** and keep the source **Enabled**. For this kind the source is registered as a runtime only when it is enabled, has a key, has a default model **and** routing is on. With routing off it shows **Connected** but serves nothing.
 
 Clients then call the model by its plain id (`Gemma-4-31B`); it appears in
 `/v1/models` with `owned_by` set to the display name.
+
+If the model list says *the server rejected this API key*, the gateway's own
+reason follows it. From a LiteLLM gateway, `Unable to find token in cache or
+LiteLLM_VerificationTokenTable` means the gateway has no record of that key
+(revoked, regenerated, or issued by another gateway): ask its operator for a
+new one. No header or URL change fixes that.
 
 ### 2.3 OpenAI
 
 1. Create a key at platform.openai.com → **API keys** (`sk-…`).
 2. **Add Source → OpenAI**. Base URL is pre-filled (`https://api.openai.com/v1`).
-3. **Default model**: e.g. `gpt-4o-mini`. **Save & Test**.
+3. **Default model**: e.g. `gpt-4o-mini`. **Save**, then **Test connection**.
 4. Tick **Allow routing** to serve the model through the gateway (same rule as §2.2).
 
 ### 2.4 Google Gemini
@@ -149,7 +176,7 @@ further switch.
 ### 2.9 Mistral, Together AI, Fireworks AI
 
 All three are plain OpenAI-compatible hosted APIs. Add the source, paste the
-key, keep the pre-filled base URL, type a default model, **Save & Test**, then
+key, keep the pre-filled base URL, type a default model, **Save** and **Test connection**, then
 tick **Allow routing** (rule from §2.2).
 
 | Provider | Base URL (pre-filled) | Default model example |
@@ -162,7 +189,7 @@ tick **Allow routing** (rule from §2.2).
 
 1. In the Azure portal copy a key from your Azure OpenAI resource.
 2. **Add Source → Azure OpenAI**. **Base URL is required**: `https://<resource>.openai.azure.com`.
-3. **Default model**: your *deployment* name. **Save & Test**.
+3. **Default model**: your *deployment* name. **Save**, then **Test connection**.
 
 Serving goes through the generic OpenAI-compatible adapter, so it works where
 the resource exposes an OpenAI-compatible `/v1` surface; otherwise the source
@@ -278,7 +305,7 @@ need it, and `"extra": {"project_id": "…"}` for watsonx.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `key rejected (HTTP 401)` on save | Wrong or expired key, or the Open WebUI admin has API keys disabled for your role | Create a new key; ask the admin to enable API keys. |
+| `key rejected (HTTP 401)` on save or test | Wrong or expired key, or the Open WebUI admin has API keys disabled for your role | Create a new key; ask the admin to enable API keys. |
 | `base_url is required for this source` | Open WebUI, Generic or Azure saved without a URL | Enter the API root (§2.1, §2.2, §2.10). |
 | **Connected** but chat returns `no compatible chat endpoint (404 …)` | Base URL points at the wrong root | Open WebUI: use `https://<host>/api`. Generic: include `/v1`. |
 | **Connected** but the model is missing from `/v1/models` | Generic / OpenAI / Mistral / … source with **Allow routing** off or no default model | Tick **Allow routing** and set a default model (§3). |

@@ -39,6 +39,7 @@ from ollabridge.addons.providers.errors import (
     ProviderQuotaExceeded,
     ProviderTimeout,
     ProviderUnavailable,
+    upstream_reason,
 )
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,7 @@ class WatsonxAdapter(BaseProviderAdapter):
         else:
             exc = ProviderUnavailable(f"HTTP {status}: {detail}")
         exc.upstream_status = status
+        exc.upstream_detail = upstream_reason(self._redact(body or ""))
         return exc
 
     # ── IAM token handling ──────────────────────────────────────────

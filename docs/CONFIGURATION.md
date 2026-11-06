@@ -97,7 +97,7 @@ open one component, for example `--log-level http=debug` for every request.
 08:36:33.412  INFO   gateway    Starting gateway  bind=0.0.0.0:11435 auth=local-trust model=deepseek-r1 workers=1
 08:36:33.580  INFO   gateway    Ready in 0.9s  url=http://localhost:11435 bind=0.0.0.0:11435
 11:24:20.090  WARN   http       GET /v1/models 401 0.00s: no API key sent (local-trust exempts loopback clients only); repeats from this client are counted and summarised every 10m  client=172.19.0.14
-11:29:24.715  INFO   http       POST /v1/chat/completions 200 2.63s  req=40c4fb35 model=openwebui/internal-qwen3-8-27b route=openwebui tokens=42 client=172.19.0.14
+11:29:24.715  INFO   http       POST /v1/chat/completions 200 2.63s  req=40c4fb35 model=openwebui/qwen3-32b route=openwebui tokens=42 client=172.19.0.14
 ```
 
 For containers and log shippers, set `OLLABRIDGE_LOG_FORMAT=json`. Each line

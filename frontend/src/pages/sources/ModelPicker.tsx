@@ -1,7 +1,32 @@
 import { useMemo, useState } from 'react'
 import { Loader2, RefreshCw, Search, Sparkles, Check, AlertCircle } from 'lucide-react'
-import type { SourceModel } from '../../lib/api'
+import { ApiError, type SourceModel } from '../../lib/api'
 import { useSourceModels } from '../../lib/hooks'
+import { MoreDetails } from './ui'
+
+/** One plain sentence for why the catalog could not be listed. The status
+ * codes are the Sources API's own mapping of the upstream's answer. */
+function listingFailure(error: unknown): string {
+  if (!(error instanceof ApiError)) return 'Could not reach OllaBridge to list models.'
+  switch (error.status) {
+    case 401:
+      return 'The provider rejected this API key.'
+    case 429:
+      return 'The provider is rate limiting this key or it is out of quota.'
+    case 502:
+      return 'Could not reach the provider to list its models.'
+    case 422:
+      return error.detail ? `${error.detail[0].toUpperCase()}${error.detail.slice(1)}.` : 'This source is not fully configured.'
+    default:
+      return 'Could not list models.'
+  }
+}
+
+/** The full story behind {@link listingFailure}: the provider's own words. */
+function errorDetail(error: unknown): string {
+  if (error instanceof ApiError) return error.detail || error.message
+  return error instanceof Error ? error.message : String(error)
+}
 
 /**
  * The source's live model catalog, rendered as a picker for its default model.
@@ -119,9 +144,9 @@ export function ModelPicker({
       ) : query.isError ? (
         <div className="flex items-start gap-2 px-3 py-3 text-xs text-amber-300/90">
           <AlertCircle size={13} className="shrink-0 mt-0.5" />
-          <span>
-            Could not list models — {(query.error as Error).message}. You can still
-            type a model id above.
+          <span className="min-w-0">
+            {listingFailure(query.error)} You can still type a model id above.
+            <MoreDetails text={errorDetail(query.error)} />
           </span>
         </div>
       ) : models.length === 0 ? (

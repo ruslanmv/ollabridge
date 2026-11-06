@@ -9,6 +9,7 @@ import datetime as dt
 
 import httpx
 
+from ollabridge.addons.providers.errors import upstream_reason
 from ollabridge.core.redact import redact_text
 from ollabridge.providers_meta import (
     PROVIDER_CATALOG,
@@ -17,6 +18,7 @@ from ollabridge.providers_meta import (
     get_record,
     load_providers,
     missing_extras,
+    request_headers,
     secret_key_for,
     upsert_record,
 )
@@ -139,7 +141,13 @@ def test_provider(name: str, *, store=None, timeout: float = 10.0) -> tuple[bool
         headers = {"Authorization": f"Bearer {key}"}
     else:
         url = f"{base}{spec.models_path}"
-        headers = {"Authorization": f"Bearer {key}"}
+        # Same request the adapter sends: a provider that wants identity
+        # headers may refuse a probe without them.
+        try:
+            extra = request_headers(rec) if rec else {}
+        except ValueError:
+            extra = {}
+        headers = {**extra, "Authorization": f"Bearer {key}"}
 
     try:
         r = httpx.get(url, headers=headers, timeout=timeout)
@@ -162,7 +170,11 @@ def test_provider(name: str, *, store=None, timeout: float = 10.0) -> tuple[bool
         else:
             outcome = True, f"key valid, {base} reachable"
     elif r.status_code in (401, 403):
-        outcome = False, f"key rejected (HTTP {r.status_code})"
+        # The provider's own words tell a revoked key from a mistyped one.
+        reason = upstream_reason(redact_text(r.text.replace(key, "(redacted)")))
+        outcome = False, f"key rejected (HTTP {r.status_code})" + (
+            f": {reason}" if reason else ""
+        )
     elif r.status_code == 429:
         outcome = False, "rate limited / quota exhausted (HTTP 429)"
     elif r.status_code == 402:

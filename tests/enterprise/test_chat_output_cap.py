@@ -76,7 +76,7 @@ def test_open_webui_gets_the_cap_a_langchain_client_sends(app_client):
     router = FakeProviderRouter()
     app.state.provider_router = router
     r = client.post("/v1/chat/completions", headers=AUTH,
-                    json={"model": "openwebui/internal-gemma4-31b", "messages": HI, "max_completion_tokens": 20})
+                    json={"model": "openwebui/gemma-3-27b", "messages": HI, "max_completion_tokens": 20})
     assert r.status_code == 200, r.text
     assert router.kwargs["max_tokens"] == 20
 
@@ -85,7 +85,7 @@ def test_an_uncapped_provider_request_is_unchanged(app_client):
     app, client = app_client
     router = FakeProviderRouter()
     app.state.provider_router = router
-    r = client.post("/v1/chat/completions", headers=AUTH, json={"model": "openwebui/internal-gemma4-31b", "messages": HI})
+    r = client.post("/v1/chat/completions", headers=AUTH, json={"model": "openwebui/gemma-3-27b", "messages": HI})
     assert r.status_code == 200, r.text
     assert router.kwargs["max_tokens"] is None
 

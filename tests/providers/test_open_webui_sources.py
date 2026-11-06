@@ -85,10 +85,10 @@ def _openwebui_0_11_catalog():
                "image_generation": True, "code_interpreter": True,
                "citations": True, "usage": False, "builtin_tools": True}
     return {"data": [
-        _plain("internal-gemma4-31b", allowed),
-        _plain("internal-gpt-oss-120b", allowed),
-        _plain("internal-qwen3-8-27b", None),
-        _plain("internal-muse-glimmer-30b", None),
+        _plain("gemma-3-27b", allowed),
+        _plain("gpt-oss-120b", allowed),
+        _plain("qwen3-32b", None),
+        _plain("mistral-small-24b", None),
     ]}
 
 
@@ -105,8 +105,8 @@ def test_image_generation_flag_keeps_models_eligible_as_chat_defaults(patch_upst
     assert summary["persona_compatible"] == 4  # none of them is an image pipe
     # Exactly the filter default_model_for applies: every entry stays eligible.
     eligible = [m["upstream_model_id"] for m in models if m.get("category", "chat") == "chat"]
-    assert eligible == ["internal-gemma4-31b", "internal-gpt-oss-120b",
-                        "internal-qwen3-8-27b", "internal-muse-glimmer-30b"]
+    assert eligible == ["gemma-3-27b", "gpt-oss-120b",
+                        "qwen3-32b", "mistral-small-24b"]
 
 
 # --- registry sync makes the source servable ---------------------------------

@@ -65,3 +65,14 @@ export function isSharedWithCloud(
   if (record) return record.enabled && record.visible_cloud
   return source.allow_routing
 }
+
+/**
+ * Split a probe result such as "key rejected (HTTP 401): <provider's words>"
+ * (provider_ops.test_provider) into the short verdict and the provider's
+ * reason, so a form can lead with the verdict and keep the long reason one
+ * click away.
+ */
+export function splitProbeDetail(detail: string): { summary: string; reason: string | null } {
+  const m = /^(.*?\(HTTP \d{3}\)): ([\s\S]+)$/.exec(detail)
+  return m ? { summary: m[1], reason: m[2] } : { summary: detail, reason: null }
+}

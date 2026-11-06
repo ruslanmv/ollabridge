@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ollabridge-ui-check",
+      "runtimeExecutable": "C:/Users/ruslan.vsevolodovn/AppData/Local/Temp/claude/C--workspace-ollabridge/8ae5fbae-91e0-4703-9f17-dfcaa2ca70ff/scratchpad/winvenv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-X",
+        "utf8",
+        "C:/Users/ruslan.vsevolodovn/AppData/Local/Temp/claude/C--workspace-ollabridge/8ae5fbae-91e0-4703-9f17-dfcaa2ca70ff/scratchpad/run_gateway.py"
+      ],
+      "port": 11499,
+      "url": "http://127.0.0.1:11499"
+    }
+  ]
+}

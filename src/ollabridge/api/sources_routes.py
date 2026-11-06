@@ -28,16 +28,19 @@ from ollabridge.addons.providers.model_defaults import suggested_models
 from ollabridge.core.redact import redact_secret
 from ollabridge.core.security import require_api_key
 from ollabridge.providers_meta import (
+    HEADERS_FIELD,
     PROVIDER_CATALOG,
     STORAGE_MODES,
     ProviderRecord,
     apply_extras,
     extra_fields_for,
+    format_header_lines,
     get_record,
     get_extra,
     load_providers,
     missing_extras,
     remove_record,
+    request_headers,
     upsert_record,
 )
 
@@ -208,6 +211,14 @@ async def upsert_source(
 
     if body.extra is not None:
         apply_extras(rec, body.extra)
+        try:
+            headers = request_headers(rec)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        # Keep them as they will be sent, so a pasted JSON block reads back
+        # as the plain lines it was understood as.
+        if HEADERS_FIELD in rec.extra:
+            apply_extras(rec, {HEADERS_FIELD: format_header_lines(headers)})
 
     if name in ("azure-openai", "custom", "open_webui") and not rec.base_url:
         raise HTTPException(422, "base_url is required for this source")
@@ -335,12 +346,30 @@ async def _discover_models(name: str) -> tuple[ProviderRecord, list[dict[str, An
         raise HTTPException(422, "base_url is required for this source")
     try:
         return rec, dss.normalize_models(rec, await adapter.list_models())
-    except ProviderAuthError:
-        raise HTTPException(401, "the server rejected this API key")
-    except ProviderQuotaExceeded:
-        raise HTTPException(429, "the provider is rate limiting or out of quota")
+    except ProviderAuthError as exc:
+        raise HTTPException(401, _with_reason("the server rejected this API key", exc, secret))
+    except ProviderQuotaExceeded as exc:
+        raise HTTPException(
+            429, _with_reason("the provider is rate limiting or out of quota", exc, secret)
+        )
     except ProviderError as exc:
-        raise HTTPException(502, f"model discovery failed: {type(exc).__name__}")
+        raise HTTPException(
+            502, _with_reason(f"model discovery failed: {type(exc).__name__}", exc, secret)
+        )
+
+
+def _with_reason(message: str, exc: Exception, secret: str) -> str:
+    """``message`` plus the upstream's own reason, when the adapter kept one.
+
+    "The server rejected this API key" alone cannot tell a revoked key from
+    one issued by a different server; the provider's words usually can. The
+    adapter has already redacted the key — it is stripped again here, so a
+    detail that reaches the browser can never carry it.
+    """
+    reason = getattr(exc, "upstream_detail", None)
+    if not reason:
+        return message
+    return f"{message}: {reason.replace(secret, '(redacted)')}"
 
 
 @router.get("/{name}/models")

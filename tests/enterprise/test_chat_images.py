@@ -138,7 +138,7 @@ def test_open_webui_and_other_providers_get_the_content_parts(app_client):
     router = FakeProviderRouter()
     app.state.provider_router = router
     r = client.post("/v1/chat/completions", headers=AUTH,
-                    json={"model": "openwebui/internal-gemma4-31b", "messages": [IMAGE_MESSAGE]})
+                    json={"model": "openwebui/gemma-3-27b", "messages": [IMAGE_MESSAGE]})
     assert r.status_code == 200, r.text
     assert r.json()["choices"][0]["message"]["content"] == "red"
     assert router.messages == [IMAGE_MESSAGE]
@@ -195,7 +195,7 @@ def test_a_cloud_relayed_image_reaches_open_webui(app_client):
     router = FakeProviderRouter()
     app.state.provider_router = router
     r = client.post("/v1/chat/completions", headers={**AUTH, "X-OllaBridge-Relay": "1"},
-                    json={"model": "openwebui/internal-gemma4-31b", "messages": [CLOUD_SHAPED]})
+                    json={"model": "openwebui/gemma-3-27b", "messages": [CLOUD_SHAPED]})
     assert r.status_code == 200, r.text
     assert router.messages == [IMAGE_MESSAGE]
 

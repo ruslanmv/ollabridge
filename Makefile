@@ -608,7 +608,10 @@ ui-build: ## Build frontend for production (output: frontend/dist/)
 		(cd frontend && $(NODE_PM) install); \
 	fi; \
 	echo "$(COLOR_BOLD)$(COLOR_GREEN)Building frontend for production...$(COLOR_RESET)"; \
-	cd frontend && $(NODE_PM) run build; \
+	if ! (cd frontend && $(NODE_PM) run build); then \
+		echo "$(COLOR_BOLD)$(COLOR_YELLOW)✗ Frontend build failed — fix the errors above. frontend/dist/ still holds the previous build.$(COLOR_RESET)"; \
+		exit 1; \
+	fi; \
 	echo "$(COLOR_GREEN)✓ Frontend built → frontend/dist/$(COLOR_RESET)"; \
 	echo "$(COLOR_CYAN)Served at /ui when OllaBridge is running$(COLOR_RESET)"
 

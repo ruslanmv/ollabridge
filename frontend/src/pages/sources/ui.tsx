@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import {
   CheckCircle2,
@@ -132,6 +132,30 @@ export function ModelPill({ label, source }: { label: string; source?: string })
       {source ? (
         <span className="text-[10px] text-white/40 border-l border-white/10 pl-1.5">{source}</span>
       ) : null}
+    </span>
+  )
+}
+
+// ── Long provider messages ───────────────────────────────────────
+
+/** A "Details" toggle for text too long to lead with — provider error bodies. */
+export function MoreDetails({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="block mt-1">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="text-[11px] underline underline-offset-2 opacity-75 hover:opacity-100"
+      >
+        {open ? 'Hide details' : 'Details'}
+      </button>
+      {open && (
+        <span className="block mt-1 font-mono text-[11px] break-words whitespace-pre-wrap opacity-90">
+          {text}
+        </span>
+      )}
     </span>
   )
 }

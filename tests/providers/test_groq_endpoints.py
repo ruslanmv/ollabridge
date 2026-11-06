@@ -20,6 +20,7 @@ from ollabridge.addons.providers.errors import (
     ProviderAuthError,
     ProviderBadRequest,
     ProviderQuotaExceeded,
+    upstream_reason,
 )
 
 
@@ -115,6 +116,52 @@ async def test_errors_never_leak_the_api_key(monkeypatch):
     with pytest.raises(ProviderBadRequest) as exc:
         await adapter.chat("openai/gpt-oss-20b", [{"role": "user", "content": "hi"}])
     assert "gsk_test" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_auth_error_keeps_the_upstream_reason_redacted(monkeypatch):
+    """A LiteLLM-style gateway says *why* it refused the key; that reason is
+    kept for the settings form, without the key or the hash it echoes."""
+    body = {
+        "error": {
+            "message": "Authentication Error, Invalid proxy server token passed. "
+            "Received API Key = gsk_test, Key Hash (Token) =" + "4f12" * 16
+            + ". Unable to find token in cache",
+            "type": "token_not_found_in_db",
+        }
+    }
+    adapter = _adapter_against(monkeypatch, lambda _r: httpx.Response(401, json=body))
+    with pytest.raises(ProviderAuthError) as exc:
+        await adapter.list_models()
+    detail = exc.value.upstream_detail
+    assert detail.startswith("Authentication Error, Invalid proxy server token passed")
+    assert "Unable to find token in cache" in detail
+    assert "gsk_test" not in detail
+    assert "4f12" * 16 not in detail
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        ('{"error": {"message": "Incorrect API key."}}', "Incorrect API key"),
+        ('{"error": "invalid token"}', "invalid token"),
+        ('{"detail": "Not authenticated"}', "Not authenticated"),
+        ('{"errors": [{"code": "x", "message": "Token expired"}]}', "Token expired"),
+        ('{"errorMessage": "Provided API key could not be found."}',
+         "Provided API key could not be found"),
+        ("Unauthorized\n", "Unauthorized"),
+        ("<html><body>401</body></html>", None),
+        ('{"code": 401}', None),
+        ("", None),
+    ],
+)
+def test_upstream_reason_reads_each_provider_shape(body, expected):
+    assert upstream_reason(body) == expected
+
+
+def test_upstream_reason_is_bounded():
+    reason = upstream_reason("word " * 200)
+    assert len(reason) <= 240 and reason.endswith("…")
 
 
 @pytest.mark.asyncio

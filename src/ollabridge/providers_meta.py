@@ -23,7 +23,9 @@ local and record the *intent* — nothing is uploaded silently.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
+import re
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -36,6 +38,9 @@ from ollabridge.addons.providers.adapters.watsonx import (
 from ollabridge.core import paths
 
 StorageMode = Literal["local_only", "cloud_encrypted_vault", "organization_vault"]
+
+#: Extra field holding a source's additional request headers, one per line.
+HEADERS_FIELD = "headers"
 
 STORAGE_MODES: tuple[StorageMode, ...] = (
     "local_only",
@@ -60,6 +65,12 @@ class ExtraField(BaseModel):
     env_var: str = ""
     placeholder: str = ""
     help: str = ""
+    # How the form edits the value. "headers" is a name/value row editor
+    # whose value is stored as one ``Name: value`` per line.
+    widget: Literal["text", "headers"] = "text"
+    # Optional settings most sources never need: the form keeps them behind
+    # a disclosure, collapsed until the user opens it.
+    advanced: bool = False
 
 
 class ProviderSpec(BaseModel):
@@ -203,6 +214,18 @@ PROVIDER_CATALOG: dict[str, ProviderSpec] = {
             env_var="CUSTOM_LLM_API_KEY",
             base_url="",
             notes="set base_url to any OpenAI-compatible endpoint",
+            extra_fields=[
+                ExtraField(
+                    name=HEADERS_FIELD,
+                    label="Custom headers",
+                    widget="headers",
+                    advanced=True,
+                    placeholder="x-client-app-id: ollabridge\nx-user: you@example.com",
+                    help="Sent with every request, for identity or attribution "
+                    "headers the provider asks for. Stored in plain text — never "
+                    "put a key or token here.",
+                ),
+            ],
         ),
         ProviderSpec(
             name="open_webui",
@@ -344,6 +367,103 @@ def missing_extras(rec: ProviderRecord) -> list[str]:
         for spec in extra_fields_for(rec.kind or rec.name)
         if spec.required and not get_extra(rec, spec.name)
     ]
+
+
+# RFC 9110 field-name token characters.
+_HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+
+# Headers OllaBridge sets itself. A credential typed here would sit in
+# providers.yaml in plain text, so the key field is the only way to send one.
+_RESERVED_HEADERS = frozenset(
+    {
+        "authorization",
+        "proxy-authorization",
+        "x-api-key",
+        "api-key",
+        "cookie",
+        "content-type",
+        "content-length",
+        "host",
+        "transfer-encoding",
+        "connection",
+    }
+)
+
+
+def parse_header_lines(text: str | None) -> dict[str, str]:
+    """``Name: value`` lines → a header dict. Raises ValueError on a bad line.
+
+    Provider docs often print the headers as JSON instead — ``"Name": "value",``
+    lines, or a whole ``{...}`` object — and that is what gets pasted, so the
+    quotes, trailing commas and braces are accepted too. Blank lines and ``#``
+    comments are skipped. A later line for the same name (case-insensitively)
+    replaces an earlier one, as in an HTTP client.
+    """
+    headers: dict[str, str] = {}
+    for number, name, value in _header_entries(text):
+        if not _HEADER_NAME.match(name):
+            raise ValueError(
+                f"header line {number} must look like 'Name: value'; "
+                f"{name[:60]!r} is not a header name"
+            )
+        if name.lower() in _RESERVED_HEADERS:
+            raise ValueError(
+                f"header {name!r} cannot be set here; "
+                "OllaBridge sets it (put an API key in the key field)"
+            )
+        if any(c in value for c in "\r\n\0"):
+            raise ValueError(f"header {name!r} has a line break in its value")
+        for existing in [k for k in headers if k.lower() == name.lower()]:
+            headers.pop(existing)
+        headers[name] = value
+    return headers
+
+
+def format_header_lines(headers: dict[str, str]) -> str:
+    """The canonical ``Name: value`` text for *headers* — what gets stored."""
+    return "\n".join(f"{name}: {value}" for name, value in headers.items())
+
+
+def _header_entries(text: str | None) -> list[tuple[int, str, str]]:
+    """``(line number, name, value)`` for each header in *text*."""
+    body = (text or "").strip()
+    if body.startswith("{") and body.endswith("}"):
+        try:
+            data = json.loads(body)
+        except ValueError:
+            data = None  # not one JSON object; read it line by line below
+        if isinstance(data, dict):
+            return [
+                (number, str(k).strip(), "" if v is None else str(v).strip())
+                for number, (k, v) in enumerate(data.items(), start=1)
+            ]
+    entries: list[tuple[int, str, str]] = []
+    for number, raw in enumerate(body.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#") or line in ("{", "}", "},"):
+            continue
+        name, sep, value = line.partition(":")
+        name, value = name.strip(), value.strip()
+        if _is_quoted(name):  # JSON style: "Name": "value",
+            name = name[1:-1].strip()
+            value = value.removesuffix(",").strip()
+            if _is_quoted(value):
+                value = value[1:-1]
+        if not sep or not name:
+            raise ValueError(
+                f"header line {number} must look like 'Name: value', got {line[:60]!r}"
+            )
+        entries.append((number, name, value))
+    return entries
+
+
+def _is_quoted(text: str) -> bool:
+    return len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'"
+
+
+def request_headers(rec: ProviderRecord) -> dict[str, str]:
+    """The extra headers this source sends with every upstream request."""
+    return parse_header_lines(get_extra(rec, HEADERS_FIELD))
 
 
 def apply_extras(rec: ProviderRecord, values: dict[str, str]) -> list[str]:
