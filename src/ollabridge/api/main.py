@@ -150,6 +150,10 @@ class ChatReq(BaseModel):
     # Optional. When absent, the request follows exactly the pre-existing path.
     tools: list[dict[str, Any]] | None = None
     tool_choice: Any | None = None
+    # OpenAI's ``stream``. It used to be dropped on arrival, so a client that asked for a stream got one
+    # plain JSON object back and waited for chunks that never came (Open WebUI's tool loop always streams).
+    # The upstream call is unchanged; a streaming caller gets the finished answer as SSE chunks.
+    stream: bool | None = None
 
     @model_validator(mode="after")
     def _fold_max_completion_tokens(self) -> "ChatReq":
@@ -162,6 +166,31 @@ class ChatReq(BaseModel):
 def _ollama_options(req: ChatReq) -> dict[str, Any] | None:
     """Ollama's spelling of the output cap, ``num_predict``; None (nothing sent) when uncapped."""
     return {"num_predict": req.max_tokens} if req.max_tokens is not None else None
+
+
+def _sse_chunks(result: dict[str, Any]) -> list[str]:
+    """A finished chat completion in OpenAI's streaming wire format.
+
+    Three events: the assistant's delta (its content and/or its ``tool_calls``, each with the ``index``
+    streaming clients key on), a final delta carrying ``finish_reason``, then ``data: [DONE]``. Extra
+    top-level keys of the result (``x_attachments`` and the like) ride on the first chunk.
+    """
+    choice = (result.get("choices") or [{}])[0]
+    message = choice.get("message") or {}
+    base = {"id": result.get("id", "ollabridge-chat"), "object": "chat.completion.chunk",
+            "created": result.get("created", int(time.time())), "model": result.get("model", "")}
+    delta: dict[str, Any] = {"role": "assistant"}
+    if message.get("content"):
+        delta["content"] = message["content"]
+    if message.get("tool_calls"):
+        delta["tool_calls"] = [{"index": i, **tc} for i, tc in enumerate(message["tool_calls"])]
+    first = {**base, **{k: v for k, v in result.items() if k.startswith("x_")},
+             "choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
+    last = {**base, "choices": [{"index": 0, "delta": {},
+                                 "finish_reason": choice.get("finish_reason") or "stop"}]}
+    return [f"data: {json.dumps(first, ensure_ascii=False)}\n\n",
+            f"data: {json.dumps(last, ensure_ascii=False)}\n\n",
+            "data: [DONE]\n\n"]
 
 
 def _content_to_text(content: str | list[dict[str, Any]] | None) -> str:
@@ -1514,6 +1543,10 @@ def create_app() -> FastAPI:
             result: dict[str, Any] = {
                 "id": "ollabridge-chat",
                 "object": "chat.completion",
+                # The OpenAI fields clients read back: without ``model`` Open WebUI's title task
+                # failed (KeyError: 'model') on every chat.
+                "created": int(t0),
+                "model": model,
                 "choices": [choice],
             }
 
@@ -1545,6 +1578,13 @@ def create_app() -> FastAPI:
             if upstream_directives:
                 result["x_avatar_directives"] = upstream_directives
 
+            if req.stream:
+                from fastapi.responses import StreamingResponse
+
+                return StreamingResponse(  # type: ignore[return-value]
+                    iter(_sse_chunks(result)), media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                )
             return result
 
         except Exception as e:

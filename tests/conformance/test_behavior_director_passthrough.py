@@ -223,19 +223,30 @@ class TestChunkingDoesNotBreakReassembly:
         assert tags(accumulated) == tags(reply)
 
     def test_this_bridge_does_not_re_chunk_at_all_on_the_chat_path(self):
-        """The strongest available answer, and it is structural: `/v1/chat/completions`
-        here is unary. It builds one response body from one upstream reply, so there is no
-        chunk boundary for it to move. A streaming path added later would need this suite
-        extended, which is what this test is for."""
+        """`/v1/chat/completions` builds one response body from one upstream reply. Since
+        2026-11-09 a caller that sends `stream: true` gets that same body as SSE (`_sse_chunks`):
+        the whole reply in ONE content delta, so there is still no chunk boundary for the bridge
+        to move. This is the extension the earlier structural check asked for: the streamed
+        deltas must reassemble to the reply exactly, tags included, and the chat path must not
+        stream any other way."""
         import inspect
+        import json
 
         from ollabridge.api import main
 
-        source = inspect.getsource(main.chat_completions) if hasattr(main, "chat_completions") else ""
-        if not source:
-            # `chat_completions` is defined inside the app factory; read the module instead
-            # and assert on the shape of the route rather than the closure.
-            source = inspect.getsource(main)
-        assert "StreamingResponse" not in source, (
-            "a streaming chat path was added — extend this suite before trusting it with tags"
+        source = inspect.getsource(main)
+        assert source.count("StreamingResponse(") == 1 and "iter(_sse_chunks(result))" in source, (
+            "a second streaming chat path was added — extend this suite before trusting it with tags"
         )
+        for reply in ALL_REPLIES:
+            result = {"id": "x", "model": "m", "created": 0,
+                      "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}}]}
+            deltas = []
+            for event in main._sse_chunks(result):
+                payload = event[len("data: "):].strip()
+                if payload == "[DONE]":
+                    continue
+                deltas.append(json.loads(payload)["choices"][0]["delta"].get("content", ""))
+            assert "".join(deltas) == reply
+            assert sum(1 for d in deltas if d) <= 1        # one content delta: nothing re-chunked
+            assert tags("".join(deltas)) == tags(reply)

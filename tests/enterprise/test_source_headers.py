@@ -204,6 +204,22 @@ def test_probe_sends_the_headers():
     assert sent["Authorization"] == "Bearer sk-secret"
 
 
+@pytest.mark.parametrize(
+    "failure", [httpx.ConnectError("getaddrinfo failed"), httpx.ReadTimeout("slow")]
+)
+def test_an_unreachable_provider_is_recorded_on_the_source(failure):
+    """Regression: a DNS failure or timeout returned without stamping the
+    source, so its card kept saying "Connected" after a failed test."""
+    set_secret("custom", "sk-secret")
+    upsert_record(_custom_record())
+
+    with patch("httpx.get", side_effect=failure):
+        ok, _detail = probe_provider("custom")
+
+    assert ok is False
+    assert get_record("custom").last_test_ok is False
+
+
 # ── Sources API ─────────────────────────────────────────────
 
 

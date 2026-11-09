@@ -138,9 +138,21 @@ export function ModelPill({ label, source }: { label: string; source?: string })
 
 // ── Long provider messages ───────────────────────────────────────
 
-/** A "Details" toggle for text too long to lead with — provider error bodies. */
-export function MoreDetails({ text }: { text: string }) {
-  const [open, setOpen] = useState(false)
+/** A "Details" toggle for text too long to lead with — provider error bodies.
+ * Pass `open`/`onToggle` when the toggle sits in a subtree that remounts (a
+ * refetch swaps an error for a spinner and back), so the choice survives. */
+export function MoreDetails({
+  text,
+  open: openProp,
+  onToggle,
+}: {
+  text: string
+  open?: boolean
+  onToggle?: (open: boolean) => void
+}) {
+  const [openState, setOpenState] = useState(false)
+  const open = openProp ?? openState
+  const setOpen = (next: boolean) => (onToggle ? onToggle(next) : setOpenState(next))
   return (
     <span className="block mt-1">
       <button

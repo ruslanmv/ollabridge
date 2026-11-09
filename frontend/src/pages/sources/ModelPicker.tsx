@@ -57,6 +57,8 @@ export function ModelPicker({
   // on an empty list behind a filter the user never asked for.
   const [freeOnlyChoice, setFreeOnlyChoice] = useState<boolean | null>(null)
   const query = useSourceModels(name, { enabled })
+  // Held here: a refetch unmounts the error block, which would reset it.
+  const [showErrorDetail, setShowErrorDetail] = useState(false)
 
   const summary = query.data?.summary
   const freeCount = summary?.free ?? 0
@@ -146,7 +148,11 @@ export function ModelPicker({
           <AlertCircle size={13} className="shrink-0 mt-0.5" />
           <span className="min-w-0">
             {listingFailure(query.error)} You can still type a model id above.
-            <MoreDetails text={errorDetail(query.error)} />
+            <MoreDetails
+              text={errorDetail(query.error)}
+              open={showErrorDetail}
+              onToggle={setShowErrorDetail}
+            />
           </span>
         </div>
       ) : models.length === 0 ? (

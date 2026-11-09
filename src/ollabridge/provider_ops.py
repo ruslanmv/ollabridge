@@ -149,12 +149,16 @@ def test_provider(name: str, *, store=None, timeout: float = 10.0) -> tuple[bool
             extra = {}
         headers = {**extra, "Authorization": f"Bearer {key}"}
 
+    # An unreachable provider is a verdict like any other: stamp it, or the
+    # card keeps saying "Connected" from whatever the last answer was.
     try:
         r = httpx.get(url, headers=headers, timeout=timeout)
     except httpx.TimeoutException:
-        return False, f"timeout after {timeout}s reaching {base}"
+        return _record_outcome(rec, (False, f"timeout after {timeout}s reaching {base}"))
     except httpx.HTTPError as exc:
-        return False, redact_text(f"{type(exc).__name__}: {exc}")
+        return _record_outcome(
+            rec, (False, redact_text(f"{type(exc).__name__}: {exc}"))
+        )
 
     outcome: tuple[bool, str]
     if r.status_code == 200:
