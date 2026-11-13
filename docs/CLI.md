@@ -137,6 +137,21 @@ ollabridge test-chat "Explain quantum computing" \
 
 **Use case:** Verify end-to-end connectivity, test API keys, validate model responses.
 
+#### `ollabridge diagnose`
+Measure one chat or MCP endpoint: its fastest answer, the concurrency where
+more calls stop helping, its request limit, and the settings that follow.
+Read-only, under a hard request budget, stopping at the first refusal.
+
+```bash
+ollabridge diagnose chat --model <model> --plan          # what would be sent; sends nothing
+ollabridge diagnose chat --model <model> --client-timeout 60
+ollabridge diagnose mcp --url https://host/mcp --api-key-env MCP_KEY --assume-limit 60
+ollabridge diagnose settings                              # audit the gateway's limits; changes nothing
+```
+
+**Use case:** Sizing parallel agent runs, choosing rate limits, explaining
+429s and timeouts. Details: [ENDPOINT_DIAGNOSIS.md](ENDPOINT_DIAGNOSIS.md).
+
 ### Gateway Management
 
 #### `ollabridge start`

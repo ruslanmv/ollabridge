@@ -43,6 +43,8 @@ _PREFIXES: dict[str, str] = {
     "ollabridge.local_catalog": "catalog",
     "ollabridge.reachability": "runtime",
     "ollabridge.core.reachability": "runtime",
+    "ollabridge.network": "network",
+    "ollabridge.core.connectivity": "network",
     "ollabridge.providers.ollama_client": "runtime",
     "ollabridge.ollama_setup": "runtime",
     # Everything else the gateway talks to

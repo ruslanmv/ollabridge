@@ -1,4 +1,4 @@
-import { HelpCircle } from 'lucide-react'
+import { HelpCircle, WifiOff } from 'lucide-react'
 import { useHealth } from '../lib/hooks'
 import type { Page } from '../App'
 
@@ -16,6 +16,7 @@ const PAGE_TITLES: Record<Page, string> = {
 export function TopHeader({ currentPage }: { currentPage: Page }) {
   const { data: health } = useHealth()
   const isOnline = health?.status === 'ok'
+  const noNetwork = health?.network?.enabled !== false && health?.network?.state === 'offline'
 
   return (
     <header className="h-16 flex items-center justify-between px-5 border-b border-white/5 bg-navy-900/70 backdrop-blur-sm z-10 shrink-0">
@@ -45,6 +46,20 @@ export function TopHeader({ currentPage }: { currentPage: Page }) {
       </div>
 
       <div className="flex items-center gap-3">
+        {noNetwork && (
+          <div
+            className="flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium"
+            title={health?.network?.reason ?? 'No configured remote provider is reachable'}
+            style={{
+              background: 'rgba(245,158,11,0.08)',
+              border: '1px solid rgba(245,158,11,0.3)',
+              color: '#fbbf24',
+            }}
+          >
+            <WifiOff size={14} />
+            No network
+          </div>
+        )}
         {health && (
           <div
             className="flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium"

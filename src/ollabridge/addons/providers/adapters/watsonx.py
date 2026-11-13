@@ -188,7 +188,7 @@ class WatsonxAdapter(BaseProviderAdapter):
     async def _get_json(self, url: str) -> dict:
         token = await self._get_iam_token()
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.http_timeout()) as client:
                 resp = await client.get(url, headers=self._bearer_headers(token))
         except httpx.TimeoutException as exc:
             raise ProviderTimeout(self._redact(f"timeout: {exc}")) from exc
@@ -272,7 +272,7 @@ class WatsonxAdapter(BaseProviderAdapter):
             payload["temperature"] = kwargs["temperature"]
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.http_timeout()) as client:
                 resp = await client.post(
                     self._chat_url(),
                     json=payload,

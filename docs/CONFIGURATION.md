@@ -70,9 +70,26 @@ environment, then `.env`, then the default.
 | `NO_COLOR` / `FORCE_COLOR` | none | none | Standard colour overrides |
 
 Components you can name in a rule: `gateway`, `http`, `server`, `providers`,
-`router`, `secrets`, `hfcatalog`, `catalog`, `runtime`, `cloud`, `relay`,
-`node`, `sources`, `models`, `pairing`, `consumers`, `session`, `media`,
-`traces`, `store`, `avatar`, `mcp`. Any other key is a logger-name prefix.
+`router`, `network`, `secrets`, `hfcatalog`, `catalog`, `runtime`, `cloud`,
+`relay`, `node`, `sources`, `models`, `pairing`, `consumers`, `session`,
+`media`, `traces`, `store`, `avatar`, `mcp`. Any other key is a logger-name
+prefix.
+
+### Network loss
+
+When this machine loses its connection (a tunnel, a train, a Wi-Fi switch, a
+VPN drop), requests for remote models answer within seconds with HTTP 503
+`network_offline` or `connection_lost` and a `Retry-After`, instead of a
+120 s `provider_timeout`; local models keep working, the dashboard shows
+"No network", and the gateway recovers by itself. Design and details:
+[NETWORK_RESILIENCE.md](NETWORK_RESILIENCE.md).
+
+| Variable | Default | Values |
+|---|---|---|
+| `OLLABRIDGE_NETWORK_CHECK` | `on` | `off` disables probes, fail-fast and the stall watchdog |
+| `OLLABRIDGE_NETWORK_PROBE_TARGETS` | the configured remote providers | `host:port,host:port` to probe instead (e.g. a proxy) |
+| `OLLABRIDGE_CONNECT_TIMEOUT_S` | `10` | Seconds to open a connection to a provider |
+| `OLLABRIDGE_STALL_CHECK_AFTER_S` | `15` | Seconds before an unanswered request is checked; `0` disables |
 
 The default level shows real work, problems and changes, and stays quiet
 otherwise:

@@ -156,3 +156,25 @@ class ProviderTimeout(ProviderError):
     """Upstream took too long. Safe to fail-over to another route."""
 
     retryable = True
+
+
+class ProviderNetworkError(ProviderUnavailable):
+    """The provider could not be reached because this machine's network is
+    down, not because the provider failed (see ``core.connectivity``).
+
+    ``kind`` is ``network_offline`` (the request could not reach the provider,
+    or was not sent because the gateway already knows it is offline) or
+    ``connection_lost`` (the link dropped while the answer was pending; a
+    retry is safe). The router does not count either against the provider's
+    health."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str = "network_offline",
+        retry_after: float | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.retry_after = retry_after

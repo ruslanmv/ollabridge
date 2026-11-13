@@ -162,7 +162,7 @@ class HuggingFaceAdapter(BaseProviderAdapter):
 
         url = f"{self._api_base()}/chat/completions"
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.http_timeout()) as client:
                 response = await client.post(url, headers=self._headers(), json=payload)
         except httpx.TimeoutException as exc:
             raise ProviderTimeout(f"Hugging Face request timed out: {exc}") from exc

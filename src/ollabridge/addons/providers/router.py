@@ -19,6 +19,7 @@ from ollabridge.addons.providers.errors import (
     ProviderAuthError,
     ProviderBadRequest,
     ProviderError,
+    ProviderNetworkError,
     ProviderQuotaExceeded,
     ProviderRateLimited,
 )
@@ -29,6 +30,15 @@ from ollabridge.addons.providers.models import (
 )
 from ollabridge.addons.providers.registry import ProviderRegistry
 from ollabridge.addons.providers.scoring import compute_score
+from ollabridge.core.connectivity import (
+    NETWORK,
+    OFFLINE,
+    ONLINE,
+    NetworkLost,
+    NetworkMonitor,
+    classify,
+    is_remote,
+)
 from ollabridge.core.logsetup.request_facts import note as note_request
 
 logger = logging.getLogger(__name__)
@@ -47,8 +57,37 @@ class ProvidersExhausted(RuntimeError):
 class ProviderRouter:
     """Routes chat requests to the best available provider."""
 
-    def __init__(self, registry: ProviderRegistry) -> None:
+    def __init__(self, registry: ProviderRegistry, *, network: NetworkMonitor | None = None) -> None:
         self.registry = registry
+        # Online/offline state of this machine (core/connectivity.py). The
+        # process-wide monitor probes the providers this router can use.
+        self.network = network or NETWORK
+        self.network.set_targets(self._remote_urls)
+
+    @staticmethod
+    def _url_of(adapter: Any, config: ProviderConfig | None = None) -> str:
+        return str(getattr(adapter, "base_url", "") or getattr(config, "base_url", "") or "")
+
+    def _remote_urls(self) -> list[str]:
+        """Base URLs of the usable providers that live off this machine: what a
+        connectivity probe connects to. Keyless or disabled ones are left out,
+        so no host the user has not set up is ever contacted."""
+        urls: list[str] = []
+        for config in self.registry.list_enabled():
+            if not self._is_available(config):
+                continue
+            url = self._url_of(self.registry.get_adapter(config.id), config)
+            if url and is_remote(url):
+                urls.append(url)
+        return urls
+
+    def _network_error(self, *, kind: str, reason: str | None) -> ProviderNetworkError:
+        text = reason or "the network is unreachable"
+        if kind == "connection_lost":
+            return ProviderNetworkError(text, kind=kind, retry_after=2.0)
+        return ProviderNetworkError(
+            text, kind="network_offline", retry_after=float(self.network.retry_after_s())
+        )
 
     def _is_available(self, config: ProviderConfig) -> bool:
         """Check if a provider can actually serve a request.
@@ -209,19 +248,45 @@ class ProviderRouter:
             )
 
         last_error: Exception | None = None
+        network = self.network
         for route in candidates:
             adapter = self.registry.get_adapter(route.provider_id)
             if not adapter:
                 continue
 
+            url = self._url_of(adapter, getattr(route, "provider_config", None))
+            remote = network.enabled and is_remote(url)
+            # Name the provider on the request's log line also when it fails;
+            # a success notes it again with the tokens.
+            note_request(route=route.provider_id)
+
+            # Circuit open: this machine is offline. Re-check first (once every
+            # couple of seconds, shared by concurrent requests), so the first
+            # request after the tunnel goes through at once.
+            if remote and network.offline and await network.check() == OFFLINE:
+                network.note_failed_fast()
+                logger.debug(
+                    "Skipping provider %s: network offline (%s)", route.provider_id, network.reason
+                )
+                last_error = self._network_error(kind="network_offline", reason=network.reason)
+                continue
+
             start = time.monotonic()
 
-            async def _attempt(adapter=adapter, route=route) -> dict:
+            async def _attempt(adapter=adapter, route=route, url=url, remote=remote) -> dict:
                 # Timed from the call itself, not from the time it spent
                 # waiting for its turn, so pacing does not skew latency scores.
                 nonlocal start
                 start = time.monotonic()
-                return await adapter.chat(route.model, messages, **kwargs)
+                if not remote:
+                    return await adapter.chat(route.model, messages, **kwargs)
+                # Remote: a stall watchdog tells a dropped link (abort in ~25 s)
+                # from a slow model (keep waiting).
+                return await network.guard(
+                    lambda: adapter.chat(route.model, messages, **kwargs),
+                    url=url,
+                    label=route.provider_id,
+                )
 
             try:
                 # Per-attempt detail: DEBUG. The request's own access line
@@ -326,16 +391,56 @@ class ProviderRouter:
                 )
                 last_error = exc
 
+            except NetworkLost as exc:
+                # The link dropped while the answer was pending (watchdog).
+                # Not the provider's fault: its health is left alone.
+                latency_ms = (time.monotonic() - start) * 1000
+                logger.warning(
+                    "Provider %s: connection lost after %.0fms: %s — trying next candidate",
+                    route.provider_id,
+                    latency_ms,
+                    exc,
+                )
+                last_error = self._network_error(kind="connection_lost", reason=str(exc))
+                last_error.__cause__ = exc
+
             except (ProviderError, Exception) as exc:
                 latency_ms = (time.monotonic() - start) * 1000
+                fault = classify(exc) if remote else None
+                seen_reachable = getattr(exc, "network_reachable", None) is True
+                verdict: str | None = None
+                if fault is not None and fault.suspects_network and not seen_reachable:
+                    # No answer at all: is it this machine's network, or this
+                    # provider? A probe of the configured providers decides.
+                    verdict = await network.check(max_age=1.0)
+                    if verdict == OFFLINE:
+                        logger.debug(
+                            "Provider %s unreachable (%s): the network is down, not counted "
+                            "against the provider",
+                            route.provider_id,
+                            exc,
+                        )
+                        kind = (
+                            "connection_lost"
+                            if fault.kind in ("connection_lost", "read_timeout")
+                            else "network_offline"
+                        )
+                        last_error = self._network_error(kind=kind, reason=network.reason)
+                        last_error.__cause__ = exc
+                        continue
                 await self.registry.record_request(
                     route.provider_id, latency_ms=latency_ms, success=False
                 )
+                detail = str(exc).strip() or type(exc).__name__
+                if seen_reachable and fault is not None:
+                    detail += " (the provider's server stayed reachable: slow or overloaded, not a network problem)"
+                elif fault is not None and verdict == ONLINE:
+                    detail += f" ({fault.describe()}; the network itself is up)"
                 logger.warning(
                     "Provider %s failed (%.0fms): %s — trying next candidate",
                     route.provider_id,
                     latency_ms,
-                    exc,
+                    detail,
                 )
                 last_error = exc
 

@@ -363,7 +363,7 @@ class OpenWebUIAdapter(BaseProviderAdapter):
         paths = [p for p in (self.chat_path, self.fallback_chat_path) if p]
         headers = await self._headers_with_auth(json_body=True)
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.http_timeout()) as client:
                 for path in paths:
                     url = f"{self.base_url}{path}"
                     resp = await client.post(url, json=payload, headers=headers)
@@ -382,9 +382,21 @@ class OpenWebUIAdapter(BaseProviderAdapter):
                         data["model"] = model
                     return data
         except httpx.TimeoutException as exc:
-            raise ProviderTimeout(f"chat timeout: {self._redact(str(exc))}") from exc
-        except (httpx.ConnectError, httpx.ReadError) as exc:
-            raise ProviderUnavailable(self._redact(str(exc))) from exc
+            # httpx's own text is often empty ("chat timeout: " in the log): say
+            # which phase ran out of time and what the limit was.
+            phase = "connecting" if isinstance(exc, httpx.ConnectTimeout) else "waiting for the answer"
+            limit = self.timeout if not isinstance(exc, httpx.ConnectTimeout) else self.http_timeout().connect
+            text = self._redact(str(exc)).strip()
+            limit_txt = f" (limit {limit:g} s)" if isinstance(limit, (int, float)) else ""
+            raise ProviderTimeout(
+                f"chat timeout while {phase}{limit_txt}" + (f": {text}" if text else "")
+            ) from exc
+        except httpx.TransportError as exc:
+            # Connect, read and protocol errors ("Server disconnected without
+            # sending a response"): the router decides whether the network is down.
+            raise ProviderUnavailable(
+                self._redact(str(exc)).strip() or type(exc).__name__
+            ) from exc
         # No path returned 200 (all 404) — fail closed rather than reroute.
         raise ProviderBadRequest("no compatible chat endpoint (404 on all known paths)")
 

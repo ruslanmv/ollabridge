@@ -8,7 +8,17 @@ can talk to any backend uniformly.
 from __future__ import annotations
 
 import abc
+import os
 from typing import Any
+
+import httpx
+
+
+def _connect_timeout_s() -> float:
+    try:
+        return float(os.environ.get("OLLABRIDGE_CONNECT_TIMEOUT_S", "") or 10.0)
+    except ValueError:
+        return 10.0
 
 
 class BaseProviderAdapter(abc.ABC):
@@ -26,6 +36,18 @@ class BaseProviderAdapter(abc.ABC):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+
+    def http_timeout(self) -> httpx.Timeout:
+        """``self.timeout`` for the whole answer, but a short limit for opening
+        the connection (``OLLABRIDGE_CONNECT_TIMEOUT_S``, default 10 s).
+
+        A model may take minutes to answer; a server that does not accept a
+        connection within seconds is not going to. Without the split a dead
+        network cost the full answer timeout before anything was reported."""
+        connect = _connect_timeout_s()
+        if self.timeout is not None:
+            connect = min(float(self.timeout), connect)
+        return httpx.Timeout(self.timeout, connect=connect)
 
     @property
     def has_credential(self) -> bool:

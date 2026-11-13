@@ -34,6 +34,7 @@ from ollabridge.core.logsetup import (
     log_session_header,
 )
 from ollabridge.core.logsetup.request_facts import note as note_request
+from ollabridge.core.connectivity import NETWORK as network_state
 from ollabridge.core.reachability import OLLAMA as ollama_reachability
 from ollabridge.core.registry import RuntimeNodeState
 from ollabridge.core import message_content
@@ -92,6 +93,22 @@ def _upstream_http_error(exc: Exception) -> HTTPException:
             },
         )
     return HTTPException(500, redact_text(str(exc)))
+
+
+#: Error codes for "this machine's network is down", not a provider failure.
+_NETWORK_CODES = frozenset({"network_offline", "connection_lost"})
+
+
+def _error_category(exc: BaseException) -> str:
+    """What the request's log line and trace call a failure: the OpenAI-style
+    error code when the handler produced one (``network_offline``,
+    ``rate_limited``…), else the exception type."""
+    detail = getattr(exc, "detail", None)
+    if isinstance(detail, dict):
+        code = (detail.get("error") or {}).get("code") if isinstance(detail.get("error"), dict) else None
+        if code:
+            return str(code)
+    return type(exc).__name__
 
 
 _ROUTE_PREFIX = {
@@ -327,12 +344,41 @@ def _provider_failure(exc: Exception, model: str, *, has_tools: bool) -> dict[st
             ProviderAuthError,
             ProviderBadRequest,
             ProviderError,
+            ProviderNetworkError,
             ProviderQuotaExceeded,
             ProviderTimeout,
             ProviderUnavailable,
         )
     except Exception:  # pragma: no cover - the addon is optional
         return None
+    network_exc = exc if isinstance(exc, ProviderNetworkError) else getattr(exc, "last_error", None)
+    if isinstance(network_exc, ProviderNetworkError):
+        # This machine's network, not the provider (core/connectivity.py). 503 with a
+        # Retry-After: OpenAI-style clients retry it on their own once it is back.
+        retry_after = network_exc.retry_after
+        if network_exc.kind == "connection_lost":
+            return {
+                "status": 503,
+                "code": "connection_lost",
+                "type": "api_connection_error",
+                "retry_after": retry_after,
+                "message": (
+                    f"The connection to {model}'s provider dropped before it answered: {network_exc}. "
+                    "The network changed or went down (a tunnel, a train, a Wi-Fi switch, a VPN "
+                    "reconnect). Retrying is safe."
+                ),
+            }
+        return {
+            "status": 503,
+            "code": "network_offline",
+            "type": "api_connection_error",
+            "retry_after": retry_after,
+            "message": (
+                f"OllaBridge is offline, so {model} could not be reached ({network_exc}). "
+                "This happens when the network drops: a tunnel, a train, a Wi-Fi switch, a VPN "
+                "disconnect. Local models still work; retry once the connection is back."
+            ),
+        }
     if not isinstance(exc, ProviderError):
         # The router wraps the last provider's error ("All providers failed …"): judge by it.
         inner = getattr(exc, "last_error", None) or exc.__cause__
@@ -378,7 +424,17 @@ def _provider_failure(exc: Exception, model: str, *, has_tools: bool) -> dict[st
     if isinstance(exc, ProviderBadRequest):
         return {"status": 400, "code": "provider_bad_request", "message": f"{model}'s provider rejected the request: {text}"}
     if isinstance(exc, ProviderTimeout):
-        return {"status": 504, "code": "provider_timeout", "message": f"{model}'s provider did not answer in time: {text}"}
+        hint = (
+            " Its server stayed reachable the whole time, so the network is fine: the model is "
+            "slow or overloaded right now (a long prompt makes this likelier)."
+            if getattr(exc, "network_reachable", None) is True
+            else ""
+        )
+        return {
+            "status": 504,
+            "code": "provider_timeout",
+            "message": f"{model}'s provider did not answer in time: {text.rstrip('. ')}.{hint}",
+        }
     if isinstance(exc, ProviderUnavailable):
         return {"status": 502, "code": "provider_unavailable", "message": f"{model}'s provider is unavailable: {text}"}
     return {"status": 502, "code": "provider_error", "message": f"{model}'s provider failed: {text}"}
@@ -1161,6 +1217,9 @@ def create_app() -> FastAPI:
             # Up/down state of the local runtime as the gateway last saw it,
             # so monitoring reads it here instead of grepping the log.
             "local_runtime": ollama_reachability.snapshot(rts.ollama_base_url()),
+            # Online/offline as remote providers see it (core/connectivity.py):
+            # the dashboard shows "No network" from it, monitoring can alert on it.
+            "network": network_state.snapshot(),
             **_avatar_health(),
         }
 
@@ -1398,16 +1457,22 @@ def create_app() -> FastAPI:
                             # request, credentials, outage): report that, with its status,
                             # instead of re-sending the request to local Ollama, which has no
                             # such model and would turn it into a 500 wrapping a 404.
-                            log.warning(
+                            network_failure = failure["code"] in _NETWORK_CODES
+                            # An outage is logged once by the network monitor; each request
+                            # that fails fast during it is only its own access line.
+                            log.log(
+                                logging.DEBUG if network_failure else logging.WARNING,
                                 "Provider failure for model=%s reported to the client as HTTP %s (%s): %s",
                                 model,
                                 failure["status"],
                                 failure["code"],
                                 addon_exc,
                             )
+                            note_request(error=failure["code"])
                             error_body = {
                                 "message": failure["message"],
-                                "type": (
+                                "type": failure.get("type")
+                                or (
                                     "rate_limit_error"
                                     if failure["code"] == "rate_limited"
                                     else "invalid_request_error"
@@ -1418,23 +1483,27 @@ def create_app() -> FastAPI:
                             }
                             if failure.get("param"):
                                 error_body["param"] = failure["param"]
+                            headers: dict[str, str] | None = None
+                            if failure["code"] == "rate_limited" or network_failure:
+                                # Tell well-behaved clients how long to back off.
+                                headers = {
+                                    "Retry-After": str(max(1, math.ceil(failure.get("retry_after") or 5)))
+                                }
+                            if network_failure:
+                                headers["X-OllaBridge-Network"] = "offline" if failure["code"] == "network_offline" else "lost"
                             raise HTTPException(
                                 status_code=failure["status"],
                                 detail={"error": error_body},
-                                # Tell well-behaved clients how long to back off.
-                                headers=(
-                                    {"Retry-After": str(max(1, math.ceil(failure.get("retry_after") or 5)))}
-                                    if failure["code"] == "rate_limited"
-                                    else None
-                                ),
+                                headers=headers,
                             ) from addon_exc
                         log.debug(
                             "Addon providers exhausted for model=%s, falling back to Ollama: %s",
                             model,
                             addon_exc,
                         )
-                        # Only here was a provider really tried and abandoned.
-                        note_request(fallback=True)
+                        # Only here was a provider really tried and abandoned; local
+                        # Ollama serves it now, so the log line names that route again.
+                        note_request(fallback=True, route=_route_label(node))
 
                 if addon_handled:
                     trace_provider = "provider-addon"
@@ -1611,7 +1680,7 @@ def create_app() -> FastAPI:
                 tokens_in=prompt_tokens_est,
                 latency_ms=latency,
                 ok=False,
-                error_category=type(e).__name__,
+                error_category=_error_category(e),
             )
 
             # Redact any credential-shaped content before it reaches the client;
@@ -1745,7 +1814,7 @@ def create_app() -> FastAPI:
                 tokens_in=prompt_tokens_est,
                 latency_ms=latency,
                 ok=False,
-                error_category=type(e).__name__,
+                error_category=_error_category(e),
             )
 
             raise _upstream_http_error(e)

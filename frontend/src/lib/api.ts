@@ -62,6 +62,25 @@ export type HealthResponse = {
   detail?: string
   homepilot_enabled?: boolean
   local_runtime_enabled?: boolean
+  network?: NetworkStatus
+}
+
+/** This machine's connection as remote providers see it (core/connectivity.py).
+ * `offline` means no configured remote provider answers a probe: requests for
+ * remote models fail fast with HTTP 503 `network_offline` until it is back. */
+export type NetworkStatus = {
+  enabled: boolean
+  state: 'online' | 'offline' | 'unknown'
+  /** ISO time of the last change of state. */
+  since: string | null
+  /** Why it is offline, e.g. "DNS lookup for host failed". */
+  reason: string | null
+  last_check: string | null
+  /** Requests refused without waiting during the current outage. */
+  failed_fast: number
+  outages: number
+  /** Seconds until the next background probe, while offline. */
+  retry_after_s?: number
 }
 
 /** Where this gateway serves a listed model from (OllaBridge extension to

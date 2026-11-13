@@ -33,6 +33,7 @@ from ollabridge.utils.tunnel import start_tunnel
 
 from ollabridge.cli.cloud_login import login as _login_command
 from ollabridge.cli.cloud_login import logout as _logout_command
+from ollabridge.cli.diagnose import diagnose_app
 from ollabridge.cli.doctor import doctor_app
 from ollabridge.cli.policies import policies_app, route_app
 from ollabridge.cli.providers import providers_app
@@ -44,6 +45,7 @@ console = Console()
 log = logging.getLogger("ollabridge.cli")
 
 app.add_typer(doctor_app, name="doctor")
+app.add_typer(diagnose_app, name="diagnose")
 app.add_typer(sync_app, name="sync")
 app.add_typer(providers_app, name="providers")
 app.add_typer(policies_app, name="policies")

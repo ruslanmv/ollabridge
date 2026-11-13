@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { SidebarNav } from './layouts/SidebarNav'
 import { TopHeader } from './layouts/TopHeader'
+import { NetworkBanner } from './layouts/NetworkBanner'
 import { DashboardPage } from './pages/dashboard/DashboardPage'
 import { ModelsPage } from './pages/models/ModelsPage'
 import { PairingPage } from './pages/pairing/PairingPage'
@@ -28,6 +29,7 @@ export default function App() {
       <SidebarNav activePage={page} onNavigate={setPage} />
       <div className="flex flex-col flex-1 min-w-0">
         <TopHeader currentPage={page} />
+        <NetworkBanner />
         <main className="flex-1 min-h-0 overflow-hidden relative">
           {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
           {page === 'sources' && <SourcesHubPage />}

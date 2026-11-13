@@ -173,10 +173,14 @@ class RequestLogMiddleware:
         msg = "%s %s %s %s"
         args: list[Any] = [method, path, status, _took(seconds)]
 
-        if status >= 500:
+        # A request refused because this machine is offline is expected while the
+        # outage lasts (an agent keeps retrying): counted like a client error, not
+        # an ERROR per request. The network monitor already logged the outage.
+        offline = status == 503 and facts.get("error") == "network_offline"
+        if status >= 500 and not offline:
             level = logging.ERROR
         elif status >= 400:
-            reason = facts.get("reason") or _phrase(status)
+            reason = "network offline" if offline else (facts.get("reason") or _phrase(status))
             # A different reason is a different problem (no key, then a wrong
             # key). Not-found is keyed per client only, so a scanner probing
             # hundreds of paths is one warning, not hundreds.

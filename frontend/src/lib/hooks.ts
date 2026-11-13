@@ -8,7 +8,8 @@ export function useHealth() {
   return useQuery({
     queryKey: ['health'],
     queryFn: api.health,
-    refetchInterval: 10_000,
+    // Faster while offline, so "back online" shows within seconds.
+    refetchInterval: (query) => (query.state.data?.network?.state === 'offline' ? 3_000 : 10_000),
     retry: false,
   })
 }

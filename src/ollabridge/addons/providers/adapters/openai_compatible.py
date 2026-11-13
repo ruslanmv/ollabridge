@@ -130,7 +130,7 @@ class OpenAICompatibleAdapter(BaseProviderAdapter):
                 payload[key] = kwargs[key]
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.http_timeout()) as client:
                 resp = await client.post(
                     self._chat_url(), json=payload, headers=self._headers()
                 )

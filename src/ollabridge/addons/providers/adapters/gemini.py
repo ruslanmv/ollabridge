@@ -84,7 +84,7 @@ class GeminiAdapter(BaseProviderAdapter):
         if generation_config:
             payload["generationConfig"] = generation_config
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.http_timeout()) as client:
             resp = await client.post(
                 self._chat_url(model),
                 json=payload,
