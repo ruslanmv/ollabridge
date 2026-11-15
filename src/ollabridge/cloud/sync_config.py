@@ -29,6 +29,10 @@ METADATA_FIELDS = (
     "model_metadata",
     "routing_profiles",
     "health_metrics",
+    # Token counts, cost and attribution per request (no content). Unlike the
+    # categories above it defaults to off, so enabling sync — or upgrading with
+    # sync already enabled — never starts uploading usage on its own.
+    "usage_metadata",
 )
 
 # Fields that carry sensitive content; default False, never auto-enabled.
@@ -51,6 +55,8 @@ class CloudSyncConfig(BaseModel):
     model_metadata: bool = True
     routing_profiles: bool = True
     health_metrics: bool = True
+    # Safe metadata, but explicit opt-in (see METADATA_FIELDS).
+    usage_metadata: bool = False
 
     # Sensitive — explicit opt-in only
     conversation_history: bool = False

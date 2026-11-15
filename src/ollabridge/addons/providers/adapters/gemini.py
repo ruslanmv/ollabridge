@@ -56,6 +56,10 @@ class GeminiAdapter(BaseProviderAdapter):
             content = "".join(p.get("text", "") for p in parts)
 
         usage_meta = data.get("usageMetadata", {})
+        # Cached/thinking counts for the usage ledger; the response is unchanged.
+        from ollabridge.usage.context import note_raw_usage
+
+        note_raw_usage(usage_meta)
         return {
             "id": "chatcmpl-gemini",
             "object": "chat.completion",

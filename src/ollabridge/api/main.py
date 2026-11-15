@@ -767,9 +767,19 @@ def create_app() -> FastAPI:
         # `_startup` is defined further down, once the routes and state it
         # wires up exist; it is looked up when the server starts.
         _startup()
+        # Usage upload loop. Idle unless the user enabled the usage_metadata
+        # sync category (usage/outbox.py); cancelled on shutdown.
+        import asyncio
+
+        from ollabridge.usage import outbox as _usage_outbox
+
+        usage_sync = asyncio.get_event_loop().create_task(
+            _usage_outbox.run_forever(settings.USAGE_SYNC_INTERVAL_SECONDS)
+        )
         try:
             yield
         finally:
+            usage_sync.cancel()
             log.info("Shutting down", extra={"uptime": format_duration(time.monotonic() - started)})
 
     app = FastAPI(title=settings.APP_NAME, lifespan=_lifespan)
@@ -895,6 +905,11 @@ def create_app() -> FastAPI:
             )
         except Exception:  # pragma: no cover - tracing must never break serving
             log.debug("trace recording failed", exc_info=True)
+        # Usage ledger (additive; usage/capture.py). Best-effort like the
+        # trace above: it never raises and never affects the response.
+        from ollabridge.usage.capture import record_from_trace
+
+        record_from_trace(request, fields)
 
     app.state.record_trace = _record_trace
 
@@ -1153,6 +1168,12 @@ def create_app() -> FastAPI:
     from ollabridge.api.rate_limit_routes import router as rate_limit_router
 
     app.include_router(rate_limit_router)
+
+    # Usage intelligence: /v1/bi/* (local usage dashboard API) and
+    # /otlp/v1/* (Claude Code telemetry in). Additive; see usage/routes.py.
+    from ollabridge.usage.routes import router as usage_router
+
+    app.include_router(usage_router)
 
     # Create the PairingManager at startup when pairing is the effective mode —
     # from the env default OR a persisted UI override — so paired tokens
@@ -1439,6 +1460,11 @@ def create_app() -> FastAPI:
                             max_tokens=req.max_tokens,
                             **extra,
                         )
+                        # Keep the provider's own usage block for the usage
+                        # ledger; nothing about the response changes.
+                        from ollabridge.usage.context import note_raw_usage
+
+                        note_raw_usage(result_data.get("usage"))
                         choices = result_data.get("choices", [])
                         if choices:
                             message_data = choices[0].get("message", {}) or {}

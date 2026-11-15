@@ -97,6 +97,11 @@ async def chat_message(
     if tools:
         payload["tools"] = tools
     data = await _post(settings.OLLAMA_CHAT_PATH, payload)
+    # Ollama's own token counts, for the usage ledger (usage/context.py).
+    if "eval_count" in data or "prompt_eval_count" in data:
+        from ollabridge.usage.context import note_raw_usage
+
+        note_raw_usage({k: data[k] for k in ("prompt_eval_count", "eval_count") if k in data})
     return data.get("message", {}) or {}
 
 

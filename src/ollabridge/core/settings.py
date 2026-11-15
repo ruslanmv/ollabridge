@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -69,6 +70,20 @@ class Settings(BaseSettings):
     # ollabridge.core.paths.data_dir(), so one variable relocates all state.
     DATA_DIR: Path = Path.home() / ".ollabridge"
     DATABASE_URL: str | None = None
+
+    # Usage intelligence (docs/USAGE_INTELLIGENCE.md). Like traces, usage is
+    # recorded locally as metadata only (never prompt or response text) in
+    # <DATA_DIR>/usage.db. Nothing is uploaded unless the user turns on the
+    # `usage_metadata` sync category.
+    USAGE_ENABLED: bool = True
+    # Price catalog YAML; empty = the bundled seed, which ships with no prices.
+    USAGE_PRICING_FILE: str = ""
+    # How Claude Code usage received over OTLP is billed: "subscription"
+    # (Pro/Max plan — shown as an API-equivalent figure, never as spend) or
+    # "api" (an API key — counted as spend).
+    CLAUDE_CODE_BILLING: Literal["subscription", "api"] = "subscription"
+    # Seconds between usage uploads when usage_metadata sync is on.
+    USAGE_SYNC_INTERVAL_SECONDS: float = 60.0
 
     @model_validator(mode="after")
     def _resolve_data_dir(self) -> "Settings":

@@ -320,6 +320,10 @@ class ProviderRouter:
                     total_tokens,
                 )
                 note_request(route=route.provider_id, tokens=total_tokens or None)
+                # Usage ledger: which provider answered (usage/context.py).
+                from ollabridge.usage.context import note_route
+
+                note_route(route.provider_id, route.model)
                 return result
 
             except ProviderRateLimited as exc:

@@ -443,6 +443,12 @@ class CloudBridgeManager:
         if client_type:
             headers["X-Client-Type"] = client_type
 
+        # The cloud's id for this attempt. Forwarded so the local usage record
+        # carries the same id and the cloud ledger keeps one row, not two.
+        attempt_id = payload.pop("attempt_id", None)
+        if attempt_id:
+            headers["X-OllaBridge-Attempt-Id"] = str(attempt_id)
+
         # Use local-trust or first API key
         keys = settings.API_KEYS.split(",")
         if keys and keys[0].strip():
