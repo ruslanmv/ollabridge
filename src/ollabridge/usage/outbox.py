@@ -36,7 +36,7 @@ def sync_allowed() -> tuple[bool, str]:
     if not config.enabled:
         return False, "cloud sync is disabled"
     if not config.usage_metadata:
-        return False, "usage_metadata sync is off (ollabridge sync set usage_metadata true)"
+        return False, "usage_metadata sync is off (ollabridge sync config usage_metadata true)"
     if load_cloud_device_credentials() is None:
         return False, "device is not paired (ollabridge login)"
     return True, "ok"

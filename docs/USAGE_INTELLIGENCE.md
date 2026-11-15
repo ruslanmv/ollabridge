@@ -385,7 +385,7 @@ charged; update the rate when it moves.
 Send usage metadata to OllaBridge Cloud (off by default):
 
 ```bash
-ollabridge sync set usage_metadata true
+ollabridge sync config usage_metadata true
 ```
 
 ### Differences from the proposal above
