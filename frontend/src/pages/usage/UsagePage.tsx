@@ -270,6 +270,8 @@ function InsightRow({ insight, currency }: { insight: UsageInsight; currency: Di
   )
 }
 
+const DETAILS_KEY = 'ollabridge_usage_details'
+
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK']
 
 /** Pick the currency costs are shown in. Providers charge in USD, so a rate is
@@ -362,6 +364,23 @@ export function UsagePage() {
   const [days, setDays] = useState(30)
   const [metric, setMetric] = useState<'tokens' | 'cost'>('tokens')
   const [view, setView] = useState<'chart' | 'table'>('chart')
+  // Simple by default: three numbers, one chart, one list. "Details" adds the
+  // billed/agents tiles, data-quality badges, agents, insights and sources.
+  const [detailed, setDetailedState] = useState(() => {
+    try {
+      return localStorage.getItem(DETAILS_KEY) === 'true'
+    } catch {
+      return false
+    }
+  })
+  const setDetailed = (value: boolean) => {
+    setDetailedState(value)
+    try {
+      localStorage.setItem(DETAILS_KEY, String(value))
+    } catch {
+      // storage unavailable: the choice just does not persist
+    }
+  }
   const { overview, series, share, agents, insights, sources, currency: currencyQuery } = useUsage(days, metric)
   const currency = currencyQuery.data ?? USD
 
@@ -383,9 +402,16 @@ export function UsagePage() {
       <div className="max-w-[1280px] mx-auto space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-white/50">
-            Tokens, cost and attribution for requests through this gateway. Metadata only — no prompt content.
+            What you used and what it cost. Only numbers are stored — never your prompts or answers.
           </p>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setDetailed(!detailed)}
+              aria-pressed={detailed}
+              className="px-3 py-1.5 rounded-lg border border-white/10 bg-white/[0.03] text-xs text-white/60 hover:text-white/85"
+            >
+              {detailed ? 'Hide details' : 'Show details'}
+            </button>
             <CurrencyControl currency={currency} />
             <Segmented
               label="Period"
@@ -403,38 +429,48 @@ export function UsagePage() {
         )}
 
         {data && (
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            <Tile icon={Activity} label="Total tokens" value={formatTokens(data.total_tokens.value)}>
+          <div className={`grid grid-cols-2 gap-4 ${detailed ? 'lg:grid-cols-5' : 'lg:grid-cols-3'}`}>
+            <Tile icon={Activity} label="Tokens used" value={formatTokens(data.total_tokens.value)}>
               <Delta kpi={data.total_tokens} />
-              <MixBadges mix={data.total_tokens.measurement_mix} />
+              {detailed && <MixBadges mix={data.total_tokens.measurement_mix} />}
             </Tile>
-            <Tile icon={Coins} label="Estimated cost" value={formatMoney(data.estimated_cost_micro.value, currency)}>
+            <Tile icon={Coins} label="Your cost" value={formatMoney(data.estimated_cost_micro.value, currency)}>
               <Delta kpi={data.estimated_cost_micro} invert />
               {data.estimated_cost_micro.unpriced_tokens > 0 && (
-                <span className="text-xs text-amber-400/90" title="Add prices for these models to the price catalog">
-                  Lower bound: {formatTokens(data.estimated_cost_micro.unpriced_tokens)} tokens unpriced
+                <span
+                  className="text-xs text-amber-400/90"
+                  title={`${formatTokens(data.estimated_cost_micro.unpriced_tokens)} tokens are on models with no price in the price catalog`}
+                >
+                  Some models have no price set, so this is a minimum
                 </span>
               )}
               {data.subscription_equivalent_micro.value > 0 && (
-                <span className="text-xs text-white/45" title="What subscription usage would cost at API prices. Not a charge.">
-                  + {formatMoney(data.subscription_equivalent_micro.value, currency)} subscription-equivalent
+                <span
+                  className="text-xs text-white/45"
+                  title="Usage covered by a subscription (e.g. Claude Code on a plan). Shown at API prices for comparison; it is not charged per use."
+                >
+                  + {formatMoney(data.subscription_equivalent_micro.value, currency)} covered by your subscription
                 </span>
               )}
             </Tile>
-            <Tile icon={Receipt} label="Billed cost" value={formatMoney(data.billed_cost_micro.value, currency)}>
-              <Delta kpi={data.billed_cost_micro} invert />
-              <span className="text-xs text-white/40">Charges stated by providers</span>
-            </Tile>
-            <Tile icon={Bot} label="Active agents" value={String(data.active_agents.value)}>
-              <span className="text-xs text-white/45">
-                {data.active_agents.delta >= 0 ? '+' : ''}
-                {data.active_agents.delta} vs prior period
-              </span>
-              <span className="text-xs text-white/40">
-                {data.requests.value.toLocaleString()} requests
-                {data.requests.failed > 0 && `, ${data.requests.failed.toLocaleString()} failed`}
-              </span>
-            </Tile>
+            {detailed && (
+              <Tile icon={Receipt} label="Billed cost" value={formatMoney(data.billed_cost_micro.value, currency)}>
+                <Delta kpi={data.billed_cost_micro} invert />
+                <span className="text-xs text-white/40">Charges stated by providers</span>
+              </Tile>
+            )}
+            {detailed && (
+              <Tile icon={Bot} label="Active agents" value={String(data.active_agents.value)}>
+                <span className="text-xs text-white/45">
+                  {data.active_agents.delta >= 0 ? '+' : ''}
+                  {data.active_agents.delta} vs prior period
+                </span>
+                <span className="text-xs text-white/40">
+                  {data.requests.value.toLocaleString()} requests
+                  {data.requests.failed > 0 && `, ${data.requests.failed.toLocaleString()} failed`}
+                </span>
+              </Tile>
+            )}
             <BudgetTile overview={data} currency={currency} />
           </div>
         )}
@@ -453,7 +489,7 @@ export function UsagePage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <Panel
                 className="lg:col-span-2"
-                title={metric === 'cost' ? 'API cost per day' : 'Tokens per day'}
+                title={metric === 'cost' ? 'Cost per day' : 'Tokens per day'}
                 action={
                   <div className="flex gap-2">
                     <Segmented
@@ -465,21 +501,23 @@ export function UsagePage() {
                         { value: 'cost', label: 'Cost' },
                       ]}
                     />
-                    <Segmented
-                      label="View"
-                      value={view}
-                      onChange={setView}
-                      options={[
-                        { value: 'chart', label: 'Chart' },
-                        { value: 'table', label: 'Table' },
-                      ]}
-                    />
+                    {detailed && (
+                      <Segmented
+                        label="View"
+                        value={view}
+                        onChange={setView}
+                        options={[
+                          { value: 'chart', label: 'Chart' },
+                          { value: 'table', label: 'Table' },
+                        ]}
+                      />
+                    )}
                   </div>
                 }
               >
                 {series.data && series.data.series.length > 0 ? (
                   <div className="space-y-3">
-                    {view === 'chart' ? (
+                    {view === 'chart' || !detailed ? (
                       <StackedColumns data={series.data} colors={colors} currency={currency} />
                     ) : (
                       <SeriesTable data={series.data} currency={currency} />
@@ -487,78 +525,80 @@ export function UsagePage() {
                     <Legend keys={seriesKeys} colors={colors} />
                   </div>
                 ) : (
-                  <Empty>{metric === 'cost' ? 'No priced API usage in this period.' : 'Nothing to plot.'}</Empty>
+                  <Empty>{metric === 'cost' ? 'Nothing was charged in this period.' : 'Nothing to plot.'}</Empty>
                 )}
               </Panel>
 
-              <Panel title={metric === 'cost' ? 'API cost by provider' : 'Tokens by provider'}>
+              <Panel title={metric === 'cost' ? 'Cost by provider' : 'Tokens by provider'}>
                 {share.data && share.data.items.length > 0 ? (
                   <ShareList data={share.data} colors={colors} metric={metric} currency={currency} />
                 ) : (
-                  <Empty>{metric === 'cost' ? 'No priced API usage in this period.' : 'Nothing to show.'}</Empty>
+                  <Empty>{metric === 'cost' ? 'Nothing was charged in this period.' : 'Nothing to show.'}</Empty>
                 )}
               </Panel>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <Panel className="lg:col-span-2" title="Top agents / workflows">
-                {agents.data && agents.data.items.length > 0 ? (
-                  <table className="w-full text-sm">
-                    <thead className="text-xs text-white/45">
-                      <tr>
-                        <th className="text-left font-medium pb-2">Agent</th>
-                        <th className="text-left font-medium pb-2">Main provider</th>
-                        <th className="text-right font-medium pb-2">Tokens</th>
-                        <th className="text-right font-medium pb-2">API cost</th>
-                        <th className="text-right font-medium pb-2">Change</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {agents.data.items.map((agent) => (
-                        <tr key={`${agent.application_id}/${agent.agent_id}`} className="border-t border-white/5">
-                          <td className="py-2.5 pr-3">
-                            <div className="text-white/85">{agent.agent_id}</div>
-                            <div className="text-xs text-white/40">{agent.application_id}</div>
-                          </td>
-                          <td className="py-2.5 pr-3 text-white/70">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span
-                                className="w-2 h-2 rounded-[2px]"
-                                style={{ background: colors[agent.top_provider] ?? '#6b7280' }}
-                              />
-                              {agent.top_provider}
-                            </span>
-                          </td>
-                          <td className="py-2.5 text-right tabular-nums text-white/85">{formatTokens(agent.tokens)}</td>
-                          <td className="py-2.5 text-right tabular-nums text-white/85">{formatMoney(agent.cost_micro, currency)}</td>
-                          <td className="py-2.5 text-right tabular-nums text-white/60">
-                            {agent.delta_pct === null ? 'new' : `${agent.delta_pct >= 0 ? '+' : ''}${agent.delta_pct}%`}
-                          </td>
+            {detailed && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <Panel className="lg:col-span-2" title="Top agents / workflows">
+                  {agents.data && agents.data.items.length > 0 ? (
+                    <table className="w-full text-sm">
+                      <thead className="text-xs text-white/45">
+                        <tr>
+                          <th className="text-left font-medium pb-2">Agent</th>
+                          <th className="text-left font-medium pb-2">Main provider</th>
+                          <th className="text-right font-medium pb-2">Tokens</th>
+                          <th className="text-right font-medium pb-2">Cost</th>
+                          <th className="text-right font-medium pb-2">Change</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <Empty>No agents yet.</Empty>
-                )}
-              </Panel>
+                      </thead>
+                      <tbody>
+                        {agents.data.items.map((agent) => (
+                          <tr key={`${agent.application_id}/${agent.agent_id}`} className="border-t border-white/5">
+                            <td className="py-2.5 pr-3">
+                              <div className="text-white/85">{agent.agent_id}</div>
+                              <div className="text-xs text-white/40">{agent.application_id}</div>
+                            </td>
+                            <td className="py-2.5 pr-3 text-white/70">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span
+                                  className="w-2 h-2 rounded-[2px]"
+                                  style={{ background: colors[agent.top_provider] ?? '#6b7280' }}
+                                />
+                                {agent.top_provider}
+                              </span>
+                            </td>
+                            <td className="py-2.5 text-right tabular-nums text-white/85">{formatTokens(agent.tokens)}</td>
+                            <td className="py-2.5 text-right tabular-nums text-white/85">{formatMoney(agent.cost_micro, currency)}</td>
+                            <td className="py-2.5 text-right tabular-nums text-white/60">
+                              {agent.delta_pct === null ? 'new' : `${agent.delta_pct >= 0 ? '+' : ''}${agent.delta_pct}%`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <Empty>No agents yet.</Empty>
+                  )}
+                </Panel>
 
-              <Panel title="Key insights">
-                {insights.data && insights.data.items.length > 0 ? (
-                  <ul>
-                    {insights.data.items.map((insight) => (
-                      <InsightRow key={insight.id} insight={insight} currency={currency} />
-                    ))}
-                  </ul>
-                ) : (
-                  <Empty>Nothing stands out in this period.</Empty>
-                )}
-              </Panel>
-            </div>
+                <Panel title="Key insights">
+                  {insights.data && insights.data.items.length > 0 ? (
+                    <ul>
+                      {insights.data.items.map((insight) => (
+                        <InsightRow key={insight.id} insight={insight} currency={currency} />
+                      ))}
+                    </ul>
+                  ) : (
+                    <Empty>Nothing stands out in this period.</Empty>
+                  )}
+                </Panel>
+              </div>
+            )}
           </>
         )}
 
-        {sources.data && (
+        {detailed && sources.data && (
           <Panel title="Data sources">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
               <div className="md:col-span-2">

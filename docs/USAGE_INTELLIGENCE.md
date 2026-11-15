@@ -345,6 +345,9 @@ Implemented (steps 1, 2, 4 and the Overview part of 5, plus the sync outbox):
 
 ### Using it
 
+The step-by-step guide for users, with screenshots, is
+[USAGE_GUIDE.md](USAGE_GUIDE.md).
+
 Usage is recorded automatically for requests through the gateway
 (`USAGE_ENABLED=false` turns it off).
 
@@ -403,8 +406,9 @@ ollabridge sync config usage_metadata true
   request is recorded once, with its final outcome).
 - Budget enforcement (the budget is informational), compute/energy cost,
   subscription fee entries, provider billing importers.
-- Usage, Costs, Agents, Providers and Forecasts as separate tabs; the page is
-  the Overview.
+- Usage, Costs, Agents, Providers and Forecasts as separate tabs. The page is
+  one Overview: a simple view by default (three numbers, one chart, one
+  list), with the rest behind **Show details**.
 - "All devices (Cloud)" data source in the dashboard.
 - Real token counts for streamed responses and for requests served by a
   remote node or direct endpoint — these are still estimates.
