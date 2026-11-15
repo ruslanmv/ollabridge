@@ -101,6 +101,14 @@ export interface UsageSources {
   pricing_version: string
 }
 
+/** Currency costs are shown in. API amounts stay micro-USD; `usd_rate` is
+ * units of `code` per 1 USD, set by the user (never fetched). */
+export interface DisplayCurrency {
+  code: string
+  usd_rate: number
+  source: 'default' | 'environment' | 'saved'
+}
+
 function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10)
 }
@@ -121,6 +129,13 @@ export const usageApi = {
   agents: (days: number) => request<{ total: number; items: UsageAgent[] }>(`/v1/bi/agents?${range(days)}&limit=8`),
   insights: (days: number) => request<{ items: UsageInsight[] }>(`/v1/bi/insights?${range(days)}`),
   sources: () => request<UsageSources>('/v1/bi/sources'),
+  currency: () => request<DisplayCurrency>('/v1/bi/currency'),
+  setCurrency: (code: string, usdRate: number | null) =>
+    request<DisplayCurrency>('/v1/bi/currency', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, usd_rate: usdRate }),
+    }),
   setBudget: (limitMicro: number | null) =>
     request<{ limit_micro: number | null }>('/v1/bi/budget', {
       method: 'PUT',

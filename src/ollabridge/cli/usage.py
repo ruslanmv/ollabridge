@@ -16,8 +16,11 @@ usage_app = typer.Typer(
 console = Console()
 
 
-def _usd(micro: int | None) -> str:
-    return "—" if micro is None else f"${micro / 1_000_000:,.4f}"
+def _money(micro: int | None) -> str:
+    """Micro-USD shown in the configured display currency."""
+    from ollabridge.usage.currency import format_money, get_display_currency
+
+    return format_money(micro, get_display_currency())
 
 
 @usage_app.command("summary")
@@ -50,19 +53,24 @@ def usage_summary(
     mix = overview["total_tokens"]["measurement_mix"]
     quality = ", ".join(f"{share:.0%} {badge}" for badge, share in mix.items()) or "—"
     console.print(f"[bold]Usage {start} → {end}[/bold]")
+    from ollabridge.usage.currency import get_display_currency
+
+    shown = get_display_currency()
+    if shown["code"] != "USD":
+        console.print(f"  [dim]Costs in {shown['code']} at 1 USD = {shown['usd_rate']:g} {shown['code']}[/dim]")
     console.print(f"  Tokens            {overview['total_tokens']['value']:,}  [dim]({quality})[/dim]")
     console.print(f"  Requests          {overview['requests']['value']:,}"
                   f"  [dim]({overview['requests']['failed']} failed)[/dim]")
-    console.print(f"  Estimated cost    {_usd(overview['estimated_cost_micro']['value'])}  [dim]API usage[/dim]")
-    console.print(f"  Billed cost       {_usd(overview['billed_cost_micro']['value'])}  [dim]stated by providers[/dim]")
+    console.print(f"  Estimated cost    {_money(overview['estimated_cost_micro']['value'])}  [dim]API usage[/dim]")
+    console.print(f"  Billed cost       {_money(overview['billed_cost_micro']['value'])}  [dim]stated by providers[/dim]")
     equivalent = overview["subscription_equivalent_micro"]["value"]
     if equivalent:
-        console.print(f"  Subscription use  {_usd(equivalent)}  [dim]API-equivalent, not a charge[/dim]")
+        console.print(f"  Subscription use  {_money(equivalent)}  [dim]API-equivalent, not a charge[/dim]")
     if overview["estimated_cost_micro"]["unpriced_tokens"]:
         console.print("  [yellow]Some API usage has no price in the catalog; cost is a lower bound.[/yellow]")
     if overview["budget"]:
-        console.print(f"  Budget remaining  {_usd(overview['budget']['remaining_micro'])}"
-                      f" of {_usd(overview['budget']['limit_micro'])}")
+        console.print(f"  Budget remaining  {_money(overview['budget']['remaining_micro'])}"
+                      f" of {_money(overview['budget']['limit_micro'])}")
 
     table = Table(title="By provider")
     table.add_column("Provider"); table.add_column("Tokens", justify="right"); table.add_column("Share", justify="right")
@@ -76,21 +84,50 @@ def usage_summary(
     table.add_column("Tokens", justify="right"); table.add_column("Cost", justify="right")
     for item in agents["items"]:
         table.add_row(item["application_id"], item["agent_id"], item["top_provider"],
-                      f"{item['tokens']:,}", _usd(item["cost_micro"]))
+                      f"{item['tokens']:,}", _money(item["cost_micro"]))
     console.print(table)
 
 
 @usage_app.command("budget")
 def usage_budget(
-    usd: float = typer.Argument(None, help="Monthly budget in USD; omit to show, 0 to remove"),
+    amount: float = typer.Argument(
+        None, help="Monthly budget in the display currency; omit to show, 0 to remove"
+    ),
 ):
     """Show or set the monthly budget."""
+    from ollabridge.usage.currency import get_display_currency
     from ollabridge.usage.store import get_usage_store
 
     store = get_usage_store()
-    if usd is not None:
-        store.set_budget_limit(int(round(usd * 1_000_000)) if usd > 0 else None)
-    console.print(f"Monthly budget: {_usd(store.get_budget_limit())}")
+    if amount is not None:
+        # Entered in the display currency, stored in USD like everything else.
+        rate = get_display_currency()["usd_rate"]
+        store.set_budget_limit(int(round(amount / rate * 1_000_000)) if amount > 0 else None)
+    console.print(f"Monthly budget: {_money(store.get_budget_limit())}")
+
+
+@usage_app.command("currency")
+def usage_currency(
+    code: str = typer.Argument(None, help="ISO currency code to show costs in, e.g. EUR"),
+    rate: float = typer.Option(None, "--rate", help="Units of the currency per 1 USD"),
+):
+    """Show or set the currency costs are displayed in (the ledger stays USD)."""
+    from ollabridge.usage.currency import get_display_currency, set_display_currency
+
+    if code is not None:
+        try:
+            set_display_currency(code, rate)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1)
+    current = get_display_currency()
+    if current["code"] == "USD":
+        console.print("Costs are shown in USD.")
+    else:
+        console.print(
+            f"Costs are shown in {current['code']} at 1 USD = {current['usd_rate']:g} {current['code']} "
+            f"[dim]({current['source']} rate; providers charge in USD)[/dim]"
+        )
 
 
 @usage_app.command("claude-code")

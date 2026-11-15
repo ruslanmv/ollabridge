@@ -1,7 +1,7 @@
 /** Charts for the Usage page: plain SVG/HTML, no chart library. */
 
 import { useState } from 'react'
-import type { UsageBreakdown, UsageTimeseries } from '../../lib/usageApi'
+import type { DisplayCurrency, UsageBreakdown, UsageTimeseries } from '../../lib/usageApi'
 import { formatDay, formatMetric } from './format'
 
 const GRID = 'rgba(255,255,255,0.07)'
@@ -37,15 +37,22 @@ export function Legend({ keys, colors }: { keys: string[]; colors: Record<string
 export function StackedColumns({
   data,
   colors,
+  currency,
 }: {
   data: UsageTimeseries
   colors: Record<string, string>
+  currency: DisplayCurrency
 }) {
   const [hover, setHover] = useState<number | null>(null)
   const metric = data.metric === 'cost' ? 'cost' : 'tokens'
   const days = data.days
   const totals = days.map((_, i) => data.series.reduce((sum, s) => sum + s.values[i], 0))
-  const { top, ticks } = niceScale(Math.max(...totals, 0))
+  // Pick round tick values in the currency being shown, then map them back to
+  // the stored unit (micro-USD) that the bars are drawn in.
+  const unit = metric === 'cost' ? currency.usd_rate : 1
+  const shown = niceScale(Math.max(...totals, 0) * unit)
+  const top = shown.top / unit
+  const ticks = shown.ticks.map((tick) => tick / unit)
 
   const width = 720
   const height = 240
@@ -69,7 +76,7 @@ export function StackedColumns({
           <g key={tick}>
             <line x1={pad.left} x2={width - pad.right} y1={y(tick)} y2={y(tick)} stroke={tick === 0 ? AXIS : GRID} />
             <text x={pad.left - 8} y={y(tick) + 3.5} textAnchor="end" fontSize="10" fill={MUTED}>
-              {formatMetric(metric, tick)}
+              {formatMetric(metric, tick, currency)}
             </text>
           </g>
         ))}
@@ -133,12 +140,12 @@ export function StackedColumns({
               <div key={series.key} className="flex items-center gap-2 text-white/70">
                 <span className="w-2 h-2 rounded-[2px]" style={{ background: colors[series.key] }} />
                 <span className="flex-1">{series.key}</span>
-                <span className="tabular-nums text-white/90">{formatMetric(metric, series.values[hover])}</span>
+                <span className="tabular-nums text-white/90">{formatMetric(metric, series.values[hover], currency)}</span>
               </div>
             ))}
           <div className="flex justify-between gap-4 mt-1 pt-1 border-t border-white/10 text-white/60">
             <span>Total</span>
-            <span className="tabular-nums text-white/90">{formatMetric(metric, totals[hover])}</span>
+            <span className="tabular-nums text-white/90">{formatMetric(metric, totals[hover], currency)}</span>
           </div>
         </div>
       )}
@@ -147,7 +154,7 @@ export function StackedColumns({
 }
 
 /** The same series as a table, for readers who want the numbers. */
-export function SeriesTable({ data }: { data: UsageTimeseries }) {
+export function SeriesTable({ data, currency }: { data: UsageTimeseries; currency: DisplayCurrency }) {
   const metric = data.metric === 'cost' ? 'cost' : 'tokens'
   const active = data.days.map((_, i) => i).filter((i) => data.series.some((s) => s.values[i] > 0))
   return (
@@ -169,7 +176,7 @@ export function SeriesTable({ data }: { data: UsageTimeseries }) {
               <td className="py-1.5 pr-3">{formatDay(data.days[i])}</td>
               {data.series.map((series) => (
                 <td key={series.key} className="text-right tabular-nums py-1.5 px-2">
-                  {formatMetric(metric, series.values[i])}
+                  {formatMetric(metric, series.values[i], currency)}
                 </td>
               ))}
             </tr>
@@ -185,20 +192,22 @@ export function ShareList({
   data,
   colors,
   metric,
+  currency,
 }: {
   data: UsageBreakdown
   colors: Record<string, string>
   metric: 'tokens' | 'cost'
+  currency: DisplayCurrency
 }) {
   const max = Math.max(...data.items.map((item) => item.value), 1)
   return (
     <ul className="space-y-3">
       {data.items.map((item) => (
-        <li key={item.key} title={`${item.key}: ${formatMetric(metric, item.value)} (${(item.share * 100).toFixed(1)}%)`}>
+        <li key={item.key} title={`${item.key}: ${formatMetric(metric, item.value, currency)} (${(item.share * 100).toFixed(1)}%)`}>
           <div className="flex items-baseline justify-between text-xs mb-1">
             <span className="text-white/80">{item.key}</span>
             <span className="tabular-nums text-white/60">
-              <span className="text-white/90">{formatMetric(metric, item.value)}</span>
+              <span className="text-white/90">{formatMetric(metric, item.value, currency)}</span>
               {'  '}
               {(item.share * 100).toFixed(1)}%
             </span>

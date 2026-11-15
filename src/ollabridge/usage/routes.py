@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ollabridge.core.security import _is_loopback, require_api_key
 from ollabridge.core.settings import settings
 
-from . import bi_core, capture, otlp, outbox
+from . import bi_core, capture, currency, otlp, outbox
 from .store import get_usage_store
 
 router = APIRouter(tags=["usage"])
@@ -161,6 +161,27 @@ def get_budget() -> Dict[str, Any]:
 def put_budget(body: BudgetBody) -> Dict[str, Any]:
     get_usage_store().set_budget_limit(body.limit_micro)
     return {"period": "monthly", "limit_micro": body.limit_micro}
+
+
+class CurrencyBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=3, max_length=3)
+    #: Units of ``code`` per 1 USD. Required unless ``code`` is USD.
+    usd_rate: Optional[float] = Field(default=None, gt=0)
+
+
+@router.get("/v1/bi/currency", dependencies=[Depends(require_api_key)])
+def get_currency() -> Dict[str, Any]:
+    """Display currency. Amounts elsewhere in /v1/bi/* stay in micro-USD."""
+    return currency.get_display_currency()
+
+
+@router.put("/v1/bi/currency", dependencies=[Depends(require_api_key)])
+def put_currency(body: CurrencyBody) -> Dict[str, Any]:
+    try:
+        return currency.set_display_currency(body.code, body.usd_rate)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.post("/v1/bi/sync", dependencies=[Depends(require_api_key)])

@@ -367,6 +367,21 @@ Costs: the bundled price catalog is empty by design. Point
 `usage/pricing.py`. Until a model has a price, its cost is shown as unpriced;
 costs that a provider or Claude Code reports are used as they arrive.
 
+Show costs in euros (or another currency). Providers charge in US dollars, so
+the ledger stays in USD and amounts are converted only when shown, at a rate
+you set yourself — it is never fetched or assumed. Replace `<rate>` with the
+number of euros one US dollar buys:
+
+```bash
+ollabridge usage currency EUR --rate <rate>
+```
+
+The same control is on the Usage page (top right), and
+`USAGE_DISPLAY_CURRENCY` / `USAGE_DISPLAY_RATE` set a default. Budgets are
+entered in the display currency. Because one rate applies to the whole
+period shown, converted totals are an approximation of what your bank
+charged; update the rate when it moves.
+
 Send usage metadata to OllaBridge Cloud (off by default):
 
 ```bash

@@ -429,3 +429,45 @@ def test_an_outage_or_older_cloud_keeps_events_pending(store, paired, status):
         {"event_id": e["event_id"], "status": "accepted"} for e in json.loads(request.content)["events"]]})
     assert _run_sync(store, ok) == {"synced": 1, "rejected": 0}
     assert _run_sync(store, ok) == {"synced": 0, "rejected": 0}
+
+
+# ── display currency ────────────────────────────────────────────────────
+
+def test_display_currency_defaults_to_usd_and_needs_an_explicit_rate(store):
+    from ollabridge.usage import currency
+
+    assert currency.get_display_currency(store) == {"code": "USD", "usd_rate": 1.0, "source": "default"}
+    with pytest.raises(ValueError, match="rate is required"):
+        currency.set_display_currency("EUR", None, store)
+    with pytest.raises(ValueError):
+        currency.set_display_currency("euro", 0.9, store)
+    with pytest.raises(ValueError):
+        currency.set_display_currency("EUR", -1, store)
+    assert currency.set_display_currency("eur", 0.5, store) == {
+        "code": "EUR", "usd_rate": 0.5, "source": "saved"}
+    assert currency.format_money(1_185_430_000, currency.get_display_currency(store)) == "€592.72"
+    assert currency.format_money(None, currency.get_display_currency(store)) == "—"
+    assert currency.set_display_currency("USD", None, store)["usd_rate"] == 1.0
+
+
+def test_display_currency_can_come_from_the_environment(store, monkeypatch):
+    from ollabridge.usage import currency
+
+    monkeypatch.setattr(capture.settings, "USAGE_DISPLAY_CURRENCY", "EUR")
+    monkeypatch.setattr(capture.settings, "USAGE_DISPLAY_RATE", 0.8)
+    assert currency.get_display_currency(store) == {"code": "EUR", "usd_rate": 0.8, "source": "environment"}
+    # A saved choice wins.
+    currency.set_display_currency("GBP", 0.7, store)
+    assert currency.get_display_currency(store)["code"] == "GBP"
+
+
+def test_changing_the_display_currency_never_rewrites_the_ledger(client, store):
+    store.record(_event(cost={"estimated_micro": 2_000_000}))
+    before = client.get("/v1/bi/overview", headers=KEY).json()["estimated_cost_micro"]["value"]
+    assert client.put("/v1/bi/currency", json={"code": "EUR"}, headers=KEY).status_code == 422
+    assert client.put("/v1/bi/currency", json={"code": "EUR", "usd_rate": 0.5}, headers=KEY).json() == {
+        "code": "EUR", "usd_rate": 0.5, "source": "saved"}
+    assert client.get("/v1/bi/currency", headers=KEY).json()["code"] == "EUR"
+    # Stored and served amounts are still micro-USD.
+    assert client.get("/v1/bi/overview", headers=KEY).json()["estimated_cost_micro"]["value"] == before
+    assert store.events()[0]["estimated_micro"] == 2_000_000

@@ -19,9 +19,15 @@ import {
   TriangleAlert,
   Wallet,
 } from 'lucide-react'
-import { usageApi, type Kpi, type MeasurementMix, type UsageInsight } from '../../lib/usageApi'
+import {
+  usageApi,
+  type DisplayCurrency,
+  type Kpi,
+  type MeasurementMix,
+  type UsageInsight,
+} from '../../lib/usageApi'
 import { Legend, SeriesTable, ShareList, StackedColumns } from './charts'
-import { assignColors, formatTokens, formatUsd } from './format'
+import { USD, assignColors, formatMoney, formatTokens } from './format'
 
 const RANGES = [
   { days: 7, label: '7 days' },
@@ -52,6 +58,7 @@ function useUsage(days: number, metric: 'tokens' | 'cost') {
     agents: useQuery({ queryKey: ['usage', 'agents', days], queryFn: () => usageApi.agents(days), ...options }),
     insights: useQuery({ queryKey: ['usage', 'insights', days], queryFn: () => usageApi.insights(days), ...options }),
     sources: useQuery({ queryKey: ['usage', 'sources'], queryFn: usageApi.sources, ...options }),
+    currency: useQuery({ queryKey: ['usage', 'currency'], queryFn: usageApi.currency, retry: false }),
   }
 }
 
@@ -166,12 +173,20 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-xs text-white/40 py-6 text-center">{children}</p>
 }
 
-function BudgetTile({ overview }: { overview: NonNullable<ReturnType<typeof useUsage>['overview']['data']> }) {
+function BudgetTile({
+  overview,
+  currency,
+}: {
+  overview: NonNullable<ReturnType<typeof useUsage>['overview']['data']>
+  currency: DisplayCurrency
+}) {
   const client = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const save = useMutation({
-    mutationFn: (usd: number) => usageApi.setBudget(usd > 0 ? Math.round(usd * 1_000_000) : null),
+    // Entered in the display currency; stored in USD like the rest of the ledger.
+    mutationFn: (amount: number) =>
+      usageApi.setBudget(amount > 0 ? Math.round((amount / currency.usd_rate) * 1_000_000) : null),
     onSuccess: () => {
       setEditing(false)
       client.invalidateQueries({ queryKey: ['usage', 'overview'] })
@@ -181,7 +196,7 @@ function BudgetTile({ overview }: { overview: NonNullable<ReturnType<typeof useU
 
   if (editing) {
     return (
-      <Tile icon={Wallet} label="Monthly budget (USD)" value="">
+      <Tile icon={Wallet} label={`Monthly budget (${currency.code})`} value="">
         <form
           className="flex gap-2 -mt-8"
           onSubmit={(event) => {
@@ -208,7 +223,7 @@ function BudgetTile({ overview }: { overview: NonNullable<ReturnType<typeof useU
   }
 
   return (
-    <Tile icon={Wallet} label="Budget remaining" value={budget ? formatUsd(budget.remaining_micro) : '—'}>
+    <Tile icon={Wallet} label="Budget remaining" value={budget ? formatMoney(budget.remaining_micro, currency) : '—'}>
       {budget ? (
         <>
           <div className="h-1.5 rounded-full bg-white/[0.06]" title={`${budget.remaining_pct}% of the monthly budget left`}>
@@ -218,7 +233,7 @@ function BudgetTile({ overview }: { overview: NonNullable<ReturnType<typeof useU
             />
           </div>
           <span className="text-xs text-white/45">
-            {formatUsd(budget.spent_micro)} of {formatUsd(budget.limit_micro)} this month
+            {formatMoney(budget.spent_micro, currency)} of {formatMoney(budget.limit_micro, currency)} this month
             {budget.projected_overrun && <span className="text-amber-400"> · on course to exceed</span>}
           </span>
         </>
@@ -227,7 +242,7 @@ function BudgetTile({ overview }: { overview: NonNullable<ReturnType<typeof useU
       )}
       <button
         onClick={() => {
-          setDraft(budget ? String(budget.limit_micro / 1_000_000) : '')
+          setDraft(budget ? ((budget.limit_micro / 1_000_000) * currency.usd_rate).toFixed(2) : '')
           setEditing(true)
         }}
         className="self-start text-xs text-glow-cyan/80 hover:text-glow-cyan"
@@ -238,7 +253,7 @@ function BudgetTile({ overview }: { overview: NonNullable<ReturnType<typeof useU
   )
 }
 
-function InsightRow({ insight }: { insight: UsageInsight }) {
+function InsightRow({ insight, currency }: { insight: UsageInsight; currency: DisplayCurrency }) {
   const warning = insight.severity === 'warning'
   const Icon = warning ? TriangleAlert : Lightbulb
   return (
@@ -248,10 +263,98 @@ function InsightRow({ insight }: { insight: UsageInsight }) {
         <p className="text-sm text-white/85">{insight.title}</p>
         <p className="text-xs text-white/50 mt-0.5">{insight.detail}</p>
         {insight.estimated_saving_micro ? (
-          <p className="text-xs text-white/60 mt-0.5">Spent on these: {formatUsd(insight.estimated_saving_micro)}</p>
+          <p className="text-xs text-white/60 mt-0.5">Spent on these: {formatMoney(insight.estimated_saving_micro, currency)}</p>
         ) : null}
       </div>
     </li>
+  )
+}
+
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK']
+
+/** Pick the currency costs are shown in. Providers charge in USD, so a rate is
+ * always the user's own explicit choice — nothing is fetched or assumed. */
+function CurrencyControl({ currency }: { currency: DisplayCurrency }) {
+  const client = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [code, setCode] = useState(currency.code)
+  const [rate, setRate] = useState('')
+  const save = useMutation({
+    mutationFn: () => usageApi.setCurrency(code, code === 'USD' ? null : Number(rate)),
+    onSuccess: () => {
+      setOpen(false)
+      client.invalidateQueries({ queryKey: ['usage', 'currency'] })
+    },
+  })
+  const rateOk = code === 'USD' || Number(rate) > 0
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => {
+          setCode(currency.code)
+          setRate(currency.code === 'USD' ? '' : String(currency.usd_rate))
+          setOpen(true)
+        }}
+        title="Providers charge in USD. Other currencies are converted for display at the rate you set."
+        className="px-3 py-1.5 rounded-lg border border-white/10 bg-white/[0.03] text-xs text-white/60 hover:text-white/85"
+      >
+        {currency.code === 'USD'
+          ? 'USD'
+          : `${currency.code} · 1 USD = ${currency.usd_rate} ${currency.code}`}
+      </button>
+    )
+  }
+
+  return (
+    <form
+      className="flex items-center gap-2 text-xs"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (rateOk) save.mutate()
+      }}
+    >
+      <select
+        value={code}
+        onChange={(event) => setCode(event.target.value)}
+        aria-label="Display currency"
+        className="rounded-md bg-navy-800 border border-white/10 px-2 py-1.5 text-white/85 outline-none"
+      >
+        {CURRENCIES.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+      {code !== 'USD' && (
+        <label className="flex items-center gap-1.5 text-white/55">
+          1 USD =
+          <input
+            autoFocus
+            type="number"
+            min="0"
+            step="0.0001"
+            value={rate}
+            onChange={(event) => setRate(event.target.value)}
+            placeholder="rate"
+            aria-label={`${code} per 1 USD`}
+            className="w-20 rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-white/90 outline-none focus:border-glow-cyan/50"
+          />
+          {code}
+        </label>
+      )}
+      <button
+        type="submit"
+        disabled={!rateOk || save.isPending}
+        className="px-2.5 py-1.5 rounded-md bg-glow-cyan/15 text-glow-cyan disabled:opacity-40"
+      >
+        Save
+      </button>
+      <button type="button" onClick={() => setOpen(false)} className="px-1.5 py-1.5 text-white/45 hover:text-white/75">
+        Cancel
+      </button>
+      {save.isError && <span className="text-amber-400">{(save.error as Error).message}</span>}
+    </form>
   )
 }
 
@@ -259,7 +362,8 @@ export function UsagePage() {
   const [days, setDays] = useState(30)
   const [metric, setMetric] = useState<'tokens' | 'cost'>('tokens')
   const [view, setView] = useState<'chart' | 'table'>('chart')
-  const { overview, series, share, agents, insights, sources } = useUsage(days, metric)
+  const { overview, series, share, agents, insights, sources, currency: currencyQuery } = useUsage(days, metric)
+  const currency = currencyQuery.data ?? USD
 
   const data = overview.data
   const seriesKeys = series.data?.series.map((s) => s.key) ?? []
@@ -281,12 +385,15 @@ export function UsagePage() {
           <p className="text-sm text-white/50">
             Tokens, cost and attribution for requests through this gateway. Metadata only — no prompt content.
           </p>
-          <Segmented
-            label="Period"
-            value={days}
-            onChange={setDays}
-            options={RANGES.map((r) => ({ value: r.days, label: r.label }))}
-          />
+          <div className="flex items-center gap-3">
+            <CurrencyControl currency={currency} />
+            <Segmented
+              label="Period"
+              value={days}
+              onChange={setDays}
+              options={RANGES.map((r) => ({ value: r.days, label: r.label }))}
+            />
+          </div>
         </div>
 
         {overview.isError && (
@@ -301,7 +408,7 @@ export function UsagePage() {
               <Delta kpi={data.total_tokens} />
               <MixBadges mix={data.total_tokens.measurement_mix} />
             </Tile>
-            <Tile icon={Coins} label="Estimated cost" value={formatUsd(data.estimated_cost_micro.value)}>
+            <Tile icon={Coins} label="Estimated cost" value={formatMoney(data.estimated_cost_micro.value, currency)}>
               <Delta kpi={data.estimated_cost_micro} invert />
               {data.estimated_cost_micro.unpriced_tokens > 0 && (
                 <span className="text-xs text-amber-400/90" title="Add prices for these models to the price catalog">
@@ -310,11 +417,11 @@ export function UsagePage() {
               )}
               {data.subscription_equivalent_micro.value > 0 && (
                 <span className="text-xs text-white/45" title="What subscription usage would cost at API prices. Not a charge.">
-                  + {formatUsd(data.subscription_equivalent_micro.value)} subscription-equivalent
+                  + {formatMoney(data.subscription_equivalent_micro.value, currency)} subscription-equivalent
                 </span>
               )}
             </Tile>
-            <Tile icon={Receipt} label="Billed cost" value={formatUsd(data.billed_cost_micro.value)}>
+            <Tile icon={Receipt} label="Billed cost" value={formatMoney(data.billed_cost_micro.value, currency)}>
               <Delta kpi={data.billed_cost_micro} invert />
               <span className="text-xs text-white/40">Charges stated by providers</span>
             </Tile>
@@ -328,7 +435,7 @@ export function UsagePage() {
                 {data.requests.failed > 0 && `, ${data.requests.failed.toLocaleString()} failed`}
               </span>
             </Tile>
-            <BudgetTile overview={data} />
+            <BudgetTile overview={data} currency={currency} />
           </div>
         )}
 
@@ -373,9 +480,9 @@ export function UsagePage() {
                 {series.data && series.data.series.length > 0 ? (
                   <div className="space-y-3">
                     {view === 'chart' ? (
-                      <StackedColumns data={series.data} colors={colors} />
+                      <StackedColumns data={series.data} colors={colors} currency={currency} />
                     ) : (
-                      <SeriesTable data={series.data} />
+                      <SeriesTable data={series.data} currency={currency} />
                     )}
                     <Legend keys={seriesKeys} colors={colors} />
                   </div>
@@ -386,7 +493,7 @@ export function UsagePage() {
 
               <Panel title={metric === 'cost' ? 'API cost by provider' : 'Tokens by provider'}>
                 {share.data && share.data.items.length > 0 ? (
-                  <ShareList data={share.data} colors={colors} metric={metric} />
+                  <ShareList data={share.data} colors={colors} metric={metric} currency={currency} />
                 ) : (
                   <Empty>{metric === 'cost' ? 'No priced API usage in this period.' : 'Nothing to show.'}</Empty>
                 )}
@@ -423,7 +530,7 @@ export function UsagePage() {
                             </span>
                           </td>
                           <td className="py-2.5 text-right tabular-nums text-white/85">{formatTokens(agent.tokens)}</td>
-                          <td className="py-2.5 text-right tabular-nums text-white/85">{formatUsd(agent.cost_micro)}</td>
+                          <td className="py-2.5 text-right tabular-nums text-white/85">{formatMoney(agent.cost_micro, currency)}</td>
                           <td className="py-2.5 text-right tabular-nums text-white/60">
                             {agent.delta_pct === null ? 'new' : `${agent.delta_pct >= 0 ? '+' : ''}${agent.delta_pct}%`}
                           </td>
@@ -440,7 +547,7 @@ export function UsagePage() {
                 {insights.data && insights.data.items.length > 0 ? (
                   <ul>
                     {insights.data.items.map((insight) => (
-                      <InsightRow key={insight.id} insight={insight} />
+                      <InsightRow key={insight.id} insight={insight} currency={currency} />
                     ))}
                   </ul>
                 ) : (

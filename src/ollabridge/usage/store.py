@@ -267,7 +267,21 @@ class UsageStore:
         with self._lock, self._connect() as conn:
             return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
-    # ── settings (budget) ───────────────────────────────────────────────
+    # ── settings ────────────────────────────────────────────────────────
+
+    def get_setting(self, key: str) -> Optional[str]:
+        with self._lock, self._connect() as conn:
+            row = conn.execute("SELECT value FROM usage_settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO usage_settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+
 
     def get_budget_limit(self) -> Optional[int]:
         with self._lock, self._connect() as conn:

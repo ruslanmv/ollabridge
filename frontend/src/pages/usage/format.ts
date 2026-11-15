@@ -1,5 +1,7 @@
 /** Number formatting and the provider → colour assignment for the Usage page. */
 
+import type { DisplayCurrency } from '../../lib/usageApi'
+
 export function formatTokens(value: number): string {
   const abs = Math.abs(value)
   if (abs >= 1e9) return `${(value / 1e9).toFixed(2)}B`
@@ -8,20 +10,29 @@ export function formatTokens(value: number): string {
   return String(value)
 }
 
-/** Micro-USD → "$1,185.43". Sub-cent amounts keep four decimals. */
-export function formatUsd(micro: number): string {
-  const usd = micro / 1_000_000
-  const digits = usd !== 0 && Math.abs(usd) < 0.01 ? 4 : 2
-  return usd.toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  })
+export const USD: DisplayCurrency = { code: 'USD', usd_rate: 1, source: 'default' }
+
+/** Micro-USD → a figure in the display currency, e.g. "1.185,43 €" or
+ * "$1,185.43", in the reader's own number format. Sub-cent amounts keep four
+ * decimals. The ledger is USD; conversion happens here, at display time. */
+export function formatMoney(micro: number, currency: DisplayCurrency = USD): string {
+  const amount = (micro / 1_000_000) * currency.usd_rate
+  const digits = amount !== 0 && Math.abs(amount) < 0.01 ? 4 : 2
+  try {
+    return amount.toLocaleString(undefined, {
+      style: 'currency',
+      currency: currency.code,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    })
+  } catch {
+    // A code this browser's Intl data does not know.
+    return `${amount.toFixed(digits)} ${currency.code}`
+  }
 }
 
-export function formatMetric(metric: 'tokens' | 'cost', value: number): string {
-  return metric === 'cost' ? formatUsd(value) : formatTokens(value)
+export function formatMetric(metric: 'tokens' | 'cost', value: number, currency: DisplayCurrency = USD): string {
+  return metric === 'cost' ? formatMoney(value, currency) : formatTokens(value)
 }
 
 export function formatDay(isoDay: string): string {

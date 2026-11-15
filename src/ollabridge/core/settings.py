@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     # (Pro/Max plan — shown as an API-equivalent figure, never as spend) or
     # "api" (an API key — counted as spend).
     CLAUDE_CODE_BILLING: Literal["subscription", "api"] = "subscription"
+    # Currency that costs are *shown* in. The ledger itself is always USD
+    # (what providers charge); amounts are converted for display at this rate
+    # = units of the currency per 1 USD, e.g. EUR with your own EUR-per-USD
+    # rate. Can also be set from the dashboard or `ollabridge usage currency`.
+    USAGE_DISPLAY_CURRENCY: str = "USD"
+    USAGE_DISPLAY_RATE: float = 1.0
     # Seconds between usage uploads when usage_metadata sync is on.
     USAGE_SYNC_INTERVAL_SECONDS: float = 60.0
 
