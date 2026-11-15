@@ -325,3 +325,71 @@ CLI: `ollabridge usage summary | top | export | connect | prune`.
 - An OpenRouter call records OpenRouter as the billing provider.
 - The outbox drains after a simulated outage with no duplicates.
 - With `usage_metadata` off, no usage data leaves the device.
+
+---
+
+## 11. Implementation status
+
+Implemented (steps 1, 2, 4 and the Overview part of 5, plus the sync outbox):
+
+| Piece | Where |
+| --- | --- |
+| Shared contract, normaliser, price catalog, aggregation | `usage/contract.py`, `normalize.py`, `pricing.py`, `bi_core.py` (identical to the cloud's; pinned by `tests/conformance/test_usage_contract.py`) |
+| Usage ledger | `usage/store.py` → `<OLLABRIDGE_HOME>/usage.db` |
+| Capture | `usage/capture.py`, called from `_record_trace`; real counts from Ollama and provider responses via `usage/context.py` |
+| Claude Code telemetry | `usage/otlp.py`, `POST /otlp/v1/logs` |
+| Dashboard API | `usage/routes.py` → `/v1/bi/overview`, `timeseries`, `breakdown`, `agents`, `insights`, `events`, `sources`, `budget` |
+| Opt-in cloud sync | `usage/outbox.py`, `usage_metadata` category in `sync.yaml` |
+| CLI | `ollabridge usage summary | budget | claude-code | sync | prune` |
+| Dashboard page | `frontend/src/pages/usage/` ("Usage" in the sidebar) |
+
+### Using it
+
+Usage is recorded automatically for requests through the gateway
+(`USAGE_ENABLED=false` turns it off).
+
+```bash
+ollabridge usage summary
+```
+
+Include Claude Code:
+
+```bash
+ollabridge usage claude-code
+```
+
+Usage from Claude Code is treated as subscription usage by default (shown as
+an API-equivalent figure, not as spend). Set `CLAUDE_CODE_BILLING=api` if it
+runs on an API key.
+
+Costs: the bundled price catalog is empty by design. Point
+`USAGE_PRICING_FILE` at a YAML file in the format documented in
+`usage/pricing.py`. Until a model has a price, its cost is shown as unpriced;
+costs that a provider or Claude Code reports are used as they arrive.
+
+Send usage metadata to OllaBridge Cloud (off by default):
+
+```bash
+ollabridge sync set usage_metadata true
+```
+
+### Differences from the proposal above
+
+- Adapters do not return a `usage_raw` key. The provider's usage block is
+  carried in a request-scoped context variable instead, so no response shape
+  changes.
+- `OTEL_METRICS_EXPORTER` is not needed: per-request log events carry the
+  usage, and aggregate metrics are accepted and discarded to avoid double
+  counting.
+
+### Not yet implemented
+
+- A separate event for each failed provider candidate during failover (the
+  request is recorded once, with its final outcome).
+- Budget enforcement (the budget is informational), compute/energy cost,
+  subscription fee entries, provider billing importers.
+- Usage, Costs, Agents, Providers and Forecasts as separate tabs; the page is
+  the Overview.
+- "All devices (Cloud)" data source in the dashboard.
+- Real token counts for streamed responses and for requests served by a
+  remote node or direct endpoint — these are still estimates.

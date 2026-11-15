@@ -4,6 +4,7 @@ import type { Page } from '../App'
 
 const PAGE_TITLES: Record<Page, string> = {
   dashboard: 'AI Distribution System',
+  usage: 'Usage & Cost',
   sources: 'Sources & Access',
   models: 'Model Inventory',
   runtimes: 'Local Runtimes',

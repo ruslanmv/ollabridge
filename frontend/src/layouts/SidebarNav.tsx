@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   LayoutDashboard,
+  BarChart3,
   Brain,
   Boxes,
   Link2,
@@ -16,6 +17,7 @@ import type { Page } from '../App'
 
 const NAV_ITEMS: { id: Page; icon: typeof LayoutDashboard; label: string }[] = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
+  { id: 'usage', icon: BarChart3, label: 'Usage' },
   { id: 'sources', icon: PlugZap, label: 'Sources' },
   { id: 'models', icon: Brain, label: 'Models' },
   { id: 'runtimes', icon: Server, label: 'Runtimes' },
