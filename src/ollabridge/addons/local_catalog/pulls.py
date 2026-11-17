@@ -87,20 +87,33 @@ class LocalPullManager:
             progress.status = "running"
             progress.last_update = dt.datetime.now(dt.timezone.utc)
 
+            # A model is several files (layers), each reported on its own. Progress is
+            # their sum, so the bar never falls back to zero when the next file starts.
+            layers: dict[str, tuple[int, int]] = {}
+
             try:
                 async for event in client.pull_stream(progress.external_model_id):
                     status = (event.get("status") or "").lower()
                     progress.last_update = dt.datetime.now(dt.timezone.utc)
 
-                    if status == "error":
+                    if status == "error" or event.get("error"):
                         progress.status = "error"
                         progress.error = str(event.get("error") or "unknown error")
                         break
 
-                    if event.get("total"):
-                        progress.total_bytes = int(event["total"])
-                    if event.get("completed"):
-                        progress.completed_bytes = int(event["completed"])
+                    digest = event.get("digest")
+                    if digest and event.get("total"):
+                        layers[str(digest)] = (int(event["total"]), int(event.get("completed") or 0))
+                        progress.total_bytes = sum(total for total, _ in layers.values())
+                        progress.completed_bytes = sum(done for _, done in layers.values())
+                        progress.detail = "downloading"
+                    elif not digest:
+                        if event.get("total"):
+                            progress.total_bytes = int(event["total"])
+                        if event.get("completed"):
+                            progress.completed_bytes = int(event["completed"])
+                        if status:
+                            progress.detail = status  # "pulling manifest", "verifying sha256 digest", ...
 
                     if status in ("success", "completed"):
                         progress.status = "completed"

@@ -15,6 +15,7 @@ See `docs/EXAMPLES.md` for SDK usage and `docs/CONFIGURATION.md` for auth.
 | `/v1/chat/completions` | POST | OpenAI-compatible chat |
 | `/v1/embeddings` | POST | Generate embeddings |
 | `/v1/models` | GET | List available models (aggregated from nodes) |
+| `/v1/systemone` | POST | Decision requests for a decision model such as `clef-flash`, passed through to Ollama. See [Decision requests](#decision-requests) |
 
 Each `/v1/models` entry is an OpenAI model object (`id`, `object`, `owned_by`)
 plus two OllaBridge extras that say where this gateway serves it from:
@@ -27,6 +28,40 @@ plus two OllaBridge extras that say where this gateway serves it from:
 `owned_by` is `ollama` for local Ollama models; a provider that sets its own
 owner (Open WebUI's namespace, a BYOK source's display name) keeps it. Clients
 that only know the OpenAI shape can ignore the extras.
+
+### Decision requests
+
+`POST /v1/systemone` is for decision models (`clef-flash` and copies of it).
+A decision model does not write text: it reads a `state` and answers typed
+`questions` with a probability per option. Ollama 0.35.1 and later serves this
+endpoint; the gateway passes the request and the answer through unchanged, so
+a client outside the machine (a container, another host) needs only the
+gateway's address and API key.
+
+```bash
+curl http://localhost:11435/v1/systemone \
+  -H "Authorization: Bearer your-key" -H "Content-Type: application/json" \
+  -d '{"model": "clef-flash-8k",
+       "state": {"conversation": "Customer: how do I reset my mailbox password?"},
+       "questions": {"is_request": {"type": "noul",
+                                    "instructions": "Is `conversation` a customer request?"}}}'
+```
+
+```json
+{"answers": {"is_request": {"type": "noul", "noul": 0.97}}}
+```
+
+| Answer | Meaning |
+|--------|---------|
+| Ollama's own status and body | Returned as they are: `404` when the model is not installed, `500` when it could not be loaded |
+| `400` | The body is not a JSON object, or has no `model` or no `questions` |
+| `502 ollama_unreachable` | Ollama could not be reached; `base_url` is the address that was tried |
+| `504 ollama_timeout` | Ollama did not answer within `SYSTEMONE_TIMEOUT_S` (default 300 seconds) |
+
+The model must be installed in Ollama under the name the client sends. To give
+a client the name it expects with a smaller context window, use Model Inventory
+→ Get models → Custom → Copy with a set context window (for example
+`clef-flash-8k` from `clef-flash:9b` at 8K).
 
 ### Admin Endpoints (require API key)
 

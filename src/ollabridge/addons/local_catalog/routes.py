@@ -60,6 +60,14 @@ class PullRequest(BaseModel):
     model: str
 
 
+class VariantRequest(BaseModel):
+    """An installed model under a new name with a fixed context window."""
+
+    source: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*(:[A-Za-z0-9._-]+)?$")
+    num_ctx: int = Field(ge=512, le=1_048_576)
+
+
 class EnableRequest(BaseModel):
     enabled: bool = True
 
@@ -336,8 +344,32 @@ async def pull_status(
         "completed_bytes": progress.completed_bytes,
         "progress_pct": progress.progress_pct,
         "error": progress.error,
+        "detail": progress.detail,
         "last_update": progress.last_update.isoformat(),
     }
+
+
+@router.post("/models/pull/cancel")
+async def cancel_pull(
+    request: Request,
+    body: PullRequest,
+    _key: str = Depends(require_api_key),
+):
+    """Stop a download. What was already fetched stays on disk, so starting the
+    same model again resumes instead of starting over."""
+    _repo, _svc, _hc, pulls = _components(request)
+    cancelled = await pulls.cancel(body.node_id or _default_node_id(), body.model)
+    return {"ok": cancelled}
+
+
+@router.post("/models/variant")
+async def create_variant(body: VariantRequest, _key: str = Depends(require_api_key)):
+    """Make ``name`` from the installed ``source`` with its context window set,
+    the same as a Modelfile with ``FROM source`` and ``PARAMETER num_ctx``."""
+    ok, error = await _build_client().create_variant(body.name, body.source, {"num_ctx": body.num_ctx})
+    if not ok:
+        raise HTTPException(502, f"The runtime could not create {body.name}: {error}")
+    return {"ok": True, "name": body.name, "source": body.source, "num_ctx": body.num_ctx}
 
 
 @router.get("/models/pulls/active")
@@ -349,7 +381,10 @@ async def active_pulls(request: Request, _key: str = Depends(require_api_key)):
             "node_id": p.node_id,
             "external_model_id": p.external_model_id,
             "status": p.status,
+            "total_bytes": p.total_bytes,
+            "completed_bytes": p.completed_bytes,
             "progress_pct": p.progress_pct,
+            "detail": p.detail,
         }
         for p in rows
     ]}

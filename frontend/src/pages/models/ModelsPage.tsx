@@ -8,9 +8,14 @@ import {
   AlertTriangle,
   Loader2,
   Search,
+  Download,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useModels, useRuntimes, useHealth, useSettings } from '../../lib/hooks'
+import { useActivePulls, useStartLocalPull, useSyncLocalCatalog } from '../../lib/localHooks'
+import { GetModelsDrawer } from './GetModelsDrawer'
+import { ModelCopiesSection } from './ModelCopies'
+import { normalizeRef } from './modelRefs'
 import { OllamaSetupWizard } from '../sources/OllamaSetupWizard'
 import { api } from '../../lib/api'
 import { useQueryClient } from '@tanstack/react-query'
@@ -25,6 +30,12 @@ export function ModelsPage({ onNavigate }: { onNavigate: (page: Page) => void })
   const [search, setSearch] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [setupOpen, setSetupOpen] = useState(false)
+  const [getModelsOpen, setGetModelsOpen] = useState(false)
+  // Downloads started here, or found running on the gateway; kept until dismissed.
+  const [downloads, setDownloads] = useState<string[]>([])
+  const { data: activePulls } = useActivePulls()
+  const startPull = useStartLocalPull()
+  const syncCatalog = useSyncLocalCatalog()
 
   const isOnline = health?.status === 'ok'
   const models = modelsData?.data ?? []
@@ -62,6 +73,46 @@ export function ModelsPage({ onNavigate }: { onNavigate: (page: Page) => void })
     await queryClient.invalidateQueries({ queryKey: ['runtimes'] })
     setTimeout(() => setRefreshing(false), 800)
   }
+
+  // A download that was already running (started earlier, or from another tab) joins the list.
+  // Adjusted while rendering, when the gateway's list changes, so no effect is needed.
+  const activeRefs = (activePulls?.pulls ?? []).map((pull) => pull.external_model_id).join(' ')
+  const [seenActiveRefs, setSeenActiveRefs] = useState('')
+  if (activeRefs !== seenActiveRefs) {
+    setSeenActiveRefs(activeRefs)
+    const known = new Set(downloads.map(normalizeRef))
+    const added = activeRefs.split(' ').filter((ref) => ref && !known.has(normalizeRef(ref)))
+    if (added.length) setDownloads([...downloads, ...added])
+  }
+
+  const handleStartDownload = useCallback(
+    (ref: string) => {
+      startPull.mutate({ model: ref })
+      setDownloads((current) =>
+        current.some((existing) => normalizeRef(existing) === normalizeRef(ref)) ? current : [...current, ref],
+      )
+    },
+    [startPull],
+  )
+
+  const handleDismissDownload = useCallback((ref: string) => {
+    setDownloads((current) => current.filter((existing) => existing !== ref))
+  }, [])
+
+  // A model finished installing: refresh the catalog so it is listed and routable right away.
+  const handleInstalled = useCallback(() => {
+    syncCatalog.mutate(
+      {},
+      {
+        onSettled: () => {
+          queryClient.invalidateQueries({ queryKey: ['models'] })
+          queryClient.invalidateQueries({ queryKey: ['runtimes'] })
+        },
+      },
+    )
+  }, [syncCatalog, queryClient])
+
+  const downloading = activePulls?.pulls?.length ?? 0
 
   // Quick-enable backend
   const handleEnableBackend = async (backend: 'ollama' | 'homepilot') => {
@@ -128,6 +179,31 @@ export function ModelsPage({ onNavigate }: { onNavigate: (page: Page) => void })
               <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
             </motion.button>
 
+            {/* Get models: search and download into the local Ollama runtime */}
+            {localEnabled && (
+              <motion.button
+                onClick={() => setGetModelsOpen(true)}
+                className="relative flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(0,229,255,0.15), rgba(139,92,246,0.15))',
+                  border: '1px solid rgba(0,229,255,0.25)',
+                  color: '#00e5ff',
+                }}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                title="Search and download models"
+              >
+                <Download size={16} />
+                <span className="hidden md:inline">Get models</span>
+                {downloading > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-glow-cyan px-1 text-[10px] font-bold text-navy-900">
+                    <span className="absolute inset-0 rounded-full bg-glow-cyan/60 animate-ping" />
+                    <span className="relative">{downloading}</span>
+                  </span>
+                )}
+              </motion.button>
+            )}
+
             {/* Settings link */}
             <motion.button
               onClick={() => onNavigate('settings')}
@@ -184,12 +260,15 @@ export function ModelsPage({ onNavigate }: { onNavigate: (page: Page) => void })
               models={filterModels(ollamaModels)}
               emptyMessage={
                 localEnabled
-                  ? 'No Ollama models found. Pull models with: ollama pull <model-name>'
+                  ? 'No Ollama models yet. Use “Get models” above to search and download one.'
                   : undefined
               }
               onEnable={() => handleEnableBackend('ollama')}
               onConfigure={() => onNavigate('settings')}
             />
+
+            {/* Copies of installed models with their own context window */}
+            {localEnabled && <ModelCopiesSection onChanged={handleInstalled} />}
 
             {/* HomePilot Section */}
             <BackendSection
@@ -240,6 +319,16 @@ export function ModelsPage({ onNavigate }: { onNavigate: (page: Page) => void })
         {setupOpen && (
           <OllamaSetupWizard onClose={() => setSetupOpen(false)} onNavigate={onNavigate} />
         )}
+
+        <GetModelsDrawer
+          open={getModelsOpen}
+          onClose={() => setGetModelsOpen(false)}
+          installed={ollamaModels.map((m) => m.id)}
+          downloads={downloads}
+          onStart={handleStartDownload}
+          onDismiss={handleDismissDownload}
+          onInstalled={handleInstalled}
+        />
       </div>
     </div>
   )

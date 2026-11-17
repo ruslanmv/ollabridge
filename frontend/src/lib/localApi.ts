@@ -50,6 +50,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ── Types ─────────────────────────────────────────────────────────────
 
+/** The last time a model was loaded to see whether it fits on this machine. */
+export interface ModelLoadResult {
+  loads: boolean
+  tested_at: string
+  seconds: number
+  context: number | null
+  total_bytes: number | null
+  gpu_bytes: number | null
+  /** Why it did not load, in plain words. */
+  reason: string | null
+  /** A smaller context window to try after a failure. */
+  try_context: number | null
+}
+
+/** An installed model, with what it was built from and its context window. */
+export interface ModelVariant {
+  name: string
+  built_from: string | null
+  /** Built from a model installed here: it shares that model's files. */
+  is_copy: boolean
+  /** The context window set on the model; null when it uses the runtime default. */
+  context: number | null
+  max_context: number | null
+  size_bytes: number | null
+  parameter_size: string | null
+  quantization: string | null
+  kind: 'chat' | 'decision' | 'embedding'
+  load: ModelLoadResult | null
+}
+
+export interface ModelVariantsResponse {
+  models: ModelVariant[]
+  presets: number[]
+}
+
 export type LocalSetupStatus =
   | 'auto'
   | 'verified'
@@ -161,6 +196,8 @@ export type LocalPullProgress = {
   completed_bytes: number
   progress_pct: number
   error: string | null
+  /** What the runtime is doing now: "downloading", "verifying sha256 digest", ... */
+  detail?: string | null
   last_update?: string
 }
 
@@ -178,6 +215,73 @@ export type LocalCloudManifest = {
   }
   stats: LocalCatalogStats
   models: LocalModel[]
+}
+
+// ── Model library (search + "fits this PC") ──────────────────────────────
+
+export type LibrarySource = 'ollama' | 'huggingface'
+
+export type LibraryResult = {
+  name: string
+  description: string
+  sizes: string[]
+  capabilities: string[]
+  downloads: number | null
+  likes?: number | null
+  tag_count: number | null
+  updated: string | null
+}
+
+export type LibrarySearchResponse = {
+  query: string
+  source: LibrarySource
+  results: LibraryResult[]
+}
+
+/** One downloadable build of a model: `ref` is what gets pulled. */
+export type LibraryBuild = {
+  tag: string
+  ref: string
+  size_bytes: number | null
+  available: boolean
+}
+
+export type LibraryTagsResponse = {
+  name: string
+  source: LibrarySource
+  tags: LibraryBuild[]
+}
+
+export type FitVerdict = 'fits' | 'tight'
+
+export type RecommendedModel = {
+  id: string | null
+  ollama_tag: string
+  hf_id: string | null
+  params_b: number | null
+  capabilities: string[]
+  license: string | null
+  likes: number
+  est_gb: number
+  verdict: FitVerdict
+}
+
+export type PcHardware = {
+  kind: 'nvidia' | 'apple' | 'cpu'
+  name: string
+  vram_gb: number
+  ram_gb: number
+  budget_gb: number
+  budget: string
+}
+
+export type RecommendationsResponse = {
+  enabled: boolean
+  hardware?: PcHardware
+  models?: RecommendedModel[]
+  assumptions?: { quantization: string; context: number }
+  registry?: { generated_at: string | null; source: string }
+  error?: string
 }
 
 // ── Calls ─────────────────────────────────────────────────────────────
@@ -273,6 +377,54 @@ export const localApi = {
 
   activePulls: () =>
     request<LocalActivePullsResponse>('/local/models/pulls/active'),
+
+  cancelPull: (model: string, nodeId?: string) =>
+    request<{ ok: boolean }>('/local/models/pull/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ model, node_id: nodeId }),
+    }),
+
+  /** An installed model under a new name with a fixed context window (no download). */
+  createVariant: (body: { source: string; name: string; num_ctx: number }) =>
+    request<{ ok: boolean; name: string; source: string; num_ctx: number }>('/local/models/variant', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Every installed model: built from, context window, last load result. */
+  variants: () => request<ModelVariantsResponse>('/local/variants'),
+
+  /** A copy of an installed model with its own context window; the name is generated when left out. */
+  buildVariant: (body: { source: string; context: number; name?: string }) =>
+    request<ModelVariant>('/local/variants', { method: 'POST', body: JSON.stringify(body) }),
+
+  /** Load the model once and record whether it fits on this machine. Can take a minute or more. */
+  testVariant: (name: string) =>
+    request<ModelVariant>('/local/variants/test', { method: 'POST', body: JSON.stringify({ name }) }),
+
+  /** Remove a copy. The gateway refuses to remove an original. */
+  removeVariant: (name: string) =>
+    request<{ ok: boolean; name: string }>(`/local/variants/${encodeURI(name)}`, { method: 'DELETE' }),
+
+  librarySearch: (query: string, source: LibrarySource) => {
+    const qs = new URLSearchParams({ q: query, source })
+    return request<LibrarySearchResponse>(`/local/library/search?${qs}`)
+  },
+
+  libraryBuilds: (name: string, source: LibrarySource, tags: string[] = []) => {
+    const qs = new URLSearchParams({ name, source })
+    if (tags.length) qs.set('tags', tags.join(','))
+    return request<LibraryTagsResponse>(`/local/library/tags?${qs}`)
+  },
+
+  recommendations: () =>
+    request<RecommendationsResponse>('/local/library/recommendations'),
+
+  setRecommendations: (enabled: boolean) =>
+    request<{ enabled: boolean }>('/local/library/recommendations', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }),
 
   cloudManifest: (nodeId?: string) => {
     const qs = nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : ''

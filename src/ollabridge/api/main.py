@@ -1134,6 +1134,21 @@ def create_app() -> FastAPI:
 
     app.include_router(local_catalog_router)
 
+    # Model library: search Ollama and Hugging Face, sizes, opt-in "fits this PC"
+    from ollabridge.addons.local_catalog.library_routes import router as model_library_router
+
+    app.include_router(model_library_router)
+
+    # Model copies: an installed model under a new name with its own context window
+    from ollabridge.addons.local_catalog.variants_routes import router as model_variants_router
+
+    app.include_router(model_variants_router)
+
+    # Decision requests (POST /v1/systemone), passed through to Ollama
+    from ollabridge.api.systemone_routes import router as systemone_router
+
+    app.include_router(systemone_router)
+
     # Providers admin API (HF connect/refresh, catalog browsing, alias map,
     # provider enable/disable, end-to-end model test)
     from ollabridge.api.providers_routes import router as providers_admin_router
