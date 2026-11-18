@@ -24,7 +24,7 @@ router = APIRouter(prefix="/local/variants", tags=["local-variants"])
 class CreateRequest(BaseModel):
     source: str = Field(min_length=1, max_length=200)
     context: int = Field(ge=variants.MIN_CONTEXT, le=1_048_576)
-    # Left out: the name is made from the source and the size, e.g. ``clef-flash-6k``.
+    # Left out: the name is made from the source and the size, e.g. ``my-model-6k``.
     name: Optional[str] = Field(default=None, max_length=120)
 
 

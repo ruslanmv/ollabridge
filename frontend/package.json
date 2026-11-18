@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:unit": "tsc -p tsconfig.unit.json && node --test tests/unit/",
     "preview": "vite preview"
   },
   "dependencies": {

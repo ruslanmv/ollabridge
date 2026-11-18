@@ -259,6 +259,12 @@ class ProviderRouter:
             # Name the provider on the request's log line also when it fails;
             # a success notes it again with the tokens.
             note_request(route=route.provider_id)
+            # Usage ledger: a failed request is filed under the provider it was
+            # last tried on, not under local Ollama (usage/capture.py). A
+            # success notes the route again below.
+            from ollabridge.usage.context import note_route
+
+            note_route(route.provider_id, route.model)
 
             # Circuit open: this machine is offline. Re-check first (once every
             # couple of seconds, shared by concurrent requests), so the first

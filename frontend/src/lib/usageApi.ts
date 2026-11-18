@@ -120,7 +120,96 @@ function range(days: number): string {
   return `from=${isoDay(from)}&to=${isoDay(to)}`
 }
 
+// ── Per-model view (/v1/bi/models, usage/model_usage.py) ──────────────────
+// `null` means unknown, never zero.
+
+export type CostStateName = 'priced' | 'partial' | 'unpriced' | 'subscription' | 'not_billed' | 'none'
+
+export interface CostState {
+  state: CostStateName
+  /** micro-USD; a floor when `partial`, an API equivalent when `subscription`. */
+  micro: number | null
+  unpriced_tokens: number
+  modes: string[]
+}
+
+export interface TokenSplit {
+  total: number | null
+  input: number | null
+  output: number | null
+}
+
+export interface DailySeries {
+  tokens: number[]
+  requests: number[]
+  cost: number[]
+}
+
+export interface ModelUsage {
+  provider: string
+  model: string
+  source: string | null
+  source_display_name: string | null
+  runtime_unreachable: boolean
+  /** false = not offered now; null = could not be checked. */
+  in_inventory: boolean | null
+  tokens: TokenSplit & { dimensions: Record<string, number | null> }
+  requests: number
+  failed: number
+  unknown_usage: number
+  errors: Record<string, number>
+  requested_as: Record<string, number>
+  measurement: Record<string, number>
+  execution: string[]
+  billing_providers: string[]
+  cost: CostState
+  avg_latency_ms: number | null
+  last_seen: string | null
+  daily: DailySeries
+}
+
+export interface ModelInsight {
+  id: string
+  kind: 'repeated_failures' | 'not_in_inventory' | 'spike' | 'unpriced_usage'
+  severity: 'info' | 'warning'
+  provider: string | null
+  model: string | null
+  evidence: Record<string, unknown>
+}
+
+export interface InventoryView {
+  available: number | null
+  used: number
+  used_in_inventory?: number
+  never_used: number | null
+  not_in_inventory: number | null
+  unreachable: { source: string; name: string; reason: string; provider_id?: string }[]
+  by_source: Record<string, number>
+  never_used_models: { provider: string; model: string; source_display_name: string | null; category: string | null }[]
+}
+
+export interface ModelUsageView {
+  period: { from: string; to: string }
+  capture_enabled: boolean
+  days: string[]
+  totals: {
+    tokens: TokenSplit
+    requests: number
+    failed: number
+    failed_pct: number | null
+    unknown_usage: number
+    models_used: number
+    cost: CostState
+  }
+  daily: DailySeries
+  models: ModelUsage[]
+  sources: { attributed: boolean; items: { key: string; attributed: boolean; tokens: number; events: number; failed: number }[] }
+  inventory: InventoryView
+  insights: ModelInsight[]
+}
+
 export const usageApi = {
+  models: (days: number) => request<ModelUsageView>(`/v1/bi/models?${range(days)}`),
   overview: (days: number) => request<UsageOverview>(`/v1/bi/overview?${range(days)}`),
   timeseries: (days: number, metric: 'tokens' | 'cost') =>
     request<UsageTimeseries>(`/v1/bi/timeseries?${range(days)}&metric=${metric}&group_by=provider`),

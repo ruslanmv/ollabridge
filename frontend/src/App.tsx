@@ -34,7 +34,7 @@ export default function App() {
         <NetworkBanner />
         <main className="flex-1 min-h-0 overflow-hidden relative">
           {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
-          {page === 'usage' && <UsagePage />}
+          {page === 'usage' && <UsagePage onNavigate={setPage} />}
           {page === 'sources' && <SourcesHubPage />}
           {page === 'models' && <ModelsPage onNavigate={setPage} />}
           {page === 'runtimes' && <SourcesPage onNavigate={setPage} />}

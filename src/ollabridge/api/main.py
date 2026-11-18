@@ -2147,15 +2147,19 @@ def create_app() -> FastAPI:
     ) -> dict[str, Any]:
         return _compute_flow_metrics(app)
 
-    @app.get("/v1/models")
-    async def list_models(
-        response: Response, _key: str = Depends(require_api_key)
-    ) -> dict[str, Any]:
+    async def collect_models() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Every model this gateway can serve now, plus the sources that could
+        not be listed (``[{source, name, reason}]``). Shared by ``/v1/models``
+        and the Usage page's inventory (usage/model_usage.py)."""
         all_models: list[dict[str, Any]] = []
+        unreachable: list[dict[str, Any]] = []
         nodes = await app.state.obridge.registry.list()
 
         for node in nodes:
             if not node.healthy:
+                unreachable.append(
+                    {"source": node.connector or "ollama", "name": node.node_id, "reason": "unhealthy"}
+                )
                 continue
             try:
                 if node.connector == "homepilot":
@@ -2226,6 +2230,9 @@ def create_app() -> FastAPI:
 
             except Exception as e:
                 log.warning("Failed to list models from node %s: %s", node.node_id, e)
+                unreachable.append(
+                    {"source": node.connector or "ollama", "name": node.node_id, "reason": "list_failed"}
+                )
 
         # Dynamic addon providers (e.g. an Open WebUI-compatible source) expose
         # discovered, namespaced models. Include the registered ones so they are
@@ -2243,6 +2250,9 @@ def create_app() -> FastAPI:
                     try:
                         for m in await adapter.list_models():
                             if isinstance(m, dict):
+                                # The registry id, which the usage ledger
+                                # records as ``provider`` (an OllaBridge extra).
+                                m.setdefault("provider_id", cfg.id)
                                 all_models.append(
                                     _stamp_model_source(
                                         m, source=source, display_name=source_name
@@ -2250,6 +2260,10 @@ def create_app() -> FastAPI:
                                 )
                     except Exception as e:  # noqa: BLE001
                         log.warning("dynamic provider %s model list failed: %s", cfg.id, e)
+                        unreachable.append(
+                            {"source": source, "name": source_name, "provider_id": cfg.id,
+                             "reason": "list_failed"}
+                        )
 
                 # External accounts connected in Sources and switched on for
                 # routing serve their selected model through this gateway, so
@@ -2263,7 +2277,17 @@ def create_app() -> FastAPI:
                 all_models.extend(dss.byok_runtime_models(registry, all_models))
             except Exception as e:  # noqa: BLE001
                 log.warning("dynamic provider enumeration failed: %s", e)
+                unreachable.append({"source": "providers", "name": "Providers", "reason": "list_failed"})
 
+        return all_models, unreachable
+
+    app.state.collect_models = collect_models
+
+    @app.get("/v1/models")
+    async def list_models(
+        response: Response, _key: str = Depends(require_api_key)
+    ) -> dict[str, Any]:
+        all_models, _unreachable = await collect_models()
         if not all_models:
             response.headers["X-OllaBridge-Warning"] = "models_unavailable"
 

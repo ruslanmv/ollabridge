@@ -147,19 +147,15 @@ See [Get models: search and download](docs/LOCAL_CATALOG.md#get-models-search-an
 
 A model that is too big for your memory with its default context window often loads fine with a smaller one. **Model Inventory → Build a model** makes a copy of a model you already have, with the context window you pick. A copy shares the original's files, so there is no download and no extra disk space.
 
-<img src="docs/assets/screenshots/model-copies.jpg" alt="Model copies table on Model Inventory: each installed model with what it was built from, its context window, and whether it loads on this machine" width="100%"/>
+<img src="docs/assets/screenshots/build-model-result.jpg" alt="Build a model wizard, last step: the copy loads on this machine, with its context window, memory use and load time" width="100%"/>
 
 <div align="center">
 
-*Every installed model, what it was built from, its context window, and whether it loads here.*
+*Pick a model, pick a context size, and see whether the copy loads here.*
 
 </div>
 
-| Pick a context size | Create and test |
-|---|---|
-| <img src="docs/assets/screenshots/build-model-context.jpg" alt="Build a model wizard, step 2: context sizes from 2K to 32K, with the sizes already tried marked Did not load, and the generated name clef-flash-4k"/> | <img src="docs/assets/screenshots/build-model-result.jpg" alt="Build a model wizard, step 3: the copy loads on this machine, with its context, memory use and load time"/> |
-
-- **Three steps.** Pick a model, pick a context size, press **Create and test**. The name is made for you (`clef-flash-6k`); you can change it.
+- **Three steps.** Pick a model, pick a context size, press **Create and test**. The name is made for you (`my-model-8k`); you can change it.
 - **"Loads here" is measured, not guessed.** OllaBridge loads the model once and records whether it fit, how much memory it used and how much of that was on the GPU. When it does not fit, the wizard offers the next smaller size.
 - **Originals are safe.** Only a copy can be removed from this table; removing a copy never touches the original's files.
 

@@ -6,11 +6,12 @@
  * subscription usage is shown as an API-equivalent, never as spend.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   Bot,
+  Boxes,
   Coins,
   Lightbulb,
   Receipt,
@@ -19,15 +20,30 @@ import {
   TriangleAlert,
   Wallet,
 } from 'lucide-react'
+import type { Page } from '../../App'
 import {
   usageApi,
+  type CostState,
   type DisplayCurrency,
   type Kpi,
   type MeasurementMix,
   type UsageInsight,
 } from '../../lib/usageApi'
-import { Legend, SeriesTable, ShareList, StackedColumns } from './charts'
+import { Legend, SeriesTable, StackedColumns } from './charts'
 import { USD, assignColors, formatMoney, formatTokens } from './format'
+import { ModelDetail } from './ModelDetail'
+import { InventoryPanel, ModelInsights, SourcesPanel } from './ModelPanels'
+import { ModelTable } from './ModelTable'
+import {
+  chartSeries,
+  costLabel,
+  displayLabels,
+  modelKey,
+  pageState,
+  percent,
+  tokensLabel,
+  type ChartMetric,
+} from './modelUsage'
 
 const RANGES = [
   { days: 7, label: '7 days' },
@@ -41,20 +57,11 @@ const BADGES: Record<string, { label: string; hint: string }> = {
   estimated: { label: 'estimated', hint: 'Approximated from text length' },
 }
 
-function useUsage(days: number, metric: 'tokens' | 'cost') {
+function useUsage(days: number) {
   const options = { refetchInterval: 30_000, retry: false } as const
   return {
+    models: useQuery({ queryKey: ['usage', 'models', days], queryFn: () => usageApi.models(days), ...options }),
     overview: useQuery({ queryKey: ['usage', 'overview', days], queryFn: () => usageApi.overview(days), ...options }),
-    series: useQuery({
-      queryKey: ['usage', 'series', days, metric],
-      queryFn: () => usageApi.timeseries(days, metric),
-      ...options,
-    }),
-    share: useQuery({
-      queryKey: ['usage', 'share', days, metric],
-      queryFn: () => usageApi.breakdown(days, metric),
-      ...options,
-    }),
     agents: useQuery({ queryKey: ['usage', 'agents', days], queryFn: () => usageApi.agents(days), ...options }),
     insights: useQuery({ queryKey: ['usage', 'insights', days], queryFn: () => usageApi.insights(days), ...options }),
     sources: useQuery({ queryKey: ['usage', 'sources'], queryFn: usageApi.sources, ...options }),
@@ -141,7 +148,7 @@ function Tile({
         <Icon size={14} className="text-white/40 shrink-0" />
         {label}
       </div>
-      <div className="text-2xl font-semibold text-white/95 tabular-nums truncate">{value}</div>
+      <div className="text-xl sm:text-2xl font-semibold text-white/95 tabular-nums break-words leading-tight">{value}</div>
       <div className="min-h-[18px] flex flex-col gap-1">{children}</div>
     </div>
   )
@@ -159,9 +166,9 @@ function Panel({
   className?: string
 }) {
   return (
-    <section className={`glass-card p-5 min-w-0 ${className}`}>
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <h2 className="text-sm font-semibold text-white/90">{title}</h2>
+    <section className={`glass-card p-4 sm:p-5 min-w-0 ${className}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 className="text-sm font-semibold text-white/90 whitespace-nowrap">{title}</h2>
         {action}
       </div>
       {children}
@@ -360,12 +367,64 @@ function CurrencyControl({ currency }: { currency: DisplayCurrency }) {
   )
 }
 
-export function UsagePage() {
+/** Estimated cost: a figure only where prices exist ("Unpriced", "Local",
+ * "Free tier" otherwise — never a made-up $0.00). */
+function CostTile({ cost, currency }: { cost: CostState; currency: DisplayCurrency }) {
+  const label = costLabel(cost, currency)
+  return (
+    <Tile icon={Coins} label="Estimated cost" value={label.text}>
+      <span className={`text-xs ${cost.state === 'partial' || cost.state === 'unpriced' ? 'text-amber-400/90' : 'text-white/40'}`}>
+        {cost.state === 'priced'
+          ? 'API usage at catalog or provider prices'
+          : cost.state === 'subscription'
+            ? 'API equivalent; covered by a subscription'
+            : cost.state === 'none'
+              ? 'Nothing measured'
+              : label.hint}
+      </span>
+    </Tile>
+  )
+}
+
+function SkeletonTile() {
+  return (
+    <div className="glass-card-sm p-4 flex flex-col gap-2 min-w-0" aria-hidden="true">
+      <div className="h-3 w-20 rounded bg-white/[0.06] animate-pulse" />
+      <div className="h-7 w-28 rounded bg-white/[0.08] animate-pulse" />
+      <div className="h-3 w-24 rounded bg-white/[0.05] animate-pulse" />
+    </div>
+  )
+}
+
+function SkeletonRows() {
+  return (
+    <div className="space-y-2" aria-hidden="true">
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="h-9 rounded bg-white/[0.04] animate-pulse" />
+      ))}
+    </div>
+  )
+}
+
+const METRICS: { value: ChartMetric; label: string }[] = [
+  { value: 'tokens', label: 'Tokens' },
+  { value: 'requests', label: 'Requests' },
+  { value: 'cost', label: 'Cost' },
+]
+
+const CHART_TITLE: Record<ChartMetric, string> = {
+  tokens: 'Tokens per day',
+  requests: 'Requests per day',
+  cost: 'Cost per day',
+}
+
+export function UsagePage({ onNavigate }: { onNavigate?: (page: Page) => void }) {
   const [days, setDays] = useState(30)
-  const [metric, setMetric] = useState<'tokens' | 'cost'>('tokens')
+  const [metric, setMetric] = useState<ChartMetric>('tokens')
   const [view, setView] = useState<'chart' | 'table'>('chart')
-  // Simple by default: three numbers, one chart, one list. "Details" adds the
-  // billed/agents tiles, data-quality badges, agents, insights and sources.
+  const [selected, setSelected] = useState<string | null>(null)
+  // "Details" adds the budget, billed cost and agents tiles, data-quality
+  // badges, the agents table, the older insights and the data sources.
   const [detailed, setDetailedState] = useState(() => {
     try {
       return localStorage.getItem(DETAILS_KEY) === 'true'
@@ -381,30 +440,32 @@ export function UsagePage() {
       // storage unavailable: the choice just does not persist
     }
   }
-  const { overview, series, share, agents, insights, sources, currency: currencyQuery } = useUsage(days, metric)
+  const { models, overview, agents, insights, sources, currency: currencyQuery } = useUsage(days)
   const currency = currencyQuery.data ?? USD
+  const openModels = () => onNavigate?.('models')
 
-  const data = overview.data
-  const seriesKeys = series.data?.series.map((s) => s.key) ?? []
-  // One assignment for every provider on the page, so a provider wears the
-  // same colour in the chart, the share list and the agents table.
-  const colors = assignColors([
-    ...new Set([
-      ...seriesKeys,
-      ...(share.data?.items.map((item) => item.key) ?? []),
-      ...(agents.data?.items.map((agent) => agent.top_provider) ?? []),
-    ]),
-  ])
-  const hasUsage = (data?.requests.value ?? 0) > 0
+  const data = models.data
+  const state = pageState(models)
+  const labels = useMemo(() => displayLabels(data?.models ?? []), [data])
+  const chart = useMemo(() => (data ? chartSeries(data, metric) : null), [data, metric])
+  // Colours follow the model (stable by name), never its rank, and are
+  // shared by the chart, the table and the detail panel.
+  const colors = useMemo(
+    () => assignColors(data ? chartSeries(data, 'tokens').series.map((s) => s.key) : []),
+    [data],
+  )
+  const selectedModel = data?.models.find((m) => modelKey(m) === selected) ?? null
+  const totals = data?.totals
+  const over = overview.data
 
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div className="h-full overflow-y-auto p-4 sm:p-6">
       <div className="max-w-[1280px] mx-auto space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-white/50">
-            What you used and what it cost. Only numbers are stored — never your prompts or answers.
+            Tokens by model, from this gateway’s own records. Only numbers are stored — never your prompts or answers.
           </p>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <button
               onClick={() => setDetailed(!detailed)}
               aria-pressed={detailed}
@@ -422,60 +483,86 @@ export function UsagePage() {
           </div>
         </div>
 
-        {overview.isError && (
-          <div className="glass-card-sm p-4 text-sm text-amber-300/90">
-            Could not load usage: {(overview.error as Error).message}
+        {state === 'error' && (
+          <div className="glass-card-sm p-4 text-sm text-amber-300/90" role="alert">
+            Could not load usage: {(models.error as Error).message}
           </div>
         )}
 
-        {data && (
-          <div className={`grid grid-cols-2 gap-4 ${detailed ? 'lg:grid-cols-5' : 'lg:grid-cols-3'}`}>
-            <Tile icon={Activity} label="Tokens used" value={formatTokens(data.total_tokens.value)}>
-              <Delta kpi={data.total_tokens} />
-              {detailed && <MixBadges mix={data.total_tokens.measurement_mix} />}
-            </Tile>
-            <Tile icon={Coins} label="Your cost" value={formatMoney(data.estimated_cost_micro.value, currency)}>
-              <Delta kpi={data.estimated_cost_micro} invert />
-              {data.estimated_cost_micro.unpriced_tokens > 0 && (
-                <span
-                  className="text-xs text-amber-400/90"
-                  title={`${formatTokens(data.estimated_cost_micro.unpriced_tokens)} tokens are on models with no price in the price catalog`}
-                >
-                  Some models have no price set, so this is a minimum
-                </span>
-              )}
-              {data.subscription_equivalent_micro.value > 0 && (
-                <span
-                  className="text-xs text-white/45"
-                  title="Usage covered by a subscription (e.g. Claude Code on a plan). Shown at API prices for comparison; it is not charged per use."
-                >
-                  + {formatMoney(data.subscription_equivalent_micro.value, currency)} covered by your subscription
-                </span>
-              )}
-            </Tile>
-            {detailed && (
-              <Tile icon={Receipt} label="Billed cost" value={formatMoney(data.billed_cost_micro.value, currency)}>
-                <Delta kpi={data.billed_cost_micro} invert />
-                <span className="text-xs text-white/40">Charges stated by providers</span>
-              </Tile>
-            )}
-            {detailed && (
-              <Tile icon={Bot} label="Active agents" value={String(data.active_agents.value)}>
-                <span className="text-xs text-white/45">
-                  {data.active_agents.delta >= 0 ? '+' : ''}
-                  {data.active_agents.delta} vs prior period
-                </span>
+        {state === 'capture_off' && (
+          <div className="glass-card p-6 text-sm text-white/60">
+            <p className="text-white/85 font-medium mb-1">Usage recording is off.</p>
+            Set <code className="text-glow-cyan/90">USAGE_ENABLED=true</code> and restart the gateway to start recording
+            token usage.
+          </div>
+        )}
+
+        {state === 'loading' && (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[0, 1, 2, 3].map((i) => (
+                <SkeletonTile key={i} />
+              ))}
+            </div>
+            <Panel title="Models">
+              <SkeletonRows />
+            </Panel>
+          </>
+        )}
+
+        {data && totals && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Tile icon={Activity} label="Total tokens" value={tokensLabel(totals.tokens.total)}>
+              {over && <Delta kpi={over.total_tokens} />}
+              {totals.tokens.total !== null && (
                 <span className="text-xs text-white/40">
-                  {data.requests.value.toLocaleString()} requests
-                  {data.requests.failed > 0 && `, ${data.requests.failed.toLocaleString()} failed`}
+                  in {tokensLabel(totals.tokens.input)} · out {tokensLabel(totals.tokens.output)}
                 </span>
-              </Tile>
-            )}
-            <BudgetTile overview={data} currency={currency} />
+              )}
+              {totals.unknown_usage > 0 && (
+                <span className="text-xs text-white/40" title="Requests with no token count are not added as zero">
+                  {totals.unknown_usage.toLocaleString()} requests without counts
+                </span>
+              )}
+              {detailed && over && <MixBadges mix={over.total_tokens.measurement_mix} />}
+            </Tile>
+            <CostTile cost={totals.cost} currency={currency} />
+            <Tile
+              icon={Boxes}
+              label="Models used"
+              value={totals.models_used.toLocaleString()}
+            >
+              <span className="text-xs text-white/40">
+                {data.inventory.available === null
+                  ? 'Model list unavailable'
+                  : `of ${data.inventory.available.toLocaleString()} available`}
+              </span>
+            </Tile>
+            <Tile icon={TriangleAlert} label="Failed requests" value={totals.failed.toLocaleString()}>
+              <span className={`text-xs ${totals.failed ? 'text-amber-300/90' : 'text-white/40'}`}>
+                {totals.requests ? `${percent(totals.failed, totals.requests)} of ${totals.requests.toLocaleString()} requests` : 'No requests'}
+              </span>
+            </Tile>
           </div>
         )}
 
-        {data && !hasUsage && (
+        {detailed && over && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Tile icon={Receipt} label="Billed cost" value={formatMoney(over.billed_cost_micro.value, currency)}>
+              <Delta kpi={over.billed_cost_micro} invert />
+              <span className="text-xs text-white/40">Charges stated by providers</span>
+            </Tile>
+            <Tile icon={Bot} label="Active agents" value={String(over.active_agents.value)}>
+              <span className="text-xs text-white/45">
+                {over.active_agents.delta >= 0 ? '+' : ''}
+                {over.active_agents.delta} vs prior period
+              </span>
+            </Tile>
+            <BudgetTile overview={over} currency={currency} />
+          </div>
+        )}
+
+        {state === 'empty' && (
           <div className="glass-card p-6 text-sm text-white/60">
             <p className="text-white/85 font-medium mb-1">No usage recorded in this period yet.</p>
             Requests sent through this gateway appear here automatically. To include Claude Code, run{' '}
@@ -484,23 +571,15 @@ export function UsagePage() {
           </div>
         )}
 
-        {hasUsage && (
+        {state === 'ready' && data && chart && (
           <>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:items-start">
               <Panel
                 className="lg:col-span-2"
-                title={metric === 'cost' ? 'Cost per day' : 'Tokens per day'}
+                title={CHART_TITLE[metric]}
                 action={
-                  <div className="flex gap-2">
-                    <Segmented
-                      label="Metric"
-                      value={metric}
-                      onChange={setMetric}
-                      options={[
-                        { value: 'tokens', label: 'Tokens' },
-                        { value: 'cost', label: 'Cost' },
-                      ]}
-                    />
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    <Segmented label="Metric" value={metric} onChange={setMetric} options={METRICS} />
                     {detailed && (
                       <Segmented
                         label="View"
@@ -515,87 +594,100 @@ export function UsagePage() {
                   </div>
                 }
               >
-                {series.data && series.data.series.length > 0 ? (
+                {chart.series.length > 0 ? (
                   <div className="space-y-3">
                     {view === 'chart' || !detailed ? (
-                      <StackedColumns data={series.data} colors={colors} currency={currency} />
+                      <StackedColumns data={chart} colors={colors} currency={currency} />
                     ) : (
-                      <SeriesTable data={series.data} currency={currency} />
+                      <SeriesTable data={chart} currency={currency} />
                     )}
-                    <Legend keys={seriesKeys} colors={colors} />
+                    <Legend keys={chart.series.map((s) => s.key)} colors={colors} />
                   </div>
                 ) : (
-                  <Empty>{metric === 'cost' ? 'Nothing was charged in this period.' : 'Nothing to plot.'}</Empty>
+                  <Empty>{metric === 'cost' ? 'No priced usage in this period.' : 'Nothing to plot.'}</Empty>
                 )}
               </Panel>
 
-              <Panel title={metric === 'cost' ? 'Cost by provider' : 'Tokens by provider'}>
-                {share.data && share.data.items.length > 0 ? (
-                  <ShareList data={share.data} colors={colors} metric={metric} currency={currency} />
-                ) : (
-                  <Empty>{metric === 'cost' ? 'Nothing was charged in this period.' : 'Nothing to show.'}</Empty>
-                )}
+              <Panel title="Insights">
+                <ModelInsights
+                  insights={data.insights}
+                  onSelect={(provider, model) => setSelected(modelKey({ provider, model }))}
+                />
               </Panel>
             </div>
 
-            {detailed && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <Panel className="lg:col-span-2" title="Top agents / workflows">
-                  {agents.data && agents.data.items.length > 0 ? (
-                    <table className="w-full text-sm">
-                      <thead className="text-xs text-white/45">
-                        <tr>
-                          <th className="text-left font-medium pb-2">Agent</th>
-                          <th className="text-left font-medium pb-2">Main provider</th>
-                          <th className="text-right font-medium pb-2">Tokens</th>
-                          <th className="text-right font-medium pb-2">Cost</th>
-                          <th className="text-right font-medium pb-2">Change</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {agents.data.items.map((agent) => (
-                          <tr key={`${agent.application_id}/${agent.agent_id}`} className="border-t border-white/5">
-                            <td className="py-2.5 pr-3">
-                              <div className="text-white/85">{agent.agent_id}</div>
-                              <div className="text-xs text-white/40">{agent.application_id}</div>
-                            </td>
-                            <td className="py-2.5 pr-3 text-white/70">
-                              <span className="inline-flex items-center gap-1.5">
-                                <span
-                                  className="w-2 h-2 rounded-[2px]"
-                                  style={{ background: colors[agent.top_provider] ?? '#6b7280' }}
-                                />
-                                {agent.top_provider}
-                              </span>
-                            </td>
-                            <td className="py-2.5 text-right tabular-nums text-white/85">{formatTokens(agent.tokens)}</td>
-                            <td className="py-2.5 text-right tabular-nums text-white/85">{formatMoney(agent.cost_micro, currency)}</td>
-                            <td className="py-2.5 text-right tabular-nums text-white/60">
-                              {agent.delta_pct === null ? 'new' : `${agent.delta_pct >= 0 ? '+' : ''}${agent.delta_pct}%`}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <Empty>No agents yet.</Empty>
-                  )}
-                </Panel>
-
-                <Panel title="Key insights">
-                  {insights.data && insights.data.items.length > 0 ? (
-                    <ul>
-                      {insights.data.items.map((insight) => (
-                        <InsightRow key={insight.id} insight={insight} currency={currency} />
-                      ))}
-                    </ul>
-                  ) : (
-                    <Empty>Nothing stands out in this period.</Empty>
-                  )}
-                </Panel>
-              </div>
-            )}
+            <Panel title="Models" action={<span className="text-xs text-white/40">{data.models.length} in this period</span>}>
+              <ModelTable
+                models={data.models}
+                colors={colors}
+                labels={labels}
+                currency={currency}
+                selected={selected}
+                onSelect={setSelected}
+              />
+            </Panel>
           </>
+        )}
+
+        {data && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Panel title="Usage by source">
+              <SourcesPanel sources={data.sources} />
+            </Panel>
+            <Panel className="lg:col-span-2" title="Model inventory">
+              <InventoryPanel inventory={data.inventory} onOpenModels={openModels} />
+            </Panel>
+          </div>
+        )}
+
+        {detailed && state === 'ready' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Panel className="lg:col-span-2" title="Top agents / workflows">
+              {agents.data && agents.data.items.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-xs text-white/45">
+                      <tr>
+                        <th className="text-left font-medium pb-2">Agent</th>
+                        <th className="text-left font-medium pb-2">Main provider</th>
+                        <th className="text-right font-medium pb-2">Tokens</th>
+                        <th className="text-right font-medium pb-2">Change</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {agents.data.items.map((agent) => (
+                        <tr key={`${agent.application_id}/${agent.agent_id}`} className="border-t border-white/5">
+                          <td className="py-2.5 pr-3">
+                            <div className="text-white/85">{agent.agent_id}</div>
+                            <div className="text-xs text-white/40">{agent.application_id}</div>
+                          </td>
+                          <td className="py-2.5 pr-3 text-white/70">{agent.top_provider}</td>
+                          <td className="py-2.5 text-right tabular-nums text-white/85">{formatTokens(agent.tokens)}</td>
+                          <td className="py-2.5 text-right tabular-nums text-white/60">
+                            {agent.delta_pct === null ? 'new' : `${agent.delta_pct >= 0 ? '+' : ''}${agent.delta_pct}%`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <Empty>No agents yet.</Empty>
+              )}
+            </Panel>
+
+            <Panel title="More observations">
+              {insights.data && insights.data.items.length > 0 ? (
+                <ul>
+                  {insights.data.items.map((insight) => (
+                    <InsightRow key={insight.id} insight={insight} currency={currency} />
+                  ))}
+                </ul>
+              ) : (
+                <Empty>Nothing else stands out.</Empty>
+              )}
+            </Panel>
+          </div>
         )}
 
         {detailed && sources.data && (
@@ -605,7 +697,7 @@ export function UsagePage() {
                 {sources.data.sources.length > 0 ? (
                   <ul className="space-y-1.5">
                     {sources.data.sources.map((source) => (
-                      <li key={source.source} className="flex justify-between gap-3 text-white/70">
+                      <li key={source.source} className="flex flex-wrap justify-between gap-x-3 text-white/70">
                         <span>{source.source.replaceAll('_', ' ')}</span>
                         <span className="text-white/45">
                           {source.events.toLocaleString()} events · last {new Date(source.last_seen).toLocaleString()}
@@ -631,6 +723,17 @@ export function UsagePage() {
           </Panel>
         )}
       </div>
+
+      {selectedModel && data && (
+        <ModelDetail
+          model={selectedModel}
+          view={data}
+          color={colors[labels[modelKey(selectedModel)]] ?? '#00e5ff'}
+          currency={currency}
+          onClose={() => setSelected(null)}
+          onOpenModels={openModels}
+        />
+      )}
     </div>
   )
 }

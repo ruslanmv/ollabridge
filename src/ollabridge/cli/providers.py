@@ -249,7 +249,7 @@ def providers_config(
     With no name=value pairs this prints the current configuration.
     Values are metadata — they go in providers.yaml, never the key store.
     """
-    from ollabridge.providers_meta import extra_fields_for, get_extra
+    from ollabridge.providers_meta import fields_for_record, get_extra
 
     name = provider.lower().strip()
     rec = get_record(name)
@@ -260,7 +260,7 @@ def providers_config(
         )
         raise typer.Exit(1)
 
-    fields = extra_fields_for(rec.kind or rec.name)
+    fields = fields_for_record(rec)
     if not fields:
         console.print(f"{name} has no provider-specific config fields.")
         return

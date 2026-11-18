@@ -1,0 +1,16 @@
+{
+  // Compiles the pure (React-free) helpers to CommonJS for `npm run test:unit`,
+  // which runs them with Node's built-in test runner. No test library needed.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "types": [],
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "tests/unit/.build",
+    "rootDir": "src"
+  },
+  "files": ["src/pages/usage/modelUsage.ts"]
+}

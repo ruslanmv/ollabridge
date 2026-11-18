@@ -35,7 +35,7 @@ function sizeLabel(context: number): string {
   return context % 1024 === 0 ? `${context / 1024}K` : context.toLocaleString()
 }
 
-/** Mirrors the gateway's `suggest_name`: `clef-flash:9b` at 6144 becomes `clef-flash-6k`. */
+/** Mirrors the gateway's `suggest_name`: `my-model:9b` at 6144 becomes `my-model-6k`. */
 function suggestName(source: string, context: number): string {
   const base = (source.split('/').pop() ?? source).split(':')[0].replace(/-\d+k?$/i, '')
   return `${base}-${context % 1024 === 0 ? `${context / 1024}k` : context}`

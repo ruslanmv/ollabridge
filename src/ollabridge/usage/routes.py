@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ollabridge.core.security import _is_loopback, require_api_key
 from ollabridge.core.settings import settings
 
-from . import bi_core, capture, currency, otlp, outbox
+from . import bi_core, capture, currency, model_usage, otlp, outbox
 from .store import get_usage_store
 
 router = APIRouter(tags=["usage"])
@@ -118,6 +118,28 @@ def bi_insights(
 ) -> Dict[str, Any]:
     start, end = _period(from_, to)
     return {"items": bi_core.insights(get_usage_store().rollup_rows(start, end))}
+
+
+@router.get("/v1/bi/models", dependencies=[Depends(require_api_key)])
+async def bi_models(
+    request: Request,
+    from_: Optional[dt.date] = Query(default=None, alias="from"),
+    to: Optional[dt.date] = None,
+) -> Dict[str, Any]:
+    """Usage per (provider, model), with the gateway's current inventory beside it."""
+    start, end = _period(from_, to)
+    inventory, unreachable = None, []
+    collect = getattr(request.app.state, "collect_models", None)
+    if collect is not None:
+        try:
+            inventory, unreachable = await collect()
+        except Exception:  # noqa: BLE001 — usage stays readable without an inventory
+            inventory, unreachable = None, [{"source": "inventory", "name": "Models", "reason": "list_failed"}]
+    return model_usage.build(
+        get_usage_store().model_rows(start, end),
+        start=start, end=end, inventory=inventory, unreachable=unreachable,
+        capture_enabled=capture.enabled(),
+    )
 
 
 @router.get("/v1/bi/events", dependencies=[Depends(require_api_key)])

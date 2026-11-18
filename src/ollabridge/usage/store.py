@@ -267,6 +267,33 @@ class UsageStore:
         with self._lock, self._connect() as conn:
             return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
+    def model_rows(self, start: dt.date, end: dt.date) -> List[Dict[str, Any]]:
+        """Daily rows for the per-model view (``usage/model_usage.py``).
+
+        Like :meth:`rollup_rows`, plus the requested id, the error category and
+        latency, and ``priced_events`` so "no price" is told apart from a real
+        zero. One read feeds every number on the view, so they reconcile.
+        """
+        sums = ", ".join(f"SUM({d}) AS {d}" for d in TOKEN_DIMENSIONS)
+        all_unknown = " AND ".join(f"{d} IS NULL" for d in TOKEN_DIMENSIONS)
+        tokens = " + ".join(f"COALESCE({d}, 0)" for d in TOKEN_DIMENSIONS)
+        cost = "COALESCE(estimated_micro, reported_micro)"
+        group = ("day, provider, billing_provider, model, requested_model, application_id, "
+                 "execution, billing_mode, measurement, status, error_category")
+        sql = (
+            f"SELECT {group}, COUNT(*) AS events, "
+            f"SUM(CASE WHEN {all_unknown} THEN 1 ELSE 0 END) AS unknown_events, {sums}, "
+            f"COALESCE(SUM({cost}), 0) AS cost_micro, "
+            f"SUM(CASE WHEN {cost} IS NOT NULL THEN 1 ELSE 0 END) AS priced_events, "
+            f"COALESCE(SUM(CASE WHEN {cost} IS NULL THEN {tokens} ELSE 0 END), 0) AS unpriced_tokens, "
+            "SUM(latency_ms) AS latency_sum, COUNT(latency_ms) AS latency_count, "
+            "MAX(occurred_at) AS last_seen "
+            f"FROM usage_events WHERE day >= ? AND day <= ? GROUP BY {group}"
+        )
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(sql, (start.isoformat(), end.isoformat())).fetchall()
+        return [dict(r) for r in rows]
+
     # ── settings ────────────────────────────────────────────────────────
 
     def get_setting(self, key: str) -> Optional[str]:

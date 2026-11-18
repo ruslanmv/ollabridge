@@ -180,19 +180,19 @@ The wizard has three steps:
 2. **Context size.** Pick 2K to 32K, or type another size. Sizes above what
    the model supports are not offered. A size you tried before is marked
    "Loads here" or "Did not load". The name is generated from the model and
-   the size (`clef-flash-6k`) and can be changed.
+   the size (`my-model-6k`) and can be changed.
 3. **Create and test.** The copy is created, then loaded once. The result
    says whether it loads, how much memory it used, how much of that was on
    the GPU, and how long loading took. If it did not load, **Try 4K
    instead** repeats the step with the next smaller size.
 
-A worked example, from a laptop with 31 GB of memory and a 6 GB GPU:
+An example of what the table shows afterwards:
 
 | Model | Built from | Context | Loads here |
 |-------|------------|---------|------------|
-| `clef-flash:9b` | the library build `clef-flash:9b-q8_0` | 16,384 | No |
-| `clef-flash-8k` | `clef-flash:9b` | 8,192 | No |
-| `clef-flash-6k` | `clef-flash:9b` | 6,144 | Yes |
+| `my-model:9b` | the library build | 16,384 | No |
+| `my-model-8k` | `my-model:9b` | 8,192 | No |
+| `my-model-6k` | `my-model:9b` | 6,144 | Yes |
 
 The same table is on Model Inventory under **Model copies**, with **Test**,
 **Copy** and (for a copy) **Remove** on every row.
@@ -209,8 +209,8 @@ Things worth knowing:
   applications and fail when memory is short. Press **Test** to measure
   again; the row shows when it was last tested.
 - **Each kind of model is loaded its own way.** A chat model gets a one-token
-  request, an embedding model one embedding, and a decision model (such as
-  `clef-flash`) one question on `/v1/systemone`.
+  request, an embedding model one embedding, and a decision model one
+  question on `/v1/systemone`.
 - **A test loads the model**, which can push another loaded model out of
   memory. Ollama unloads it again after its usual idle time.
 - **Only a copy can be removed here.** Removing an original would delete its

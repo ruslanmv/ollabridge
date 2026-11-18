@@ -70,7 +70,7 @@ export function StackedColumns({
         viewBox={`0 0 ${width} ${height}`}
         className="w-full h-auto block"
         role="img"
-        aria-label={`Daily ${metric} by provider, ${formatDay(days[0])} to ${formatDay(days[days.length - 1])}`}
+        aria-label={`Daily ${data.metric === 'events' ? 'requests' : metric} by ${data.group_by}, ${formatDay(days[0])} to ${formatDay(days[days.length - 1])}`}
       >
         {ticks.map((tick) => (
           <g key={tick}>

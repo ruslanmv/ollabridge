@@ -123,9 +123,11 @@ def record_from_trace(request: Any, fields: Mapping[str, Any]) -> None:
         reported = reported_cost_micro(raw) if ok else None
         model = fields.get("resolved_model") or fields.get("requested_model")
         trace_provider = fields.get("provider")
-        if trace_provider == "provider-addon" and route:
-            # The trace only says "a provider add-on answered"; the router
-            # noted which one, and the model id it was asked for.
+        if route and (trace_provider == "provider-addon" or (not ok and trace_provider is None)):
+            # The trace only says "a provider add-on answered" (or, when it
+            # failed, nothing at all); the router noted which provider it was
+            # tried on, and the model id it was asked for. Without this a
+            # failed add-on request was filed under local Ollama.
             trace_provider, model = route
         provider, billing_provider, execution, billing_mode = _classify(
             request, trace_provider, model, reported

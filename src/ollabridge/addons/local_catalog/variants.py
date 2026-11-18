@@ -91,7 +91,7 @@ def context_label(context: int) -> str:
 
 
 def suggest_name(source: str, context: int) -> str:
-    """``clef-flash:9b`` at 6144 becomes ``clef-flash-6k``; a copy's own size suffix is replaced."""
+    """``my-model:9b`` at 6144 becomes ``my-model-6k``; a copy's own size suffix is replaced."""
     base = source.strip().split("/")[-1].split(":")[0]
     base = _CONTEXT_SUFFIX_RE.sub("", base) or base
     return f"{base}-{context_label(context)}"

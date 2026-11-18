@@ -27,21 +27,21 @@ class FakeOllama:
 
     def __init__(self) -> None:
         self.models: dict[str, dict] = {
-            "clef-flash:9b": {
+            "decider:9b": {
                 "size": 10_600_000_000,
-                "parent": "clef-flash:9b-q8_0",
+                "parent": "decider:9b-q8_0",
                 "num_ctx": 16384,
                 "capabilities": ["decision", "vision"],
                 "max_context": 262144,
             },
-            "qwen2.5:1.5b": {
+            "small-chat:1b": {
                 "size": 1_000_000_000,
                 "parent": "",
                 "num_ctx": None,
                 "capabilities": ["completion", "tools"],
                 "max_context": 32768,
             },
-            "nomic-embed-text:latest": {
+            "embedder:latest": {
                 "size": 270_000_000,
                 "parent": "",
                 "num_ctx": None,
@@ -77,7 +77,7 @@ class FakeOllama:
                     },
                     "parameters": parameters,
                     "capabilities": model["capabilities"],
-                    "model_info": {"clef.context_length": model["max_context"]},
+                    "model_info": {"general.context_length": model["max_context"]},
                 },
             )
         if path == "/api/create":
@@ -146,11 +146,11 @@ def _rows(client) -> dict[str, dict]:
 @pytest.mark.parametrize(
     ("source", "context", "name"),
     [
-        ("clef-flash:9b", 6144, "clef-flash-6k"),
-        ("clef-flash:9b", 8192, "clef-flash-8k"),
-        ("clef-flash-8k", 4096, "clef-flash-4k"),  # a copy's own size is replaced, not stacked
-        ("qwen2.5:1.5b", 5000, "qwen2.5-5000"),
-        ("hf.co/bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M", 16384, "Llama-3.2-3B-Instruct-GGUF-16k"),
+        ("decider:9b", 6144, "decider-6k"),
+        ("decider:9b", 8192, "decider-8k"),
+        ("decider-8k", 4096, "decider-4k"),  # a copy's own size is replaced, not stacked
+        ("small-chat:1b", 5000, "small-chat-5000"),
+        ("hf.co/owner/Some-Model-GGUF:Q4_K_M", 16384, "Some-Model-GGUF-16k"),
     ],
 )
 def test_the_name_is_made_from_the_model_and_the_size(source, context, name):
@@ -186,23 +186,23 @@ def test_another_failure_keeps_the_runtimes_first_line():
 
 def test_the_list_says_what_each_model_is(client):
     rows = _rows(client)
-    clef = rows["clef-flash:9b"]
-    assert clef["built_from"] == "clef-flash:9b-q8_0"
-    assert clef["is_copy"] is False  # its parent is a library build that is not installed
-    assert clef["context"] == 16384
-    assert clef["max_context"] == 262144
-    assert clef["kind"] == "decision"
-    assert clef["load"] is None
-    assert rows["qwen2.5:1.5b"]["context"] is None
-    assert rows["qwen2.5:1.5b"]["kind"] == "chat"
-    assert rows["nomic-embed-text"]["kind"] == "embedding"
+    original = rows["decider:9b"]
+    assert original["built_from"] == "decider:9b-q8_0"
+    assert original["is_copy"] is False  # its parent is a library build that is not installed
+    assert original["context"] == 16384
+    assert original["max_context"] == 262144
+    assert original["kind"] == "decision"
+    assert original["load"] is None
+    assert rows["small-chat:1b"]["context"] is None
+    assert rows["small-chat:1b"]["kind"] == "chat"
+    assert rows["embedder"]["kind"] == "embedding"
 
 
 def test_copies_follow_the_model_they_were_built_from(client):
     for context in (8192, 4096):
-        client.post("/local/variants", json={"source": "clef-flash:9b", "context": context}, headers=AUTH)
+        client.post("/local/variants", json={"source": "decider:9b", "context": context}, headers=AUTH)
     names = [row["name"] for row in client.get("/local/variants", headers=AUTH).json()["models"]]
-    assert names[:3] == ["clef-flash:9b", "clef-flash-4k", "clef-flash-8k"]
+    assert names[:3] == ["decider:9b", "decider-4k", "decider-8k"]
 
 
 def test_ollama_down_is_a_502(client, monkeypatch):
@@ -217,39 +217,39 @@ def test_ollama_down_is_a_502(client, monkeypatch):
 
 def test_the_api_key_is_required(client):
     assert client.get("/local/variants").status_code == 401
-    assert client.post("/local/variants", json={"source": "clef-flash:9b", "context": 4096}).status_code == 401
-    assert client.post("/local/variants/test", json={"name": "clef-flash:9b"}).status_code == 401
-    assert client.delete("/local/variants/clef-flash-6k").status_code == 401
+    assert client.post("/local/variants", json={"source": "decider:9b", "context": 4096}).status_code == 401
+    assert client.post("/local/variants/test", json={"name": "decider:9b"}).status_code == 401
+    assert client.delete("/local/variants/decider-6k").status_code == 401
 
 
 # --- create ----------------------------------------------------------------
 
 
 def test_a_copy_is_created_with_a_generated_name(client, ollama):
-    r = client.post("/local/variants", json={"source": "clef-flash:9b", "context": 6144}, headers=AUTH)
+    r = client.post("/local/variants", json={"source": "decider:9b", "context": 6144}, headers=AUTH)
     assert r.status_code == 200, r.text
     row = r.json()
-    assert row["name"] == "clef-flash-6k"
-    assert row["built_from"] == "clef-flash:9b"
+    assert row["name"] == "decider-6k"
+    assert row["built_from"] == "decider:9b"
     assert row["is_copy"] is True
     assert row["context"] == 6144
     assert ollama.calls("/api/create") == [
-        {"model": "clef-flash-6k", "from": "clef-flash:9b", "parameters": {"num_ctx": 6144}, "stream": False}
+        {"model": "decider-6k", "from": "decider:9b", "parameters": {"num_ctx": 6144}, "stream": False}
     ]
 
 
 def test_a_copy_of_a_copy_is_built_on_the_original(client, ollama):
-    client.post("/local/variants", json={"source": "clef-flash:9b", "context": 8192}, headers=AUTH)
-    r = client.post("/local/variants", json={"source": "clef-flash-8k", "context": 4096}, headers=AUTH)
+    client.post("/local/variants", json={"source": "decider:9b", "context": 8192}, headers=AUTH)
+    r = client.post("/local/variants", json={"source": "decider-8k", "context": 4096}, headers=AUTH)
     assert r.status_code == 200, r.text
-    assert r.json()["name"] == "clef-flash-4k"
-    assert r.json()["built_from"] == "clef-flash:9b"
-    assert ollama.calls("/api/create")[-1]["from"] == "clef-flash:9b"
+    assert r.json()["name"] == "decider-4k"
+    assert r.json()["built_from"] == "decider:9b"
+    assert ollama.calls("/api/create")[-1]["from"] == "decider:9b"
 
 
 def test_a_given_name_is_used(client):
     r = client.post(
-        "/local/variants", json={"source": "qwen2.5:1.5b", "context": 8192, "name": "support-bot"}, headers=AUTH
+        "/local/variants", json={"source": "small-chat:1b", "context": 8192, "name": "support-bot"}, headers=AUTH
     )
     assert r.status_code == 200, r.text
     assert r.json()["name"] == "support-bot"
@@ -259,9 +259,9 @@ def test_a_given_name_is_used(client):
     ("body", "status", "fragment"),
     [
         ({"source": "missing-model", "context": 4096}, 404, "not installed"),
-        ({"source": "clef-flash:9b", "context": 16384, "name": "qwen2.5:1.5b"}, 409, "already exists"),
-        ({"source": "clef-flash:9b", "context": 4096, "name": "bad name!"}, 400, "letters"),
-        ({"source": "qwen2.5:1.5b", "context": 65536}, 400, "at most 32,768"),
+        ({"source": "decider:9b", "context": 16384, "name": "small-chat:1b"}, 409, "already exists"),
+        ({"source": "decider:9b", "context": 4096, "name": "bad name!"}, 400, "letters"),
+        ({"source": "small-chat:1b", "context": 65536}, 400, "at most 32,768"),
     ],
 )
 def test_a_refused_copy_says_why_and_creates_nothing(client, ollama, body, status, fragment):
@@ -272,7 +272,7 @@ def test_a_refused_copy_says_why_and_creates_nothing(client, ollama, body, statu
 
 
 def test_an_existing_copy_is_never_overwritten(client, ollama):
-    body = {"source": "clef-flash:9b", "context": 6144}
+    body = {"source": "decider:9b", "context": 6144}
     assert client.post("/local/variants", json=body, headers=AUTH).status_code == 200
     assert client.post("/local/variants", json=body, headers=AUTH).status_code == 409
     assert len(ollama.calls("/api/create")) == 1
@@ -282,8 +282,8 @@ def test_an_existing_copy_is_never_overwritten(client, ollama):
 
 
 def test_a_model_that_fits_is_recorded_with_its_memory(client, ollama):
-    client.post("/local/variants", json={"source": "clef-flash:9b", "context": 6144}, headers=AUTH)
-    r = client.post("/local/variants/test", json={"name": "clef-flash-6k"}, headers=AUTH)
+    client.post("/local/variants", json={"source": "decider:9b", "context": 6144}, headers=AUTH)
+    r = client.post("/local/variants/test", json={"name": "decider-6k"}, headers=AUTH)
     assert r.status_code == 200, r.text
     load = r.json()["load"]
     assert load["loads"] is True
@@ -291,12 +291,12 @@ def test_a_model_that_fits_is_recorded_with_its_memory(client, ollama):
     assert load["gpu_bytes"] == 3_500_000_000
     assert load["reason"] is None and load["try_context"] is None
     # The result is kept and shown in the list.
-    assert _rows(client)["clef-flash-6k"]["load"]["loads"] is True
+    assert _rows(client)["decider-6k"]["load"]["loads"] is True
 
 
 def test_a_model_that_does_not_fit_says_so_and_offers_a_smaller_size(client, ollama):
-    client.post("/local/variants", json={"source": "clef-flash:9b", "context": 8192}, headers=AUTH)
-    r = client.post("/local/variants/test", json={"name": "clef-flash-8k"}, headers=AUTH)
+    client.post("/local/variants", json={"source": "decider:9b", "context": 8192}, headers=AUTH)
+    r = client.post("/local/variants/test", json={"name": "decider-8k"}, headers=AUTH)
     assert r.status_code == 200, r.text
     load = r.json()["load"]
     assert load["loads"] is False
@@ -306,19 +306,19 @@ def test_a_model_that_does_not_fit_says_so_and_offers_a_smaller_size(client, oll
 
 
 def test_each_kind_of_model_is_loaded_its_own_way(client, ollama):
-    for name in ("clef-flash:9b", "qwen2.5:1.5b", "nomic-embed-text"):
+    for name in ("decider:9b", "small-chat:1b", "embedder"):
         ollama.fits_up_to = 1_000_000
         assert client.post("/local/variants/test", json={"name": name}, headers=AUTH).status_code == 200
-    assert [b["model"] for b in ollama.calls("/v1/systemone")] == ["clef-flash:9b"]
-    assert [b["model"] for b in ollama.calls("/api/generate")] == ["qwen2.5:1.5b"]
-    assert [b["model"] for b in ollama.calls("/api/embed")] == ["nomic-embed-text"]
+    assert [b["model"] for b in ollama.calls("/v1/systemone")] == ["decider:9b"]
+    assert [b["model"] for b in ollama.calls("/api/generate")] == ["small-chat:1b"]
+    assert [b["model"] for b in ollama.calls("/api/embed")] == ["embedder"]
 
 
 def test_a_new_copy_starts_untested_even_if_the_name_was_tested_before(client, ollama):
-    body = {"source": "clef-flash:9b", "context": 6144}
+    body = {"source": "decider:9b", "context": 6144}
     client.post("/local/variants", json=body, headers=AUTH)
-    client.post("/local/variants/test", json={"name": "clef-flash-6k"}, headers=AUTH)
-    assert client.delete("/local/variants/clef-flash-6k", headers=AUTH).status_code == 200
+    client.post("/local/variants/test", json={"name": "decider-6k"}, headers=AUTH)
+    assert client.delete("/local/variants/decider-6k", headers=AUTH).status_code == 200
     assert client.post("/local/variants", json=body, headers=AUTH).json()["load"] is None
 
 
@@ -331,14 +331,14 @@ def test_testing_a_model_that_is_not_installed_is_a_404(client):
 
 
 def test_a_copy_can_be_removed(client, ollama):
-    client.post("/local/variants", json={"source": "clef-flash:9b", "context": 6144}, headers=AUTH)
-    assert client.delete("/local/variants/clef-flash-6k", headers=AUTH).status_code == 200
-    assert "clef-flash-6k" not in _rows(client)
-    assert "clef-flash:9b" in _rows(client)
+    client.post("/local/variants", json={"source": "decider:9b", "context": 6144}, headers=AUTH)
+    assert client.delete("/local/variants/decider-6k", headers=AUTH).status_code == 200
+    assert "decider-6k" not in _rows(client)
+    assert "decider:9b" in _rows(client)
 
 
 def test_an_original_is_never_removed(client, ollama):
-    r = client.delete("/local/variants/clef-flash:9b", headers=AUTH)
+    r = client.delete("/local/variants/decider:9b", headers=AUTH)
     assert r.status_code == 400
     assert "not a copy" in r.json()["detail"]
     assert ollama.calls("/api/delete") == []

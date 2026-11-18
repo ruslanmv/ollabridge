@@ -197,7 +197,7 @@ def normalize_models(rec: ProviderRecord, models: list[dict]) -> list[dict]:
         # Providers report non-chat models — transcription, TTS, moderation,
         # safety guards — in the same listing. Only a chat model may be
         # auto-selected as a default, so classify rather than assume.
-        category = _classify(mid)
+        category = _declared_category(m) or _classify(mid)
         deprecated = bool(m.get("deprecated"))
         out.append(
             {
@@ -226,6 +226,39 @@ def normalize_models(rec: ProviderRecord, models: list[dict]) -> list[dict]:
         )
     out.sort(key=lambda m: str(m.get("id", "")))
     return model_defaults.annotate(kind, out)
+
+
+#: What a server calls a model's kind, mapped to the category shown in Sources.
+_DECLARED_KINDS = {
+    "llm": "chat",
+    "chat": "chat",
+    "embedding": "embedding",
+    "embeddings": "embedding",
+    "reranker": "embedding",
+    "rerank": "embedding",
+    "classifier": "classifier",
+    "decision": "classifier",
+    "speech_to_text": "audio",
+    "text_to_speech": "audio",
+    "audio": "audio",
+    "image_generator": "image",
+    "image": "image",
+    "moderation": "guard",
+}
+
+
+def _declared_category(model: dict) -> str | None:
+    """The category a listing states itself (a ``kind`` or ``type`` on the entry).
+
+    Some servers list every model they host in one OpenAI-style listing and say
+    what each one is. That beats guessing from the name: a classifier's id often has
+    nothing in it that says it is not a chat model.
+    """
+    for key in ("kind", "type"):
+        value = model.get(key)
+        if isinstance(value, str) and value.strip().lower() in _DECLARED_KINDS:
+            return _DECLARED_KINDS[value.strip().lower()]
+    return None
 
 
 def _classify(model_id: str) -> str:
