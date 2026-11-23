@@ -169,6 +169,29 @@ class LocalRuntimeClient:
         except httpx.HTTPError as exc:
             yield {"status": "error", "error": str(exc)}
 
+    # ── Variant: an installed model under a new name, with fixed parameters ──
+
+    async def create_variant(
+        self, name: str, source: str, parameters: dict[str, Any]
+    ) -> tuple[bool, Optional[str]]:
+        """``ollama create <name>`` from an installed model with parameters set,
+        e.g. the same weights with an 8K context window. No download: the new
+        name shares the source's files. Returns ``(ok, error)``.
+        """
+        body = {"model": name, "from": source, "parameters": parameters, "stream": False}
+        try:
+            async with self._http(timeout=120.0) as client:
+                resp = await client.post("/api/create", json=body)
+        except httpx.HTTPError as exc:
+            return False, f"{exc.__class__.__name__}: {exc}"
+        if resp.status_code >= 400:
+            try:
+                detail = resp.json().get("error")
+            except ValueError:
+                detail = None
+            return False, str(detail or f"http_{resp.status_code}")
+        return True, None
+
     # ── Optional: delete (admin "Remove Local Model") ───────
 
     async def delete(self, model: str) -> bool:

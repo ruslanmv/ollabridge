@@ -48,6 +48,8 @@ def _isolate_store(tmp_path, monkeypatch):
     tests so each starts from a clean, env-default state."""
     monkeypatch.setattr(rts, "_STORE_FILE", tmp_path / "runtime_settings.json")
     monkeypatch.setattr(rts, "_cache", None)
+    # The key these tests send. A local .env that sets API_KEYS must not decide the outcome.
+    monkeypatch.setattr(security.settings, "API_KEYS", VALID_KEY)
     security.set_pairing_manager(None)
     yield
     monkeypatch.setattr(rts, "_cache", None)

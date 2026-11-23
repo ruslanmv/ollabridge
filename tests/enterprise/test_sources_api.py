@@ -24,6 +24,9 @@ def client(monkeypatch):
     monkeypatch.setattr(settings, "AUTH_MODE", "required")
     monkeypatch.setenv("API_KEYS", "test-key-abc")
     monkeypatch.setenv("AUTH_MODE", "required")
+    # These tests are about sources: an Ollama that happens to run on this machine
+    # must not add its models to what they see.
+    monkeypatch.setattr(settings, "OLLAMA_BASE_URL", "http://127.0.0.1:9")
 
     from ollabridge.api.sources_routes import router
 

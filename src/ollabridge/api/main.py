@@ -767,9 +767,19 @@ def create_app() -> FastAPI:
         # `_startup` is defined further down, once the routes and state it
         # wires up exist; it is looked up when the server starts.
         _startup()
+        # Usage upload loop. Idle unless the user enabled the usage_metadata
+        # sync category (usage/outbox.py); cancelled on shutdown.
+        import asyncio
+
+        from ollabridge.usage import outbox as _usage_outbox
+
+        usage_sync = asyncio.get_event_loop().create_task(
+            _usage_outbox.run_forever(settings.USAGE_SYNC_INTERVAL_SECONDS)
+        )
         try:
             yield
         finally:
+            usage_sync.cancel()
             log.info("Shutting down", extra={"uptime": format_duration(time.monotonic() - started)})
 
     app = FastAPI(title=settings.APP_NAME, lifespan=_lifespan)
@@ -895,6 +905,11 @@ def create_app() -> FastAPI:
             )
         except Exception:  # pragma: no cover - tracing must never break serving
             log.debug("trace recording failed", exc_info=True)
+        # Usage ledger (additive; usage/capture.py). Best-effort like the
+        # trace above: it never raises and never affects the response.
+        from ollabridge.usage.capture import record_from_trace
+
+        record_from_trace(request, fields)
 
     app.state.record_trace = _record_trace
 
@@ -1119,6 +1134,21 @@ def create_app() -> FastAPI:
 
     app.include_router(local_catalog_router)
 
+    # Model library: search Ollama and Hugging Face, sizes, opt-in "fits this PC"
+    from ollabridge.addons.local_catalog.library_routes import router as model_library_router
+
+    app.include_router(model_library_router)
+
+    # Model copies: an installed model under a new name with its own context window
+    from ollabridge.addons.local_catalog.variants_routes import router as model_variants_router
+
+    app.include_router(model_variants_router)
+
+    # Decision requests (POST /v1/systemone), passed through to Ollama
+    from ollabridge.api.systemone_routes import router as systemone_router
+
+    app.include_router(systemone_router)
+
     # Providers admin API (HF connect/refresh, catalog browsing, alias map,
     # provider enable/disable, end-to-end model test)
     from ollabridge.api.providers_routes import router as providers_admin_router
@@ -1153,6 +1183,17 @@ def create_app() -> FastAPI:
     from ollabridge.api.rate_limit_routes import router as rate_limit_router
 
     app.include_router(rate_limit_router)
+
+    # Usage intelligence: /v1/bi/* (local usage dashboard API) and
+    # /otlp/v1/* (Claude Code telemetry in). Additive; see usage/routes.py.
+    from ollabridge.usage.routes import router as usage_router
+
+    app.include_router(usage_router)
+
+    # Models → Testing: one-click health checks.
+    from ollabridge.api.model_checks_routes import router as model_checks_router
+
+    app.include_router(model_checks_router)
 
     # Create the PairingManager at startup when pairing is the effective mode —
     # from the env default OR a persisted UI override — so paired tokens
@@ -1439,6 +1480,11 @@ def create_app() -> FastAPI:
                             max_tokens=req.max_tokens,
                             **extra,
                         )
+                        # Keep the provider's own usage block for the usage
+                        # ledger; nothing about the response changes.
+                        from ollabridge.usage.context import note_raw_usage
+
+                        note_raw_usage(result_data.get("usage"))
                         choices = result_data.get("choices", [])
                         if choices:
                             message_data = choices[0].get("message", {}) or {}
@@ -2106,15 +2152,19 @@ def create_app() -> FastAPI:
     ) -> dict[str, Any]:
         return _compute_flow_metrics(app)
 
-    @app.get("/v1/models")
-    async def list_models(
-        response: Response, _key: str = Depends(require_api_key)
-    ) -> dict[str, Any]:
+    async def collect_models() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Every model this gateway can serve now, plus the sources that could
+        not be listed (``[{source, name, reason}]``). Shared by ``/v1/models``
+        and the Usage page's inventory (usage/model_usage.py)."""
         all_models: list[dict[str, Any]] = []
+        unreachable: list[dict[str, Any]] = []
         nodes = await app.state.obridge.registry.list()
 
         for node in nodes:
             if not node.healthy:
+                unreachable.append(
+                    {"source": node.connector or "ollama", "name": node.node_id, "reason": "unhealthy"}
+                )
                 continue
             try:
                 if node.connector == "homepilot":
@@ -2185,6 +2235,9 @@ def create_app() -> FastAPI:
 
             except Exception as e:
                 log.warning("Failed to list models from node %s: %s", node.node_id, e)
+                unreachable.append(
+                    {"source": node.connector or "ollama", "name": node.node_id, "reason": "list_failed"}
+                )
 
         # Dynamic addon providers (e.g. an Open WebUI-compatible source) expose
         # discovered, namespaced models. Include the registered ones so they are
@@ -2202,6 +2255,9 @@ def create_app() -> FastAPI:
                     try:
                         for m in await adapter.list_models():
                             if isinstance(m, dict):
+                                # The registry id, which the usage ledger
+                                # records as ``provider`` (an OllaBridge extra).
+                                m.setdefault("provider_id", cfg.id)
                                 all_models.append(
                                     _stamp_model_source(
                                         m, source=source, display_name=source_name
@@ -2209,6 +2265,10 @@ def create_app() -> FastAPI:
                                 )
                     except Exception as e:  # noqa: BLE001
                         log.warning("dynamic provider %s model list failed: %s", cfg.id, e)
+                        unreachable.append(
+                            {"source": source, "name": source_name, "provider_id": cfg.id,
+                             "reason": "list_failed"}
+                        )
 
                 # External accounts connected in Sources and switched on for
                 # routing serve their selected model through this gateway, so
@@ -2222,7 +2282,17 @@ def create_app() -> FastAPI:
                 all_models.extend(dss.byok_runtime_models(registry, all_models))
             except Exception as e:  # noqa: BLE001
                 log.warning("dynamic provider enumeration failed: %s", e)
+                unreachable.append({"source": "providers", "name": "Providers", "reason": "list_failed"})
 
+        return all_models, unreachable
+
+    app.state.collect_models = collect_models
+
+    @app.get("/v1/models")
+    async def list_models(
+        response: Response, _key: str = Depends(require_api_key)
+    ) -> dict[str, Any]:
+        all_models, _unreachable = await collect_models()
         if not all_models:
             response.headers["X-OllaBridge-Warning"] = "models_unavailable"
 

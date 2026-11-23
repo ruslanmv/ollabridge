@@ -119,6 +119,48 @@ Connect **OpenAI, Anthropic, Google Gemini, IBM watsonx.ai, Azure OpenAI, AWS Be
 
 </div>
 
+### 📥 Get models — search, download, use
+
+Installing a model no longer needs a terminal. **Model Inventory → Get models** opens a drawer that searches the **Ollama library** and **Hugging Face** (GGUF builds that Ollama installs directly), shows the download size of every version, and downloads into your local Ollama with live progress, speed and time left.
+
+<img src="docs/assets/screenshots/get-models-button.png" alt="Model Inventory header with the Get models button next to refresh and settings" width="100%"/>
+
+<img src="docs/assets/screenshots/get-models.png" alt="Get models drawer — Ollama library search for qwen2.5 with every size, its download size and a Download button" width="100%"/>
+
+<div align="center">
+
+*Search, pick a size, download. What you already have is marked Installed.*
+
+</div>
+
+| Download with live progress | Hugging Face GGUF builds | Recommended for this PC |
+|---|---|---|
+| <img src="docs/assets/screenshots/get-models-download.png" alt="A download in progress — progress ring, shimmering bar, speed and time left, with a Cancel button"/> | <img src="docs/assets/screenshots/get-models-huggingface.png" alt="Hugging Face tab — the quantizations of a GGUF repository with sizes, and a finished download marked Installed, ready to use"/> | <img src="docs/assets/screenshots/get-models-for-this-pc.png" alt="For this PC tab — the detected GPU and the models that fit it, most liked first"/> |
+
+- **Downloads keep going when you close the drawer.** They run in the gateway; reopen the drawer to see progress, cancel, or resume. A finished model is listed in Model Inventory and routable through `/v1/chat/completions` right away.
+- **For this PC is off until you turn it on.** Once on, it reads this machine's GPU and memory and lists the models that fit, most liked first, using [FitLab](https://github.com/ruslanmv/fitlab)'s public registry and fit estimate. Your hardware details never leave the machine.
+- **Custom takes any reference Ollama can pull**, including a model on a private registry. It can also give an installed model a second name with a fixed context window (what a two-line Modelfile does), with no second download.
+
+See [Get models: search and download](docs/LOCAL_CATALOG.md#get-models-search-and-download).
+
+### 🧬 Build a model — a copy sized for your machine
+
+A model that is too big for your memory with its default context window often loads fine with a smaller one. **Model Inventory → Build a model** makes a copy of a model you already have, with the context window you pick. A copy shares the original's files, so there is no download and no extra disk space.
+
+<img src="docs/assets/screenshots/build-model-result.jpg" alt="Build a model wizard, last step: the copy loads on this machine, with its context window, memory use and load time" width="100%"/>
+
+<div align="center">
+
+*Pick a model, pick a context size, and see whether the copy loads here.*
+
+</div>
+
+- **Three steps.** Pick a model, pick a context size, press **Create and test**. The name is made for you (`my-model-8k`); you can change it.
+- **"Loads here" is measured, not guessed.** OllaBridge loads the model once and records whether it fit, how much memory it used and how much of that was on the GPU. When it does not fit, the wizard offers the next smaller size.
+- **Originals are safe.** Only a copy can be removed from this table; removing a copy never touches the original's files.
+
+See [Build a model](docs/LOCAL_CATALOG.md#build-a-model-copies-with-their-own-context-window).
+
 ### ⏱️ Rate limits that wait instead of fail
 
 A provider that rate-limits you no longer breaks a long agent run. **Settings → Rate limits** paces calls per provider (requests per minute, calls at once), and on a rate-limit answer either fails fast or waits and retries with backoff, honouring `Retry-After`, with a cooldown so the provider is not hammered. An optional limit on OllaBridge's own clients sits beside it. Everything is off until you set it, and applies without a restart. See [Rate limits](docs/CONFIGURATION.md#rate-limits).

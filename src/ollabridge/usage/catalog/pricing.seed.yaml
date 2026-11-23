@@ -1,0 +1,21 @@
+# OllaBridge price catalog.
+#
+# Deliberately ships with NO prices: fill it from each provider's published
+# price list, and bump `version` whenever a price changes. Events remember the
+# version they were priced with, so historical costs stay reproducible.
+#
+# Amounts are integer micro-USD per 1,000,000 tokens (1 USD = 1000000).
+# List more specific model patterns before broader ones; first match wins.
+#
+# prices:
+#   - provider: example
+#     model: "example-model-*"
+#     effective_from: "2026-01-01"
+#     per_million_micro_usd:
+#       input: 0
+#       output: 0
+#       cache_read: 0     # optional, falls back to input
+#       cache_write: 0    # optional, falls back to input
+#       reasoning: 0      # optional, falls back to output
+version: "unpriced"
+prices: []

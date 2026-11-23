@@ -24,7 +24,12 @@ import json
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
+
+try:  # Python 3.11+
+    from typing import Self
+except ImportError:  # Python 3.10, which the project still supports
+    from typing_extensions import Self
 
 import pytest
 
