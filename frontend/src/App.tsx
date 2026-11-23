@@ -10,9 +10,11 @@ import { SourcesPage } from './pages/sources/SourcesPage'
 import { NodesPage } from './pages/nodes/NodesPage'
 import { CloudPage } from './pages/cloud/CloudPage'
 import { SourcesHubPage } from './pages/sources/SourcesHubPage'
+import { UsagePage } from './pages/usage/UsagePage'
 
 export type Page =
   | 'dashboard'
+  | 'usage'
   | 'sources'
   | 'models'
   | 'runtimes'
@@ -32,6 +34,7 @@ export default function App() {
         <NetworkBanner />
         <main className="flex-1 min-h-0 overflow-hidden relative">
           {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
+          {page === 'usage' && <UsagePage onNavigate={setPage} />}
           {page === 'sources' && <SourcesHubPage />}
           {page === 'models' && <ModelsPage onNavigate={setPage} />}
           {page === 'runtimes' && <SourcesPage onNavigate={setPage} />}

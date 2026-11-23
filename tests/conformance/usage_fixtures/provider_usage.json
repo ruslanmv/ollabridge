@@ -1,0 +1,58 @@
+{
+  "_comment": "Shared fixtures for ollabridge-usage/1. Identical in both OllaBridge repositories. Each case is a provider usage block and the disjoint dimensions it must normalise to. Shapes follow each provider's documented response format; re-verify against vendor docs when a provider changes its API.",
+  "cases": [
+    {
+      "name": "openai_plain",
+      "raw": {"prompt_tokens": 100, "completion_tokens": 40, "total_tokens": 140},
+      "expect": {"input_tokens": 100, "cache_read_tokens": null, "cache_write_tokens": null, "output_tokens": 40, "reasoning_tokens": null},
+      "total": 140
+    },
+    {
+      "name": "openai_cached_and_reasoning_are_included_in_headline_counts",
+      "raw": {
+        "prompt_tokens": 1000, "completion_tokens": 500, "total_tokens": 1500,
+        "prompt_tokens_details": {"cached_tokens": 800},
+        "completion_tokens_details": {"reasoning_tokens": 300}
+      },
+      "expect": {"input_tokens": 200, "cache_read_tokens": 800, "cache_write_tokens": null, "output_tokens": 200, "reasoning_tokens": 300},
+      "total": 1500
+    },
+    {
+      "name": "openrouter_reports_cost",
+      "raw": {"prompt_tokens": 50, "completion_tokens": 10, "total_tokens": 60, "cost": 0.00042},
+      "expect": {"input_tokens": 50, "cache_read_tokens": null, "cache_write_tokens": null, "output_tokens": 10, "reasoning_tokens": null},
+      "total": 60,
+      "reported_cost_micro": 420
+    },
+    {
+      "name": "anthropic_cache_dimensions_are_already_disjoint",
+      "raw": {"input_tokens": 12, "cache_read_input_tokens": 9000, "cache_creation_input_tokens": 400, "output_tokens": 350},
+      "expect": {"input_tokens": 12, "cache_read_tokens": 9000, "cache_write_tokens": 400, "output_tokens": 350, "reasoning_tokens": null},
+      "total": 9762
+    },
+    {
+      "name": "gemini_prompt_includes_cached_and_thoughts_are_separate",
+      "raw": {"promptTokenCount": 500, "cachedContentTokenCount": 120, "candidatesTokenCount": 80, "thoughtsTokenCount": 60, "totalTokenCount": 640},
+      "expect": {"input_tokens": 380, "cache_read_tokens": 120, "cache_write_tokens": null, "output_tokens": 80, "reasoning_tokens": 60},
+      "total": 640
+    },
+    {
+      "name": "ollama_runtime_counts",
+      "raw": {"prompt_eval_count": 26, "eval_count": 298, "total_duration": 5043500667},
+      "expect": {"input_tokens": 26, "cache_read_tokens": null, "cache_write_tokens": null, "output_tokens": 298, "reasoning_tokens": null},
+      "total": 324
+    },
+    {
+      "name": "missing_usage_is_unknown_not_zero",
+      "raw": null,
+      "expect": {"input_tokens": null, "cache_read_tokens": null, "cache_write_tokens": null, "output_tokens": null, "reasoning_tokens": null},
+      "total": null
+    },
+    {
+      "name": "partial_usage_keeps_unreported_dimensions_unknown",
+      "raw": {"prompt_tokens": 7},
+      "expect": {"input_tokens": 7, "cache_read_tokens": null, "cache_write_tokens": null, "output_tokens": null, "reasoning_tokens": null},
+      "total": 7
+    }
+  ]
+}

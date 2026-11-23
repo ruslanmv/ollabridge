@@ -1,0 +1,11 @@
+{
+  "modules": {
+    "contract.py": "89f82b0d31affda8b6eec52a0efb1a221d5aaa740ba9f395058bbc7930aecb64",
+    "normalize.py": "324f75a4a8e2c709cf427439095f6be21aeb7a239826f548f5dcc96417b373ac",
+    "pricing.py": "9a405a3e70c042c5267ae412f558a39d89b3276d6ab99b5371494e350866600a",
+    "bi_core.py": "5fa0cfcf1fab99926b0cf82d72581856fdc5418b31c174074e4f2649e86dac6e"
+  },
+  "fixtures": {
+    "provider_usage.json": "fbcf9ef1af6cffb898a024cf109d77219505d443efa3a5a7dd52abd1181e7c24"
+  }
+}

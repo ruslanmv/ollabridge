@@ -103,6 +103,8 @@ export type Model = {
   source?: ModelSource | (string & {})
   /** Human label for `source` when the gateway knows one, e.g. "IBM watsonx". */
   source_display_name?: string
+  /** Open WebUI sources: `chat` for base models, `preset_or_workflow` for personas. */
+  category?: string
 }
 
 export type ModelsResponse = {

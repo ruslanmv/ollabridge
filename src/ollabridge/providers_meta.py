@@ -42,6 +42,11 @@ StorageMode = Literal["local_only", "cloud_encrypted_vault", "organization_vault
 #: Extra field holding a source's additional request headers, one per line.
 HEADERS_FIELD = "headers"
 
+#: Extra field holding where a source answers decision requests (a state and
+#: typed questions): a path under its base URL, or a full URL. Empty for a
+#: source that hosts no decision models.
+DECISION_FIELD = "decision_path"
+
 STORAGE_MODES: tuple[StorageMode, ...] = (
     "local_only",
     "cloud_encrypted_vault",
@@ -71,6 +76,21 @@ class ExtraField(BaseModel):
     # Optional settings most sources never need: the form keeps them behind
     # a disclosure, collapsed until the user opens it.
     advanced: bool = False
+
+
+#: Where a source answers decision requests. Declared on the generic kind, and
+#: offered on any OpenAI-compatible source that points at the user's own server
+#: (see ``fields_for_record``).
+_DECISION_EXTRA = ExtraField(
+    name=DECISION_FIELD,
+    label="Decision endpoint",
+    advanced=True,
+    placeholder="/classify",
+    help="Only for a server that hosts decision models (classifiers that answer "
+    "typed questions with probabilities). The path under the base URL, or a full "
+    "URL, that takes a state and questions. Decision requests for this source's "
+    "models are sent there.",
+)
 
 
 class ProviderSpec(BaseModel):
@@ -225,6 +245,7 @@ PROVIDER_CATALOG: dict[str, ProviderSpec] = {
                     "headers the provider asks for. Stored in plain text — never "
                     "put a key or token here.",
                 ),
+                _DECISION_EXTRA,
             ],
         ),
         ProviderSpec(
@@ -343,6 +364,26 @@ def extra_fields_for(kind: str) -> list[ExtraField]:
     """Extra config fields a provider kind needs beyond api_key / base_url."""
     spec = PROVIDER_CATALOG.get(kind)
     return list(spec.extra_fields) if spec else []
+
+
+def fields_for_record(rec: ProviderRecord) -> list[ExtraField]:
+    """The extra fields one configured source offers.
+
+    The kind's own fields, plus the decision endpoint when the source is
+    OpenAI-compatible and points at a server of the user's own choosing (its
+    base URL is not the catalog's). A public provider at its usual address has
+    no decision models to offer, so its form stays as short as it was; the same
+    kind pointed at a self-hosted server gets the field.
+    """
+    kind = rec.kind or rec.name
+    fields = extra_fields_for(kind)
+    if any(f.name == DECISION_FIELD for f in fields):
+        return fields
+    spec = PROVIDER_CATALOG.get(kind)
+    base = rec.base_url.strip().rstrip("/")
+    if spec and spec.openai_compatible and base and base != spec.base_url.strip().rstrip("/"):
+        fields.append(_DECISION_EXTRA)
+    return fields
 
 
 def get_extra(rec: ProviderRecord, field: str) -> str | None:
@@ -466,6 +507,28 @@ def request_headers(rec: ProviderRecord) -> dict[str, str]:
     return parse_header_lines(get_extra(rec, HEADERS_FIELD))
 
 
+def decision_url(rec: ProviderRecord) -> str | None:
+    """Where this source answers decision requests, or None when it has no such endpoint.
+
+    The saved value is a path under the source's base URL (``/classify``) or a
+    full URL. Any source kind can carry one, so a hand-edited ``providers.yaml``
+    works for kinds whose form does not offer the field.
+    """
+    value = (rec.extra or {}).get(DECISION_FIELD, "").strip()
+    if not value:
+        return None
+    if value.lower().startswith(("http://", "https://")):
+        return value
+    base = rec.base_url.strip() or (
+        PROVIDER_CATALOG[rec.kind or rec.name].base_url
+        if (rec.kind or rec.name) in PROVIDER_CATALOG
+        else ""
+    )
+    if not base:
+        return None
+    return f"{base.rstrip('/')}/{value.lstrip('/')}"
+
+
 def apply_extras(rec: ProviderRecord, values: dict[str, str]) -> list[str]:
     """Set the declared extra fields on ``rec`` from ``values``, in place.
 
@@ -473,7 +536,7 @@ def apply_extras(rec: ProviderRecord, values: dict[str, str]) -> list[str]:
     unexpected key can never be written into providers.yaml. An empty
     value clears the field. Returns the names actually changed.
     """
-    declared = {spec.name for spec in extra_fields_for(rec.kind or rec.name)}
+    declared = {spec.name for spec in fields_for_record(rec)}
     changed: list[str] = []
     extra = dict(rec.extra or {})
     for field, raw in values.items():

@@ -38,6 +38,7 @@ from ollabridge.cli.doctor import doctor_app
 from ollabridge.cli.policies import policies_app, route_app
 from ollabridge.cli.providers import providers_app
 from ollabridge.cli.sync import sync_app
+from ollabridge.cli.usage import usage_app
 from ollabridge.cli.traces import traces_app
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -51,6 +52,7 @@ app.add_typer(providers_app, name="providers")
 app.add_typer(policies_app, name="policies")
 app.add_typer(route_app, name="route")
 app.add_typer(traces_app, name="traces")
+app.add_typer(usage_app, name="usage")
 app.command("login")(_login_command)
 app.command("logout")(_logout_command)
 

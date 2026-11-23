@@ -218,6 +218,8 @@ class PullProgress(BaseModel):
         default_factory=lambda: dt.datetime.now(dt.timezone.utc)
     )
     error: Optional[str] = None
+    # What the runtime is doing right now: "downloading", "verifying sha256 digest", ...
+    detail: Optional[str] = None
 
     @property
     def progress_pct(self) -> float:

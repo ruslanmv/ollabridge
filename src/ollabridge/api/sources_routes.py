@@ -34,6 +34,7 @@ from ollabridge.providers_meta import (
     ProviderRecord,
     apply_extras,
     extra_fields_for,
+    fields_for_record,
     format_header_lines,
     get_record,
     get_extra,
@@ -113,7 +114,7 @@ def _source_view(rec: ProviderRecord, key: str | None) -> dict[str, Any]:
         "key": redact_secret(key) if key else None,
         "key_configured": bool(key),
         "extra_fields": [
-            _field_view(rec, f) for f in extra_fields_for(rec.kind or rec.name)
+            _field_view(rec, f) for f in fields_for_record(rec)
         ],
         "missing_config": missing,
         "supports_discovery": _supports_discovery(rec.kind or rec.name),
